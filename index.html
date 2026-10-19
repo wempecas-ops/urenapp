@@ -56,6 +56,7 @@ input,select,textarea{min-height:48px;font-size:16px}
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="klussen">Klussen</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="klanten">Klanten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="diensten">Diensten</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="materieel">Materieel</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="werknemers">Werknemers</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="planning">Planning</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="uren">Uren</button>
@@ -541,7 +542,10 @@ function renderInvoer(){
   // Datalist for kenteken suggestions
   const existing=DB.list('dagstaten').flatMap(d=>d.klussen.filter(k=>k.kenteken).map(k=>k.kenteken));
   const unique=[...new Set(existing)];
-  if(unique.length>0)$('main').insertAdjacentHTML('beforeend',`<datalist id="ddKenteken">${unique.map(k=>`<option value="${esc(k)}">`).join('')}</datalist>`);
+  const mat=DB.list('materieel').filter(m=>m.actief!==false).sort((a,b)=>(a.kenteken||'').localeCompare(b.kenteken||''));
+  const matSet=new Set(mat.map(m=>(m.kenteken||'').toUpperCase()));
+  const opties=mat.map(m=>`<option value="${esc(m.kenteken)}">${esc(m.omschrijving||'')}</option>`).join('')+unique.filter(k=>!matSet.has(String(k).toUpperCase())).map(k=>`<option value="${esc(k)}"></option>`).join('');
+  if(opties)$('main').insertAdjacentHTML('beforeend',`<datalist id="ddKenteken">${opties}</datalist>`);
   renderKlussen();calcAndRender();
 }
 
@@ -1120,6 +1124,64 @@ function openKlantEditor(id,items){
   $('klCancel').onclick=()=>document.getElementById('klantEditor').remove();
 }
 
+
+// === MATERIEEL / KENTEKENS ===
+// De lijst komt in het invoerformulier als keuzelijst bij "Kenteken/Materieel", zodat niemand hoeft te typen.
+function renderMaterieel(){
+  const items=DB.list('materieel').slice().sort((a,b)=>(a.kenteken||'').localeCompare(b.kenteken||''));
+  $('main').innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">Materieel &amp; kentekens</h2>
+  <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Deze lijst verschijnt als keuzelijst bij elke klus. Je kunt in één keer meerdere kentekens plakken.</p>
+  <div class="flex flex-wrap gap-2 mb-4">
+    <button id="btnAddMat" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuw</button>
+    <button id="btnBulkMat" class="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 min-h-[48px] font-medium">Meerdere plakken</button>
+  </div>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x">
+  <table class="w-full text-sm"><thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-3 py-2 text-left">Kenteken</th><th class="px-3 py-2 text-left">Omschrijving</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th></tr></thead>
+  <tbody>${items.length?items.map(m=>`<tr class="border-t border-gray-100 dark:border-gray-700"><td class="px-3 py-2 font-medium whitespace-nowrap">${esc(m.kenteken)}</td><td class="px-3 py-2">${esc(m.omschrijving||'')}</td>
+  <td class="px-3 py-2 text-center">${m.actief!==false?'<span class="text-emerald-700 dark:text-emerald-400 font-medium">Ja</span>':'<span class="text-gray-400">Nee</span>'}</td>
+  <td class="px-3 py-2 whitespace-nowrap"><button data-edit-mat="${m.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">Wijzig</button><button data-del-mat="${m.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]">Verwijder</button></td></tr>`).join(''):'<tr><td colspan="4" class="px-3 py-8 text-center text-gray-400">Nog geen materieel. Voeg kentekens toe of plak je lijst.</td></tr>'}</tbody></table></div></div>`;
+  $('btnAddMat').onclick=()=>openMaterieelEditor(null);
+  $('btnBulkMat').onclick=()=>openMaterieelBulk();
+  document.querySelectorAll('[data-edit-mat]').forEach(b=>b.onclick=e=>openMaterieelEditor(e.target.dataset.editMat));
+  document.querySelectorAll('[data-del-mat]').forEach(b=>b.onclick=e=>{if(confirm('Verwijderen uit de lijst? Eerdere klussen houden hun kenteken.')){DB.remove('materieel',e.target.dataset.delMat);renderCurrentView()}});
+}
+const normKent=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+function openMaterieelEditor(id){
+  const ex=id?DB.get('materieel',id):null;
+  document.body.insertAdjacentHTML('beforeend',`<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-30" id="matEditor"><div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-md mx-4"><h3 class="font-bold mb-4">${ex?'Materieel wijzigen':'Nieuw materieel'}</h3>
+  <label class="block text-sm font-medium mb-1" for="mt_kent">Kenteken</label><input id="mt_kent" value="${esc(ex?.kenteken||'')}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">
+  <label class="block text-sm font-medium mb-1" for="mt_oms">Omschrijving (bijv. Mestwagen Scania)</label><input id="mt_oms" value="${esc(ex?.omschrijving||'')}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">
+  <label class="flex items-center gap-2 mb-4"><input type="checkbox" id="mt_actief" ${ex?.actief!==false?'checked':''}> Actief</label>
+  <div class="flex gap-2"><button id="mtSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button><button id="mtCancel" class="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div></div></div>`);
+  $('mtCancel').onclick=()=>$('matEditor').remove();
+  $('mtSave').onclick=()=>{
+    const kent=$('mt_kent').value.trim().toUpperCase();if(!kent){toast('Kenteken is verplicht','error');return}
+    if(DB.list('materieel').some(m=>m.id!==id&&normKent(m.kenteken)===normKent(kent))){toast('Dit kenteken staat al in de lijst','error');return}
+    const data={kenteken:kent,omschrijving:$('mt_oms').value.trim(),actief:$('mt_actief').checked};
+    if(ex)DB.update('materieel',id,data);else DB.insert('materieel',data);
+    $('matEditor').remove();renderCurrentView();
+  };
+}
+function openMaterieelBulk(){
+  document.body.insertAdjacentHTML('beforeend',`<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-30" id="matBulk"><div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-lg mx-4"><h3 class="font-bold mb-2">Meerdere plakken</h3>
+  <p class="text-sm text-gray-600 dark:text-gray-300 mb-2">Een per regel: kenteken, daarna eventueel een omschrijving (gescheiden door ; of tab of een streepje met spaties). Dubbele kentekens worden overgeslagen.</p>
+  <textarea id="mb_tekst" rows="10" class="w-full border rounded-xl px-3 py-2 mb-3 font-mono text-sm bg-white dark:bg-gray-700 dark:border-gray-600" style="min-height:0" placeholder="12-ABC-3;Mestwagen Scania&#10;45-XYZ-6;Trekker John Deere&#10;Mestinjecteur"></textarea>
+  <div class="flex gap-2"><button id="mbSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Toevoegen</button><button id="mbCancel" class="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div></div></div>`);
+  $('mbCancel').onclick=()=>$('matBulk').remove();
+  $('mbSave').onclick=()=>{
+    const bestaand=new Set(DB.list('materieel').map(m=>normKent(m.kenteken)));let n=0,dubbel=0;
+    $('mb_tekst').value.split(/\r?\n/).forEach(r=>{
+      r=r.trim();if(!r)return;
+      const d=r.split(/\s*[;\t]\s*|\s+-\s+/);
+      const kent=(d[0]||'').trim().toUpperCase(),oms=d.slice(1).join(' ').trim();
+      if(!kent)return;
+      if(bestaand.has(normKent(kent))){dubbel++;return}
+      bestaand.add(normKent(kent));DB.insert('materieel',{kenteken:kent,omschrijving:oms,actief:true});n++;
+    });
+    $('matBulk').remove();toast(n+' toegevoegd'+(dubbel?', '+dubbel+' al aanwezig':''),'success');renderCurrentView();
+  };
+}
+
 function renderDiensten(){
   const items=DB.list('diensten');
   $("main").innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Diensten</h2>
@@ -1571,6 +1633,11 @@ async function laadAlles(){
     }
     CACHE[t] = alles;
   }
+  // Materieel (kentekens): mag ontbreken zolang de tabel nog niet is aangemaakt.
+  try {
+    const m = await sbREST('/rest/v1/materieel?select=*&order=kenteken.asc&limit=1000');
+    CACHE.materieel = Array.isArray(m) ? m : [];
+  } catch (e) { CACHE.materieel = CACHE.materieel || [] }
   // Tarieven staan in een aparte tabel die alleen de beheerder mag lezen.
   if (isBeheer()) {
     try {
@@ -1867,6 +1934,7 @@ function renderCurrentView(){
       case 'klussen':renderKlussenBeheer();break;
       case 'klanten':renderKlanten();break;
       case 'diensten':renderDiensten();break;
+      case 'materieel':renderMaterieel();break;
       case 'werknemers':renderWerknemers();break;
       case 'planning':renderPlanning();break;
       case 'uren':renderUrenOverzicht();break;

@@ -9,7 +9,7 @@
 
 const URL_SB = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const TABELLEN = ['werknemers', 'klanten', 'diensten', 'diensten_tarief', 'dagstaten', 'profiles'];
+const TABELLEN = ['werknemers', 'klanten', 'diensten', 'diensten_tarief', 'materieel', 'dagstaten', 'profiles'];
 const BEWAAR = 30;
 
 const kop = extra => Object.assign({ apikey: SERVICE, Authorization: 'Bearer ' + SERVICE }, extra || {});
@@ -33,7 +33,10 @@ module.exports = async (req, res) => {
     if (process.env.CRON_SECRET && req.headers.authorization !== 'Bearer ' + process.env.CRON_SECRET) return res.status(401).json({ error: 'Niet toegestaan' });
 
     const data = { gemaakt: new Date().toISOString() };
-    for (const t of TABELLEN) data[t] = await haalTabel(t);
+    for (const t of TABELLEN) {
+      try { data[t] = await haalTabel(t) }
+      catch (e) { if (t === 'materieel') data[t] = []; else throw e }   // materieel mag ontbreken tot de tabel bestaat
+    }
 
     const naam = 'backup-' + new Date().toISOString().slice(0, 10) + '.json';
     const up = await fetch(`${URL_SB}/storage/v1/object/backups/${naam}`, {
