@@ -59,11 +59,16 @@ input,select,textarea{min-height:48px;font-size:16px}
 <div id="loginScreen" class="fixed inset-0 z-40 bg-white dark:bg-gray-900 overflow-auto"></div>
 <script>
 // === CONFIG ===
-const CONFIG={MODE:'local',SUPABASE_URL:'',SUPABASE_ANON_KEY:''};
-/* 
-  Voor Supabase: zet MODE op 'supabase', vul SUPABASE_URL en SUPABASE_ANON_KEY in.
-  De DB-laag selecteert automatisch op basis van CONFIG.MODE.
-*/
+// Vul hieronder je Supabase-gegevens in (Supabase -> Project Settings -> API):
+//   SUPABASE_URL      = "Project URL"        (https://xxxx.supabase.co)
+//   SUPABASE_ANON_KEY = "anon public" key    (de publieke sleutel, NIET de service_role!)
+// EMAIL_DOMEIN moet gelijk zijn aan de Vercel-variabele URENAPP_EMAIL_DOMEIN.
+// Zijn URL en key ingevuld, dan gebruikt de app automatisch Supabase. Anders
+// draait hij in demo-modus (alleen op localhost; op een echte website wordt
+// de demo geblokkeerd).
+const CONFIG={SUPABASE_URL:'',SUPABASE_ANON_KEY:'',EMAIL_DOMEIN:'urenapp.local'};
+CONFIG.SUPABASE_URL=CONFIG.SUPABASE_URL.trim().replace(/\/+$/,'');
+CONFIG.MODE=(CONFIG.SUPABASE_URL&&CONFIG.SUPABASE_ANON_KEY)?'supabase':'local';
 
 // === HELPERS ===
 const $=id=>document.getElementById(id);
@@ -97,7 +102,16 @@ const SB_DB={
   async update(t,id,o){const r=await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{method:'PATCH',headers:{'apikey':CONFIG.SUPABASE_ANON_KEY,'Authorization':`Bearer ${CONFIG.SUPABASE_ANON_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(o)});return r.json()},
   async remove(t,id){await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{method:'DELETE',headers:{'apikey':CONFIG.SUPABASE_ANON_KEY,'Authorization':`Bearer ${CONFIG.SUPABASE_ANON_KEY}`}})}
 };
-const DB=CONFIG.MODE==='supabase'?CACHE_DB:LS_DB;
+// De keuze gebeurt pas bij gebruik: CACHE_DB wordt verderop in dit bestand
+// gedefinieerd en bestaat hier nog niet.
+const DB={
+  _b(){return CONFIG.MODE==='supabase'?CACHE_DB:LS_DB},
+  list(t){return this._b().list(t)},
+  get(t,id){return this._b().get(t,id)},
+  insert(t,o){return this._b().insert(t,o)},
+  update(t,id,o){return this._b().update(t,id,o)},
+  remove(t,id){return this._b().remove(t,id)}
+};
 
 // === SEED DATA ===
 function seedData(){
@@ -251,6 +265,19 @@ function initDarkMode(){
   };
 }
 
+// === NAVIGATIE-HULPJES + WIJZIGEN VAN EEN EERDER INGEVULDE DAG ===
+function zetNav(view){document.querySelectorAll('[data-view]').forEach(x=>{x.classList.toggle('text-emerald-700',x.dataset.view===view);x.classList.toggle('text-gray-500',x.dataset.view!==view)})}
+function gaNaarInvoer(){currentView='invoer';zetNav('invoer');renderCurrentView()}
+function gaNaarMijnUren(){currentView='mijnuren';zetNav('mijnuren');renderCurrentView()}
+// Laadt een bestaande dagstaat in het invoerformulier. Opslaan doet dan een update
+// in plaats van een nieuwe dagstaat. Verwerkte dagen zijn vergrendeld.
+function wijzigDagstaat(id){
+  const d=DB.get('dagstaten',id);if(!d)return;
+  if(d.status==='verwerkt'){toast('Deze dag is al verwerkt en kan niet meer gewijzigd worden','error');return}
+  localStorage.setItem('uren_concept',JSON.stringify({editId:d.id,datum:d.datum,medewerkerId:d.medewerkerId,startTime:d.startTime,endTime:d.endTime,pauzeMin:d.pauzeMin,klussen:JSON.parse(JSON.stringify(d.klussen||[]))}));
+  gaNaarInvoer();
+}
+
 // === MEWERKER: INVOER ===
 function renderInvoer(){
   const werknemers=DB.list('werknemers').filter(w=>w.actief!==false);
@@ -258,6 +285,7 @@ function renderInvoer(){
   const diensten=DB.list('diensten').filter(d=>d.actief!==false);
   const concept=JSON.parse(localStorage.getItem('uren_concept')||'null');
   const ds=concept||{datum:today(),medewerkerId:'',startTime:'07:00',endTime:'16:00',pauzeMin:30,klussen:[]};
+  const bewerken=!!ds.editId;
   const wOpt=werknemers.map(w=>`<option value="${w.id}"${ds.medewerkerId===w.id?' selected':''}>${esc(w.naam)}</option>`).join('');
   const kOpt=klanten.map(k=>`<option value="${k.id}">${esc(k.naam)}</option>`).join('');
   const dOpt=diensten.map(d=>`<option value="${d.id}">${esc(d.naam)} (${d.eenheid})</option>`).join('');
@@ -267,7 +295,8 @@ function renderInvoer(){
   const warn=ds.klussen.length>0&&Math.abs(netto-klusSum)>0.5;
   $("main").innerHTML=`
   <div class="max-w-lg mx-auto">
-    <h2 class="text-xl font-bold mb-4 text-emerald-700 dark:text-emerald-400">📝 Werkdag invullen</h2>
+    <h2 class="text-xl font-bold mb-4 text-emerald-700 dark:text-emerald-400">${bewerken?'✏️ Werkdag wijzigen':'📝 Werkdag invullen'}</h2>
+    ${bewerken?'<div class="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-sm text-amber-900 dark:text-amber-100">Je wijzigt een eerder ingevulde werkdag. Na het opslaan moet de beheerder hem opnieuw goedkeuren. <button type="button" id="btnAnnuleerWijzig" class="underline font-medium ml-1">Annuleren</button></div>':''}
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-5 space-y-4 mb-4">
       <div><label class="block text-sm font-medium mb-1" for="inDatum">Datum</label><input id="inDatum" type="date" value="${ds.datum}" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div>
       <div><label class="block text-sm font-medium mb-1" for="inMedew">Medewerker</label><select id="inMedew" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600">${wOpt}</select></div>
@@ -290,14 +319,14 @@ function renderInvoer(){
     <div id="klusLijst" class="space-y-3 mb-4"></div>
     <button type="button" id="btnAddKlus" class="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl text-emerald-700 dark:text-emerald-400 font-medium hover:bg-emerald-50 dark:hover:bg-gray-700 min-h-[48px]">+ Klus toevoegen</button>
     <div class="sticky-bottom mt-4 pt-2">
-      <button id="btnSubmit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl text-lg shadow-lg min-h-[52px]">Werkdag indienen voor loonadministratie</button>
+      <button id="btnSubmit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl text-lg shadow-lg min-h-[52px]">${bewerken?'Wijzigingen opslaan':'Werkdag indienen voor loonadministratie'}</button>
       ${concept?'<p class="text-center text-xs text-gray-400 mt-2">Concept opgeslagen</p>':''}
     </div>
   </div>`;
   // Event bindings
   const saveConcept=()=>{
     if(!$('inDatum'))return;
-    const s={datum:$('inDatum').value,medewerkerId:$('inMedew').value,startTime:$('inStart').value,endTime:$('inEind').value,pauzeMin:+$('inPauze').value,klussen:getKlussen()};
+    const s={editId:ds.editId||'',datum:$('inDatum').value,medewerkerId:$('inMedew').value,startTime:$('inStart').value,endTime:$('inEind').value,pauzeMin:+$('inPauze').value,klussen:getKlussen()};
     localStorage.setItem('uren_concept',JSON.stringify(s));
   };
   const calcAndRender=()=>{
@@ -385,6 +414,7 @@ function renderInvoer(){
   $('main').onclick=e=>{
     if(e.target.dataset.pauze!==undefined){$('inPauze').value=e.target.dataset.pauze;saveConcept();calcAndRender()}
     if(e.target.dataset.removeKlus){ds.klussen=ds.klussen.filter(k=>k.id!==e.target.dataset.removeKlus);saveConcept();renderKlussen();calcAndRender()}
+    if(e.target.id==='btnAnnuleerWijzig'){localStorage.removeItem('uren_concept');gaNaarMijnUren();return}
     if(e.target.id==='btnAddKlus'){ds.klussen.push({id:uid(),klantId:'',dienstId:(diensten[0]?diensten[0].id:''),kenteken:'',omschrijving:'',aantal:1,eenheid:'uur',gefactureerd:false,factuurdatum:'',wegenMonsteren:false});saveConcept();renderKlussen()}
     if(e.target.id==='btnSubmit'){
       // Alles uit het formulier lezen: ds is alleen de beginwaarde, niet de invoer.
@@ -395,9 +425,20 @@ function renderInvoer(){
       if(klussen.length===0){toast('Voeg minstens 1 klus toe','error');return}
       if(klussen.some(k=>!k.klantId)){toast('Kies bij elke klus een klant','error');return}
       if(!st||!et||st>=et){toast('Eindtijd moet na starttijd zijn','error');return}
-      const bestaat=DB.list('dagstaten').some(d=>d.medewerkerId===wId&&d.datum===datum);
-      if(bestaat&&!confirm('Er staat al een dagstaat voor deze medewerker op '+datum+'. Toch nog een indienen?'))return;
+      const bestaat=DB.list('dagstaten').some(d=>d.medewerkerId===wId&&d.datum===datum&&d.id!==ds.editId);
+      if(bestaat&&!confirm('Er staat al een dagstaat voor deze medewerker op '+datum+'. Toch doorgaan?'))return;
       const nettoDag=Math.max(0,calcBruto(st,et)-pauze/60);
+      if(ds.editId){
+        const oud=DB.get('dagstaten',ds.editId);
+        if(!oud){toast('Deze dagstaat bestaat niet meer','error');localStorage.removeItem('uren_concept');renderInvoer();return}
+        if(oud.status==='verwerkt'){toast('Deze dag is al verwerkt en kan niet meer gewijzigd worden','error');return}
+        if(oud.status==='goedgekeurd'&&!confirm('Deze werkdag was al goedgekeurd. Na je wijziging moet de beheerder hem opnieuw goedkeuren. Doorgaan?'))return;
+        DB.update('dagstaten',ds.editId,{...oud,datum,startTime:st,endTime:et,pauzeMin:pauze,nettoUren:+nettoDag.toFixed(1),status:'in_afwachting',klussen:klussen.map(k=>({...k}))});
+        localStorage.removeItem('uren_concept');
+        toast('Wijziging opgeslagen ✅','success');
+        gaNaarMijnUren();
+        return;
+      }
       const dag={id:uid(),medewerkerId:wId,medewerkerNaam:w.naam,datum,startTime:st,endTime:et,pauzeMin:pauze,nettoUren:+nettoDag.toFixed(1),status:'in_afwachting',klussen:klussen.map(k=>({...k,gefactureerd:false,factuurdatum:''}))};
       DB.insert('dagstaten',dag);
       localStorage.removeItem('uren_concept');
@@ -431,6 +472,11 @@ function renderMijnUren(){
     <div class="mb-4"><label class="block text-sm font-medium mb-1">Medewerker</label><select id="muWerknemer" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700">${wOpt}</select></div>
     <div class="space-y-3" id="muLijst">${filtered.length?filtered.map(d=>renderDagKaart(d)).join(''):'<p class="text-gray-400 text-center py-8">Nog geen dagstaten</p>'}</div>
   </div>`;
+  $('muLijst').onclick=e=>{
+    const t=e.target.closest('button');if(!t)return;
+    if(t.classList.contains('muToggle')){const det=$('muDet_'+t.dataset.dagId);if(det){const dicht=det.classList.toggle('hidden');t.textContent=dicht?'▶ Bekijk details':'▼ Verberg details'}}
+    else if(t.dataset.wijzigId){wijzigDagstaat(t.dataset.wijzigId)}
+  };
   $('muWerknemer').onchange=()=>{const w=$('muWerknemer').value;const fd=w?dagstaten.filter(d=>d.medewerkerId===w).sort((a,b)=>b.datum.localeCompare(a.datum)):[];$('muLijst').innerHTML=fd.length?fd.map(d=>renderDagKaart(d)).join(''):'<p class="text-gray-400 text-center py-8">Nog geen dagstaten</p>'};
 }
 function renderDagKaart(d){
@@ -439,7 +485,7 @@ function renderDagKaart(d){
   const statusLabel=d.status==='in_afwachting'?'In afwachting':d.status==='goedgekeurd'?'Goedgekeurd':'Verwerkt';
   return`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="flex justify-between items-center"><div><span class="font-semibold">${esc(d.medewerkerNaam)}</span> <span class="text-gray-400 text-sm">${d.datum}</span></div><span class="badge ${badgeClass}">${statusLabel}</span></div>
   <div class="mt-2 text-sm text-gray-600 dark:text-gray-300">${d.startTime} – ${d.endTime} · pauze ${d.pauzeMin}m · <strong>${fmtNum(d.nettoUren)}u netto</strong> · ${totalKlussen} klus${totalKlussen!==1?'sen':''}</div>
-  <button class="muToggle mt-2 text-xs text-emerald-600 dark:text-emerald-400 font-medium" data-dag-id="${d.id}">▶ Bekijk details</button>
+  <div class="flex items-center gap-4 mt-1"><button class="muToggle text-xs text-emerald-600 dark:text-emerald-400 font-medium min-h-[44px]" data-dag-id="${d.id}">▶ Bekijk details</button>${isMedewerker()?(d.status==='verwerkt'?'<span class="text-xs text-gray-400">Verwerkt, niet meer te wijzigen</span>':`<button class="muEdit text-xs text-blue-600 dark:text-blue-400 font-medium min-h-[44px]" data-wijzig-id="${d.id}">✏️ Wijzigen</button>`):''}</div>
   <div id="muDet_${d.id}" class="hidden mt-3 space-y-2 border-t border-gray-100 dark:border-gray-700 pt-3">${d.klussen.map(k=>{const kd=DB.get('klanten',k.klantId);const dd=DB.get('diensten',k.dienstId);return`<div class="text-sm bg-gray-50 dark:bg-gray-700 rounded-lg p-2"><div class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekend'}</div>${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500 dark:text-gray-400">📍 ${esc(klantAdres(kd))}</div>`:''}<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">${dd?esc(dd.naam):'Onbekend'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')} · ${k.aantal} ${esc(k.eenheid||'uur')}</div>${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">⚖ Wegen monsteren</span></div>':''}</div>`}).join('')}</div></div>`;
 }
 
@@ -1082,7 +1128,7 @@ function importJSON(e){
 // Accounts worden door de beheerder aangemaakt. Dat kan niet rechtstreeks
 // vanuit de browser (daarvoor is de service_role-sleutel nodig, die nooit in
 // de browser mag staan), dus loopt dat via /api/admin-users op Vercel.
-const EMAIL_DOMEIN = 'urenapp.local';   // 'jan' -> 'jan@urenapp.local'
+const EMAIL_DOMEIN = CONFIG.EMAIL_DOMEIN || 'urenapp.local';   // 'jan' -> 'jan@urenapp.local'
 let SESSIE = null;        // {id,naam,rol,werknemer_id,gebruikersnaam}
 let AUTH_TOKEN = null, AUTH_REFRESH = null, AUTH_VERLOOPT = 0;
 const CACHE = {};
@@ -1119,8 +1165,16 @@ function sleutelsOm(o, fn){
 }
 
 // ---- Supabase REST ----
+// Een Supabase-sessie duurt ongeveer een uur. Wie de app langer open heeft staan
+// (bijv. een hele werkdag) krijgt hier automatisch een nieuwe sleutel.
+async function zorgVoorToken(){
+  if (CONFIG.MODE !== 'supabase' || !AUTH_TOKEN || Date.now() < AUTH_VERLOOPT) return;
+  const ok = await sbVernieuw();
+  if (!ok) { toast('Je sessie is verlopen. Log opnieuw in.', 'error'); setTimeout(() => location.reload(), 1500); throw new Error('Sessie verlopen') }
+}
 async function sbREST(pad, opties){
   opties = opties || {};
+  await zorgVoorToken();
   const h = Object.assign({ 'apikey': CONFIG.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, opties.headers || {});
   h['Authorization'] = 'Bearer ' + (AUTH_TOKEN || CONFIG.SUPABASE_ANON_KEY);
   if (opties.prefer) h['Prefer'] = opties.prefer;
@@ -1187,9 +1241,17 @@ async function verstuur(actie, tabel, a, b){
   } catch (e) { toast('Niet opgeslagen in de database: ' + e.message, 'error') }
 }
 async function laadAlles(){
+  // Supabase geeft standaard maximaal 1000 rijen per verzoek; daarom per pagina ophalen.
   for (const t of TABELLEN) {
-    const rijen = await sbREST('/rest/v1/' + t + '?select=*');
-    CACHE[t] = Array.isArray(rijen) ? rijen : [];
+    let alles = [], van = 0;
+    for (;;) {
+      const rijen = await sbREST('/rest/v1/' + t + '?select=*&order=created_at.asc,id.asc&limit=1000&offset=' + van);
+      if (!Array.isArray(rijen)) break;
+      alles = alles.concat(rijen);
+      if (rijen.length < 1000) break;
+      van += 1000;
+    }
+    CACHE[t] = alles;
   }
 }
 
@@ -1259,7 +1321,8 @@ async function inloggen(gebruiker, wachtwoord){
     const profiel = await sbProfiel(user.id);
     if (!profiel) throw new Error('Dit account heeft nog geen profiel. Vraag de beheerder om toegang.');
     if (profiel.actief === false) throw new Error('Dit account is gedeactiveerd');
-    SESSIE = { id: user.id, naam: profiel.naam || gebruikersnaam, rol: profiel.rol || 'medewerker', werknemer_id: profiel.werknemer_id || '', gebruikersnaam: gebruikersnaam };
+    const gn = String(gebruiker).trim().toLowerCase();
+    SESSIE = { id: user.id, naam: profiel.naam || gn, rol: profiel.rol || 'medewerker', werknemer_id: profiel.werknemer_id || '', gebruikersnaam: gn };
     toast('Gegevens laden…', 'info');
     await laadAlles();
   }
@@ -1271,6 +1334,7 @@ async function uitloggen(){
   if (CONFIG.MODE === 'supabase') await sbUitloggen();
   SESSIE = null;
   localStorage.removeItem('uren_sessie');
+  localStorage.removeItem('uren_concept');
   location.reload();
 }
 
@@ -1311,6 +1375,7 @@ function pasRolToe(){
 
 // ---- accounts (beheer) ----
 async function apiAccounts(payload){
+  await zorgVoorToken();
   const r = await fetch('/api/admin-users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + AUTH_TOKEN },
@@ -1498,7 +1563,12 @@ function startApp(){
   naRender();
   renderCurrentView();
 }
+function toonSetupNodig(){
+  const s=$('loginScreen');s.classList.remove('hidden');s.style.display='block';
+  s.innerHTML='<div class="min-h-screen flex items-center justify-center px-4"><div class="max-w-sm text-center"><div class="text-4xl mb-2">⚙️</div><h1 class="text-xl font-bold mb-2">UrenApp is nog niet gekoppeld</h1><p class="text-sm text-gray-600 dark:text-gray-300">De koppeling met de database is nog niet ingesteld. Neem contact op met de beheerder.</p></div></div>';
+}
 function init(){
+  if(CONFIG.MODE==='local'&&!['localhost','127.0.0.1',''].includes(location.hostname)){ toonSetupNodig(); return }
   if(CONFIG.MODE==='local'){
     seedData();migrateKlanten();migrateDagstaten();migrateFacturatie();migrateIds();seedAccounts();
   }
@@ -1515,109 +1585,5 @@ function init(){
 }
 init();
 </script>
-<!--
-=== SQL SCHEMA voor Supabase ===
-
-CREATE TABLE werknemers (
-  id TEXT PRIMARY KEY,
-  naam TEXT NOT NULL,
-  pers_nr TEXT,
-  functie TEXT,
-  email TEXT,
-  telefoon TEXT,
-  actief BOOLEAN DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
-CREATE TABLE klanten (
-  id TEXT PRIMARY KEY,
-  naam TEXT NOT NULL,
-  adres TEXT,
-  postcode TEXT,
-  plaats TEXT,
-  contactpersoon TEXT,
-  email TEXT,
-  telefoon TEXT,
-  actief BOOLEAN DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- Indexen voor de klantzoekfunctie (naam en plaats)
-CREATE INDEX IF NOT EXISTS idx_klanten_naam   ON klanten (lower(naam));
-CREATE INDEX IF NOT EXISTS idx_klanten_plaats ON klanten (lower(plaats));
-
-CREATE TABLE diensten (
-  id TEXT PRIMARY KEY,
-  naam TEXT NOT NULL,
-  omschrijving TEXT,
-  uurtarief NUMERIC DEFAULT 35,
-  eenheid TEXT DEFAULT 'uur',
-  actief BOOLEAN DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
-CREATE TABLE dagstaten (
-  id TEXT PRIMARY KEY,
-  medewerker_id TEXT REFERENCES werknemers(id),
-  medewerker_naam TEXT,
-  datum DATE NOT NULL,
-  start_time TEXT,
-  end_time TEXT,
-  pauze_min INTEGER DEFAULT 0,
-  netto_uren NUMERIC,
-  status TEXT DEFAULT 'in_afwachting' CHECK (status IN ('in_afwachting','goedgekeurd','verwerkt')),
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
-CREATE TABLE klus_regels (
-  id TEXT PRIMARY KEY,
-  dagstaat_id TEXT REFERENCES dagstaten(id) ON DELETE CASCADE,
-  klant_id TEXT REFERENCES klanten(id),
-  dienst_id TEXT REFERENCES diensten(id),
-  kenteken TEXT,
-  omschrijving TEXT,
-  aantal NUMERIC,
-  eenheid TEXT DEFAULT 'uur',
-  -- facturatie-afvinking (los van de status van de dagstaat)
-  gefactureerd BOOLEAN DEFAULT false,
-  factuurdatum DATE,
-  -- per klus bijhouden of er gewogen en/of bemonsterd is
-  wegen_monsteren BOOLEAN DEFAULT false
-);
-
--- Snel filteren op wat nog gefactureerd moet worden
-CREATE INDEX IF NOT EXISTS idx_klus_regels_facturatie ON klus_regels (gefactureerd);
-
--- Voorbeeld RLS beleid: medewerkers kunnen alleen hun eigen dagstaten lezen
-CREATE POLICY "Medewerker kan eigen dagstaten lezen" ON dagstaten
-  FOR SELECT USING (medewerker_id = auth.uid()::text);
-
--- Beheerders kunnen alles bewerken
-CREATE POLICY "Beheerder volledige toegang" ON dagstaten
-  FOR ALL USING (true);
-
--- Seed INSERTs
--- Klanten (met adres)
-INSERT INTO klanten VALUES ('k1','Loonbedrijf Van Dijk','Havenweg 12','1043 AB','Amsterdam','Piet van Dijk','pvandijk@vandijk.nl','020-1111111',true,now());
-INSERT INTO klanten VALUES ('k2','Melkveebedrijf De Vries','Zuiderdijk 84','1509 GH','Zaandam','Jan de Vries','jdevries@devries.nl','075-2222222',true,now());
-INSERT INTO klanten VALUES ('k3','Gemeente Waadhoeke','Harlingerstraatweg 113','8801 PX','Franeker','Mevr. de Groot','gemeente@waadhoeke.nl','0519-3333333',true,now());
-INSERT INTO klanten VALUES ('k4','Aannemersbedrijf Postma','Friesestraat 47','8911 BZ','Leeuwarden','Dirk Postma','dpostma@postma.nl','058-4444444',true,now());
-INSERT INTO klanten VALUES ('k5','Akkerbouw Havinga','Oude Nijeveenseweg 8','8441 PL','Heerenveen','Hannie Havinga','havinga@havinga.nl','0513-5555555',true,now());
-INSERT INTO klanten VALUES ('k6','Zuivelboerderij Nicolai','Hemdijk 25','8601 XX','Sneek','Piet Nicolai','nicolai@zuivel.nl','0515-6666666',true,now());
-INSERT INTO werknemers VALUES ('w1','Jan de Boer','LB-001','Chauffeur','jan@loonbedrijf.nl','06-12345678',true,now());
-INSERT INTO werknemers VALUES ('w2','Piet Visser','LB-002','Loonwerker','piet@loonbedrijf.nl','06-87654321',true,now());
-INSERT INTO werknemers VALUES ('w3','Mohammed El Amrani','LB-003','Chauffeur','mohamed@loonbedrijf.nl','06-11122233',true,now());
-INSERT INTO werknemers VALUES ('w4','Lisa Jansen','LB-004','Loonadmin','lisa@loonbedrijf.nl','06-44455566',true,now());
--->
-</script></body></html>
-
-
-
-
-
-
-
-
-
-
-
+<!-- Database-schema en beveiliging: zie supabase-setup.sql -->
+</body></html>
