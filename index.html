@@ -93,6 +93,7 @@ const SEL_S='text-sm border rounded-lg px-2 py-2 dark:border-gray-600 min-h-[44p
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 // Adresregel van een klant, bv. "Havenweg 12, 1043 AB Amsterdam"
+const nieuweKlantcode=()=>{let m=0;DB.list('klanten').forEach(k=>{const r=/^K(\d+)$/.exec(k.klantcode||'');if(r)m=Math.max(m,parseInt(r[1],10))});return 'K'+String(m+1).padStart(4,'0')};
 const klantAdres=k=>k?[k.adres,[k.postcode,k.plaats].filter(Boolean).join(' ')].filter(Boolean).join(', '):'';
 
 // === DB LAYER ===
@@ -355,13 +356,13 @@ function renderInvoer(){
     const all=DB.list('klanten').filter(k=>k.actief!==false);
     const t=(q||'').trim().toLowerCase();
     if(!t)return all;
-    return all.filter(k=>[k.naam,k.plaats,k.adres,k.postcode,k.contact].some(v=>(v||'').toLowerCase().includes(t)));
+    return all.filter(k=>[k.klantcode,k.naam,k.plaats,k.adres,k.postcode,k.contact].some(v=>(v||'').toLowerCase().includes(t)));
   }
   function klantResultaat(kid){
     const box=$('kres_'+kid);if(!box)return;
     const q=$('kzoek_'+kid)?$('kzoek_'+kid).value:'';
     const list=klantZoek(q);
-    box.innerHTML=list.length?list.map(k=>`<button type="button" data-pick="${k.id}" class="w-full text-left px-3 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0 hover:bg-emerald-50 dark:hover:bg-gray-600 min-h-[48px]"><div class="font-medium text-sm text-gray-800 dark:text-gray-100">${esc(k.naam)}</div><div class="text-xs text-gray-500 dark:text-gray-400">${esc(klantAdres(k)||'Geen adres bekend')}${k.contact?' · '+esc(k.contact):''}</div></button>`).join(''):`<div class="p-3 text-sm text-gray-500">Geen klant gevonden voor &ldquo;${esc(q)}&rdquo;</div>`;
+    box.innerHTML=list.length?list.map(k=>`<button type="button" data-pick="${k.id}" class="w-full text-left px-3 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0 hover:bg-emerald-50 dark:hover:bg-gray-600 min-h-[48px]"><div class="font-medium text-sm text-gray-800 dark:text-gray-100">${k.klantcode?'<span class="text-xs text-gray-500 mr-1">'+esc(k.klantcode)+'</span>':''}${esc(k.naam)}</div><div class="text-xs text-gray-500 dark:text-gray-400">${esc(klantAdres(k)||'Geen adres bekend')}${k.contact?' · '+esc(k.contact):''}</div></button>`).join(''):`<div class="p-3 text-sm text-gray-500">Geen klant gevonden voor &ldquo;${esc(q)}&rdquo;</div>`;
     box.classList.remove('hidden');
   }
   function renderKlussen(){
@@ -847,11 +848,11 @@ function renderKlussenBeheer(){
 
 // Facturatielijst als CSV (puntkomma + UTF-8 BOM, opent goed in Nederlandse Excel)
 function exportKlussenCSV(rows){
-  const headers=['Datum','Medewerker','Klant','Adres klant','Dienst','Kenteken/Materieel','Omschrijving','Aantal','Eenheid','Uurtarief','Indicatief bedrag','Wegen monsteren','Facturatiestatus','Factuurdatum','Dagstaatstatus'];
+  const headers=['Datum','Medewerker','Klantcode','Klant','Adres klant','Dienst','Kenteken/Materieel','Omschrijving','Aantal','Eenheid','Uurtarief','Indicatief bedrag','Wegen monsteren','Facturatiestatus','Factuurdatum','Dagstaatstatus'];
   const lijnen=rows.map(k=>{
     const tarief=k.dienst&&k.dienst.tarief?Number(k.dienst.tarief):0;
     const bud=klusBedrag(k);
-    return [k.datum,k.medewerkerNaam||'',k.klant?esc(k.klant.naam):'',esc(k.klant?klantAdres(k.klant):''),k.dienst?esc(k.dienst.naam):'',esc(k.kenteken||''),esc(k.omschrijving||''),k.aantal,k.eenheid||'uur',tarief?tarief.toFixed(2):'',bud?bud.toFixed(2):'',k.wegenMonsteren?'Ja':'Nee',k.gefactureerd?'Gefactureerd':'Te factureren',k.factuurdatum||'',k.dagStatus||''].join(';');
+    return [k.datum,k.medewerkerNaam||'',k.klant?esc(k.klant.klantcode||''):'',k.klant?esc(k.klant.naam):'',esc(k.klant?klantAdres(k.klant):''),k.dienst?esc(k.dienst.naam):'',esc(k.kenteken||''),esc(k.omschrijving||''),k.aantal,k.eenheid||'uur',tarief?tarief.toFixed(2):'',bud?bud.toFixed(2):'',k.wegenMonsteren?'Ja':'Nee',k.gefactureerd?'Gefactureerd':'Te factureren',k.factuurdatum||'',k.dagStatus||''].join(';');
   });
   const csv='\uFEFF'+headers.join(';')+'\n'+lijnen.join('\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
@@ -870,9 +871,9 @@ function renderKlanten(){
   </div>
   <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x">
   <table class="w-full text-xs md:text-[13px] min-w-[600px] md:min-w-0"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
-  <th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2 text-left">Adres</th><th class="px-3 py-2 text-left">Plaats</th><th class="px-3 py-2 text-left">Contact</th><th class="px-3 py-2 text-left">Email</th><th class="px-3 py-2 text-left">Telefoon</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th>
+  <th class="px-3 py-2 text-left">Code</th><th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2 text-left">Adres</th><th class="px-3 py-2 text-left">Plaats</th><th class="px-3 py-2 text-left">Contact</th><th class="px-3 py-2 text-left">Email</th><th class="px-3 py-2 text-left">Telefoon</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th>
   </tr></thead><tbody>${items.map(k=>`<tr class="border-t border-gray-100 dark:border-gray-700">
-  <td class="px-3 py-2">${esc(k.naam)}</td><td class="px-3 py-2">${esc(k.adres)}${k.postcode?'<br><span class="text-xs text-gray-500">'+esc(k.postcode)+'</span>':''}</td><td class="px-3 py-2">${esc(k.plaats)}</td><td class="px-3 py-2">${esc(k.contact)}</td><td class="px-3 py-2">${esc(k.email)}</td><td class="px-3 py-2">${esc(k.telefoon)}</td>
+  <td class="px-3 py-2 whitespace-nowrap text-gray-500">${esc(k.klantcode)}</td><td class="px-3 py-2">${esc(k.naam)}</td><td class="px-3 py-2">${esc(k.adres)}${k.postcode?'<br><span class="text-xs text-gray-500">'+esc(k.postcode)+'</span>':''}</td><td class="px-3 py-2">${esc(k.plaats)}</td><td class="px-3 py-2">${esc(k.contact)}</td><td class="px-3 py-2">${esc(k.email)}</td><td class="px-3 py-2">${esc(k.telefoon)}</td>
   <td class="px-3 py-2 text-center">${k.actief!==false?'<span class="text-emerald-700 dark:text-emerald-400 font-medium">Ja</span>':'<span class="text-gray-400">Nee</span>'}</td>
   <td class="px-3 py-2"><button data-edit-klant="${k.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">Wijzig</button><button data-del-klant="${k.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">Verwijder</button></td></tr>`).join('')}
   </tbody></table></div></div>`;
@@ -1000,7 +1001,7 @@ function openKlantImport(){
   };
   $('kiSave').onclick=()=>{
     if(!klaar.length)return;
-    klaar.forEach(k=>DB.insert('klanten',k));
+    klaar.forEach(k=>DB.insert('klanten',{...k,klantcode:nieuweKlantcode()}));
     toast(klaar.length+' klant'+(klaar.length!==1?'en':'')+' geïmporteerd','success');
     document.getElementById('klantImport').remove();
     renderCurrentView();
@@ -1009,16 +1010,16 @@ function openKlantImport(){
 }
 function openKlantEditor(id,items){
   const existing=id?items.find(k=>k.id===id):null;
-  const fields=['naam','adres','postcode','plaats','contact','email','telefoon'];
-  const labels=['Naam','Adres (straat + nr)','Postcode','Plaats','Contactpersoon','E-mail','Telefoon'];
-  const values=existing?fields.map(f=>existing[f]||''):fields.map(()=>'');
+  const fields=['klantcode','naam','adres','postcode','plaats','contact','email','telefoon'];
+  const labels=['Klantcode','Naam','Adres (straat + nr)','Postcode','Plaats','Contactpersoon','E-mail','Telefoon'];
+  const values=existing?fields.map(f=>existing[f]||''):fields.map(f=>f==='klantcode'?nieuweKlantcode():'');
   const actief=existing?existing.actief!==false:true;
   const html=`<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-30" id="klantEditor"><div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-md mx-4"><h3 class="font-bold mb-4">${existing?'Klant bewerken':'Nieuwe klant'}</h3>
   ${fields.map((f,i)=>`<label class="block text-sm font-medium mb-1">${labels[i]}</label><input id="kl_${f}" value="${esc(values[i])}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">`).join('')}
   <label class="flex items-center gap-2 mb-4"><input type="checkbox" id="kl_actief" ${actief?'checked':''}> Actief</label>
   <div class="flex gap-2"><button id="klSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button><button id="klCancel" class="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
-  $('klSave').onclick=()=>{const data={naam:$('kl_naam').value,adres:$('kl_adres').value,postcode:$('kl_postcode').value,plaats:$('kl_plaats').value,contact:$('kl_contact').value,email:$('kl_email').value,telefoon:$('kl_telefoon').value,actief:$('kl_actief').checked};if(!data.naam){toast('Naam is verplicht','error');return}if(existing)DB.update('klanten',id,data);else DB.insert('klanten',data);toast('Klant opgeslagen','success');document.getElementById('klantEditor').remove();renderCurrentView()};
+  $('klSave').onclick=()=>{const data={klantcode:$('kl_klantcode').value.trim(),naam:$('kl_naam').value,adres:$('kl_adres').value,postcode:$('kl_postcode').value,plaats:$('kl_plaats').value,contact:$('kl_contact').value,email:$('kl_email').value,telefoon:$('kl_telefoon').value,actief:$('kl_actief').checked};if(!data.naam){toast('Naam is verplicht','error');return}if(!data.klantcode)data.klantcode=nieuweKlantcode();if(DB.list('klanten').some(k=>k.klantcode===data.klantcode&&k.id!==id)){toast('Deze klantcode bestaat al','error');return}if(existing)DB.update('klanten',id,data);else DB.insert('klanten',data);toast('Klant opgeslagen','success');document.getElementById('klantEditor').remove();renderCurrentView()};
   $('klCancel').onclick=()=>document.getElementById('klantEditor').remove();
 }
 
@@ -1166,9 +1167,9 @@ function renderExports(){
 function exportCSV(dagen,werknemers,klanten,diensten){
   const wMap={},kMap={},dMap={};
   werknemers.forEach(w=>wMap[w.id]=w);klanten.forEach(k=>kMap[k.id]=k);diensten.forEach(d=>dMap[d.id]=d);
-  const headers=['Medewerker','Personeelsnr','Datum','Starttijd','Eindtijd','Pauze (min)','Netto uren dag','Klant','Adres klant','Dienst','Kenteken/Materieel','Omschrijving','Aantal','Eenheid','Wegen monsteren','Status'];
+  const headers=['Medewerker','Personeelsnr','Datum','Starttijd','Eindtijd','Pauze (min)','Netto uren dag','Klantcode','Klant','Adres klant','Dienst','Kenteken/Materieel','Omschrijving','Aantal','Eenheid','Wegen monsteren','Status'];
   const rows=[];
-  dagen.forEach(d=>{const w=wMap[d.medewerkerId]||{};d.klussen.forEach(k=>{const kl=kMap[k.klantId]||{},dv=dMap[k.dienstId]||{};rows.push([w.naam||'',w.persNr||'',d.datum,d.startTime,d.endTime,d.pauzeMin,d.nettoUren,kl.naam||'',esc(klantAdres(kl)),dv.naam||'',esc(k.kenteken||''),esc(k.omschrijving||''),k.aantal,k.eenheid||'',k.wegenMonsteren?'Ja':'Nee',d.status].join(';'))});});
+  dagen.forEach(d=>{const w=wMap[d.medewerkerId]||{};d.klussen.forEach(k=>{const kl=kMap[k.klantId]||{},dv=dMap[k.dienstId]||{};rows.push([w.naam||'',w.persNr||'',d.datum,d.startTime,d.endTime,d.pauzeMin,d.nettoUren,kl.klantcode||'',kl.naam||'',esc(klantAdres(kl)),dv.naam||'',esc(k.kenteken||''),esc(k.omschrijving||''),k.aantal,k.eenheid||'',k.wegenMonsteren?'Ja':'Nee',d.status].join(';'))});});
   const bom='\uFEFF';
   const csv=bom+headers.join(';')+'\n'+rows.join('\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
