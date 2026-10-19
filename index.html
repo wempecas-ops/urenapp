@@ -1196,6 +1196,8 @@ async function laadAlles(){
 // ---- inlogscherm ----
 function toonLogin(){
   const scherm = document.getElementById('loginScreen');
+  scherm.classList.remove('hidden');
+  scherm.style.display = 'block';
   scherm.innerHTML = `
   <div class="min-h-screen flex items-center justify-center px-4 bg-gradient-to-b from-emerald-50 to-white dark:from-gray-900 dark:to-gray-800">
     <div class="w-full max-w-sm">
@@ -1235,7 +1237,15 @@ function toonLogin(){
   const g = document.getElementById('lgGebruiker');
   if (g) g.focus();
 }
-function verbergLogin(){ const s = document.getElementById('loginScreen'); if (s) s.innerHTML = '' }
+function verbergLogin(){
+  const s = document.getElementById('loginScreen');
+  if (!s) return;
+  s.innerHTML = '';
+  // Belangrijk: niet alleen leegmaken. Het inlogscherm is een witte laag over
+  // het hele scherm (fixed inset-0), dus een lege laag dekt de app alsnog af.
+  s.classList.add('hidden');
+  s.style.display = 'none';
+}
 
 async function inloggen(gebruiker, wachtwoord){
   if (!gebruiker || !wachtwoord) throw new Error('Vul je gebruikersnaam en wachtwoord in');
