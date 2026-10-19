@@ -796,6 +796,27 @@ function zetMono(paren,waarde){
     DB.update('dagstaten',dagId,{...d,klussen});
   });
 }
+// Klussen definitief verwijderen. Is het de laatste klus van een werkdag, dan gaat de hele werkdag weg.
+function verwijderKlussen(paren){
+  const perDag={};
+  paren.forEach(p=>{(perDag[p.dagId]=perDag[p.dagId]||[]).push(p.klusId)});
+  let klussen=0,dagen=0;
+  Object.keys(perDag).forEach(dagId=>{
+    const d=DB.get('dagstaten',dagId);if(!d)return;
+    const ids=perDag[dagId];
+    const rest=(d.klussen||[]).filter(k=>!ids.includes(k.id));
+    klussen+=(d.klussen||[]).length-rest.length;
+    if(!rest.length){DB.remove('dagstaten',dagId);dagen++}
+    else DB.update('dagstaten',dagId,{...d,klussen:rest});
+  });
+  return{klussen,dagen};
+}
+function vraagVerwijderen(paren){
+  const perDag={};paren.forEach(p=>{(perDag[p.dagId]=perDag[p.dagId]||[]).push(p.klusId)});
+  let dagen=0;Object.keys(perDag).forEach(id=>{const d=DB.get('dagstaten',id);if(d&&(d.klussen||[]).every(k=>perDag[id].includes(k.id)))dagen++});
+  const n=paren.length;
+  return confirm('Weet je zeker dat je '+(n===1?'deze klus':n+' klussen')+' definitief wilt verwijderen?'+(dagen?'\n\nLet op: bij '+dagen+' werkdag'+(dagen>1?'en':'')+' is dit de laatste klus. Dan wordt de hele werkdag (en de uren) ook verwijderd.':'')+'\n\nDit kan niet ongedaan worden gemaakt.');
+}
 function toggleKlusSelectie(id,aan){if(aan)klusSelectie.add(id);else klusSelectie.delete(id);updateKlusBulkLabel()}
 function updateKlusBulkLabel(){
   const b=$('btnKlusBulk');if(!b)return;
@@ -864,6 +885,7 @@ function renderKlussenBeheer(){
   <div class="flex flex-wrap gap-2 mb-3">
     <button id="btnKlusBulk" class="px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 min-h-[48px] font-medium opacity-40" disabled>Geselecteerde afvinken</button>
     <button id="btnKlusAlles" class="px-3 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800 min-h-[48px] font-medium">Alle ${open.length} open in filter afvinken</button>
+    <button id="btnKlusVerwijder" class="px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 min-h-[48px] font-medium">Geselecteerde verwijderen</button>
     <button id="btnKlusSelectieWeg" class="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 rounded-lg min-h-[48px] font-medium">Selectie wissen</button>
     <button id="btnKlusCSV" class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 min-h-[48px] font-medium">Facturatielijst als CSV</button>
   </div>
@@ -891,7 +913,7 @@ function renderKlussenBeheer(){
         <td class="px-3 py-2 text-right whitespace-nowrap">${klusBedrag(k)?euro(klusBedrag(k)):'—'}</td>
         <td class="px-3 py-2 text-center">${k.wegenMonsteren?'<span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium text-xs">Ja</span>':'<span class="text-xs text-gray-400">Nee</span>'}<div class="mt-1"><button data-mono="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.wegenMonsteren?'text-gray-500':'text-blue-700 dark:text-blue-400'}">${k.wegenMonsteren?'uitzetten':'aanvinken'}</button></div></td>
         <td class="px-3 py-2 text-center">${statusBadge(k)}<div class="mt-1"><button data-toggle="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.gefactureerd?'text-gray-500':'text-emerald-700 dark:text-emerald-400'}">${k.gefactureerd?'terugdraaien':'afvinken'}</button></div>${k.factuurdatum?`<div class="text-[11px] text-gray-500 mt-0.5">${k.factuurdatum}</div>`:''}</td>
-        <td class="px-3 py-2 text-xs text-gray-500">${k.dagStatus==='goedgekeurd'?'Goedgekeurd':k.dagStatus==='verwerkt'?'Verwerkt':'In afwachting'}</td>
+        <td class="px-3 py-2 text-xs text-gray-500">${k.dagStatus==='goedgekeurd'?'Goedgekeurd':k.dagStatus==='verwerkt'?'Verwerkt':'In afwachting'}<div><button data-del-klus="${k.id}" data-dag="${k.dagId}" class="text-xs text-red-500 hover:text-red-700 underline min-h-[40px]">Verwijder</button></div></td>
       </tr>`).join(''):'<tr><td colspan="12" class="px-3 py-8 text-center text-gray-400">Geen klussen in deze selectie</td></tr>'}</tbody>
     </table></div>
   </div>
@@ -946,6 +968,19 @@ function renderKlussenBeheer(){
     toast(rij&&rij.gefactureerd?'Teruggezet naar te factureren':'Afgevinkt als gefactureerd','success');
     renderKlussenBeheer();
   });
+  document.querySelectorAll('[data-del-klus]').forEach(b=>b.onclick=()=>{
+    const paren=[{dagId:b.dataset.dag,klusId:b.dataset.delKlus}];
+    if(!vraagVerwijderen(paren))return;
+    const r=verwijderKlussen(paren);klusSelectie.delete(b.dataset.delKlus);
+    toast(r.dagen?'Klus en werkdag verwijderd':'Klus verwijderd','success');renderKlussenBeheer();
+  });
+  $('btnKlusVerwijder').onclick=()=>{
+    if(!klusSelectie.size){toast('Vink eerst klussen aan in de lijst','info');return}
+    const paren=alle.filter(k=>klusSelectie.has(k.id)).map(k=>({dagId:k.dagId,klusId:k.id}));
+    if(!vraagVerwijderen(paren))return;
+    const r=verwijderKlussen(paren);klusSelectie=new Set();
+    toast(r.klussen+' klus'+(r.klussen!==1?'sen':'')+' verwijderd'+(r.dagen?' (en '+r.dagen+' werkdag'+(r.dagen>1?'en':'')+')':''),'success');renderKlussenBeheer();
+  };
   $('btnKlusBulk').onclick=()=>{
     if(!klusSelectie.size)return;
     const paren=rows.filter(k=>klusSelectie.has(k.id)&&!k.gefactureerd).map(k=>({dagId:k.dagId,klusId:k.id}));
