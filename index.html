@@ -1655,7 +1655,12 @@ function toonLogin(){
   scherm.classList.remove('hidden');
   scherm.style.display = 'block';
   scherm.innerHTML = `
-  <div class="min-h-screen flex items-center justify-center px-4 bg-gradient-to-b from-gray-100 to-white dark:from-gray-900 dark:to-gray-800">
+  <div class="min-h-screen md:grid md:grid-cols-2 bg-white dark:bg-gray-900">
+    <div class="relative h-56 md:h-auto md:min-h-screen overflow-hidden bg-gray-800">
+      <img src="login-vrachtwagen.jpg" alt="Vrachtwagen van Cas Wempe" class="absolute inset-0 w-full h-full object-cover object-[25%_70%]">
+      <div class="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent"></div>
+    </div>
+    <div class="flex items-center justify-center px-4 py-8 md:py-0 -mt-10 md:mt-0 relative">
     <div class="w-full max-w-sm">
       <div class="text-center mb-6">
         <img src="logo.png" alt="Cas Wempe Mesthandel en Transport" class="logo-img h-14 w-auto mx-auto mb-3">
@@ -1671,6 +1676,7 @@ function toonLogin(){
         <p id="lgFout" class="text-sm text-red-600 dark:text-red-400 mt-3 min-h-[20px]"></p>
       </form>
       <p class="text-xs text-gray-500 dark:text-gray-400 text-center mt-4" id="lgHint"></p>
+    </div>
     </div>
   </div>`;
   const hint = document.getElementById('lgHint');
