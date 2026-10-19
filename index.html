@@ -748,7 +748,7 @@ function matchesFilter(d,f){
 }
 
 // === BEHEER: KLUSSEN & FACTURATIE ===
-let klusFilter={periode:'maand',van:lokaalIso(new Date(new Date().getFullYear(),new Date().getMonth(),1)),tot:lokaalIso(new Date()),klant:'',dienst:'',werknemer:'',factuur:'',mono:''};
+let klusFilter={factuur:'open',periode:'maand',van:lokaalIso(new Date(new Date().getFullYear(),new Date().getMonth(),1)),tot:lokaalIso(new Date()),klant:'',dienst:'',werknemer:'',mono:''};
 let klusSelectie=new Set();
 
 // Alle klusregels uit alle dagstaten, platgeslagen tot losse regels
@@ -812,9 +812,11 @@ function renderKlussenBeheer(){
 
   const uren=rows.filter(k=>k.eenheid==='uur').reduce((a,k)=>a+(Number(k.aantal)||0),0);
   const monoAantal=rows.filter(k=>k.wegenMonsteren).length;
+  const basis=alle.filter(k=>klusMatch(k,{...klusFilter,factuur:''}));
+  const basisOpen=basis.filter(k=>!k.gefactureerd),basisKlaar=basis.filter(k=>k.gefactureerd);
   const open=rows.filter(k=>!k.gefactureerd);
-  const openBedrag=open.reduce((a,k)=>a+klusBedrag(k),0);
-  const klaarBedrag=rows.filter(k=>k.gefactureerd).reduce((a,k)=>a+klusBedrag(k),0);
+  const openBedrag=basisOpen.reduce((a,k)=>a+klusBedrag(k),0);
+  const klaarBedrag=basisKlaar.reduce((a,k)=>a+klusBedrag(k),0);
   const euro=n=>'€ '+n.toFixed(2).replace('.',',');
 
   const opt=(list,sel,leeg)=>`<option value="">${leeg}</option>`+list.map(x=>`<option value="${x.id}"${sel===x.id?' selected':''}>${esc(x.naam)}</option>`).join('');
@@ -841,20 +843,17 @@ function renderKlussenBeheer(){
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Klussen in filter</div><div class="text-2xl font-bold text-emerald-700 dark:text-emerald-400">${rows.length}</div></div>
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Uren in filter</div><div class="text-2xl font-bold text-blue-700 dark:text-blue-400">${fmtNum(uren)}</div></div>
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Nog te factureren</div><div class="text-2xl font-bold text-amber-600 dark:text-amber-400">${open.length}</div><div class="text-xs text-gray-500 mt-0.5">${euro(openBedrag)} indicatief</div></div>
-    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Gefactureerd</div><div class="text-2xl font-bold text-purple-700 dark:text-purple-400">${rows.length-open.length}</div><div class="text-xs text-gray-500 mt-0.5">${euro(klaarBedrag)} indicatief</div></div>
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Gefactureerd</div><div class="text-2xl font-bold text-purple-700 dark:text-purple-400">${basisKlaar.length}</div><div class="text-xs text-gray-500 mt-0.5">${euro(klaarBedrag)} indicatief</div></div>
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Wegen monsteren</div><div class="text-2xl font-bold text-blue-700 dark:text-blue-400">${monoAantal}</div><div class="text-xs text-gray-500 mt-0.5">van ${rows.length} klussen</div></div>
   </div>
 
+  <div class="flex flex-wrap gap-2 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">${[['open','Te factureren',basisOpen.length],['klaar','Gefactureerd',basisKlaar.length],['','Alles',basis.length]].map(([v,l,n])=>`<button class="klus-fac px-4 py-2 rounded-lg text-sm font-semibold min-h-[44px] ${klusFilter.factuur===v?'bg-emerald-600 text-white dark:text-black':'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}" data-fac="${v}">${l} (${n})</button>`).join('')}</div>
   <div class="flex flex-wrap gap-2 mb-2">${periodeKiezer('klus-filter',klusFilter)}</div>
   <div class="flex flex-wrap gap-2 mb-3">
     <select id="klFKlant" class="${SEL_S} bg-white dark:bg-gray-700">${opt(klanten,klusFilter.klant,'Alle klanten')}</select>
     <select id="klFDienst" class="${SEL_S} bg-white dark:bg-gray-700">${opt(diensten,klusFilter.dienst,'Alle diensten')}</select>
     <select id="klFWerknemer" class="${SEL_S} bg-white dark:bg-gray-700">${opt(werknemers,klusFilter.werknemer,'Alle medewerkers')}</select>
-    <select id="klFFactuur" class="${SEL_S} bg-white dark:bg-gray-700">
-      <option value=""${klusFilter.factuur===''?' selected':''}>Alle statussen</option>
-      <option value="open"${klusFilter.factuur==='open'?' selected':''}>Te factureren</option>
-      <option value="klaar"${klusFilter.factuur==='klaar'?' selected':''}>Gefactureerd</option>
-    </select>
+
     <select id="klFMono" class="${SEL_S} bg-white dark:bg-gray-700" aria-label="Wegen monsteren">
       <option value=""${klusFilter.mono===''?' selected':''}>Alle klussen</option>
       <option value="wel"${klusFilter.mono==='wel'?' selected':''}>Wel gemonsterd</option>
@@ -922,7 +921,7 @@ function renderKlussenBeheer(){
   $('klFKlant').onchange=e=>{klusFilter.klant=e.target.value;renderKlussenBeheer()};
   $('klFDienst').onchange=e=>{klusFilter.dienst=e.target.value;renderKlussenBeheer()};
   $('klFWerknemer').onchange=e=>{klusFilter.werknemer=e.target.value;renderKlussenBeheer()};
-  $('klFFactuur').onchange=e=>{klusFilter.factuur=e.target.value;renderKlussenBeheer()};
+  document.querySelectorAll('.klus-fac').forEach(b=>b.onclick=()=>{klusFilter.factuur=b.dataset.fac;renderKlussenBeheer()});
   $('klFMono').onchange=e=>{klusFilter.mono=e.target.value;renderKlussenBeheer()};
 
   // ---- selectie ----
