@@ -1,5 +1,5 @@
 // ============================================================================
-// /api/admin-users  —  Vercel serverless function
+// /api/admin-users  —  Vercel serverless function (dit bestand moet in de map api/ staan)
 // ============================================================================
 // Waarom deze functie nodig is:
 // Een account met wachtwoord aanmaken kan NIET vanuit de browser. Daarvoor is
@@ -116,10 +116,16 @@ module.exports = async (req, res) => {
       const uid = nieuw && (nieuw.id || (nieuw.user && nieuw.user.id));
       if (!uid) return stuur(500, { fout: 'Gebruiker aangemaakt maar geen id teruggekregen' });
 
-      await sb('/rest/v1/profiles', {
-        service: true, method: 'POST', prefer: 'resolution=merge-duplicates,return=representation',
-        body: { id: uid, gebruikersnaam, naam, rol, werknemer_id: werknemerId, actief: true }
-      });
+      try {
+        await sb('/rest/v1/profiles', {
+          service: true, method: 'POST', prefer: 'resolution=merge-duplicates,return=representation',
+          body: { id: uid, gebruikersnaam, naam, rol, werknemer_id: werknemerId, actief: true }
+        });
+      } catch (e) {
+        // Profiel mislukt: het net aangemaakte inlogaccount weer weghalen, anders blijft er een wees achter.
+        try { await sb('/auth/v1/admin/users/' + encodeURIComponent(uid), { service: true, method: 'DELETE' }) } catch (e2) {}
+        throw e;
+      }
       return stuur(200, { ok: true, id: uid });
     }
 
@@ -134,6 +140,7 @@ module.exports = async (req, res) => {
       const id = body.id;
       if (!id) return stuur(400, { fout: 'Geen account opgegeven' });
       const actief = body.actief !== false;
+      if (id === beller.id && !actief) return stuur(400, { fout: 'Je kunt je eigen account niet deactiveren' });
       await sb('/rest/v1/profiles?id=eq.' + encodeURIComponent(id), { service: true, method: 'PATCH', body: { actief } });
       return stuur(200, { ok: true, actief });
     }
