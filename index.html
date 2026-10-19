@@ -402,7 +402,7 @@ function renderInvoer(){
        <div>Netto uren: <strong class="text-emerald-700 dark:text-emerald-400">${fmtNum(netto)}u</strong></div>
        <div>Klussen (uren): <strong>${fmtNum(ksUren)}u</strong>${warn?' <span class="text-amber-600 dark:text-amber-400">Verschil!</span>':''}</div>`;
   };
-  function getKlussen(){return ds.klussen.map(k=>({...k, wegenMonsteren:($('wm_'+k.id)?$('wm_'+k.id).checked:!!k.wegenMonsteren), klantId:$('klant_'+k.id)?.value||k.klantId, dienstId:($('dienst_'+k.id)?$('dienst_'+k.id).value:'')||k.dienstId||(diensten[0]?diensten[0].id:''), kenteken:$('ket_'+k.id)?.value||k.kenteken, omschrijving:$('oms_'+k.id)?.value||k.omschrijving, aantal:+($('aant_'+k.id)?.value||k.aantal||1), eenheid:$('een_'+k.id)?.value||k.eenheid||'uur'}))}
+  function getKlussen(){return ds.klussen.map(k=>({...k, wegenMonsteren:($('wm_'+k.id)?$('wm_'+k.id).checked:!!k.wegenMonsteren), klantId:$('klant_'+k.id)?.value||k.klantId, dienstId:($('dienst_'+k.id)?$('dienst_'+k.id).value:'')||k.dienstId||(diensten[0]?diensten[0].id:''), kenteken:$('ket_'+k.id)?.value||k.kenteken, omschrijving:$('oms_'+k.id)?.value||k.omschrijving, aantal:+($('aant_'+k.id)?.value||k.aantal||1), eenheid:$('een_'+k.id)?.value||k.eenheid||'uur', startTijd:$('kbeg_'+k.id)?$('kbeg_'+k.id).value:(k.startTijd||''), eindTijd:$('keind_'+k.id)?$('keind_'+k.id).value:(k.eindTijd||'')}))}
   function klantZoek(q){
     const all=DB.list('klanten').filter(k=>k.actief!==false);
     const t=(q||'').trim().toLowerCase();
@@ -432,7 +432,10 @@ function renderInvoer(){
     </div>
     <div><label class="text-xs text-gray-500">Dienst</label><select id="dienst_${k.id}" class="${selCls}">${dOpt}</select></div>
     <div><label class="text-xs text-gray-500">Kenteken/Materieel</label><input id="ket_${k.id}" value="${esc(k.kenteken)}" list="ddKenteken" class="${selCls}"></div>
-    <div><label class="text-xs text-gray-500">Aantal</label><input id="aant_${k.id}" type="number" value="${k.aantal||1}" min="0.1" step="0.1" class="${selCls}"></div>
+    <div><label class="text-xs text-gray-500" for="kbeg_${k.id}">Start klus</label><input id="kbeg_${k.id}" type="time" value="${esc(k.startTijd||'')}" class="${selCls}"></div>
+    <div><label class="text-xs text-gray-500" for="keind_${k.id}">Eind klus</label><input id="keind_${k.id}" type="time" value="${esc(k.eindTijd||'')}" class="${selCls}"></div>
+    <div class="col-span-2 text-[11px] text-gray-500 dark:text-gray-400 -mt-1" id="khint_${k.id}">Vul start en eind in, dan wordt het aantal uren automatisch berekend.</div>
+    <div><label class="text-xs text-gray-500">Aantal</label><input id="aant_${k.id}" type="number" value="${k.aantal||1}" min="0.1" step="0.01" class="${selCls}"></div>
     <div><label class="text-xs text-gray-500">Eenheid</label><select id="een_${k.id}" class="${selCls}"><option value="uur"${k.eenheid==='uur'?' selected':''}>uur</option><option value="m3"${k.eenheid==='m3'?' selected':''}>m³</option><option value="ha"${k.eenheid==='ha'?' selected':''}>ha</option><option value="ritten"${k.eenheid==='ritten'?' selected':''}>ritten</option><option value="km"${k.eenheid==='km'?' selected':''}>km</option><option value="stukken"${k.eenheid==='stukken'?' selected':''}>stuks</option></select></div>
     <div class="col-span-2"><label class="text-xs text-gray-500">Omschrijving</label><textarea id="oms_${k.id}" rows="2" class="${selCls}">${esc(k.omschrijving)}</textarea></div>
     <div class="col-span-2 border-t border-gray-100 dark:border-gray-700 pt-2">
@@ -477,7 +480,19 @@ function renderInvoer(){
       });
     }
   }
-  $('main').oninput=e=>{if(['inDatum','inMedew','inStart','inEind','inPauze'].includes(e.target.id)){saveConcept();calcAndRender()}if(e.target.id.startsWith('klant_')||e.target.id.startsWith('dienst_')||e.target.id.startsWith('ket_')||e.target.id.startsWith('oms_')||e.target.id.startsWith('aant_')||e.target.id.startsWith('een_')){saveConcept();calcAndRender()}};
+  const naarMin=t=>{const [u,m]=String(t).split(':').map(Number);return u*60+m};
+  const klusTijdRekenen=kid=>{
+    const s=$('kbeg_'+kid),e=$('keind_'+kid),hint=$('khint_'+kid);if(!s||!e)return;
+    if(!s.value||!e.value){if(hint)hint.textContent='Vul start en eind in, dan wordt het aantal uren automatisch berekend.';return}
+    let m=naarMin(e.value)-naarMin(s.value);let nacht=false;
+    if(m<0){m+=1440;nacht=true}
+    if(m===0){if(hint)hint.textContent='Start en eind zijn gelijk.';return}
+    const uren=Math.round(m/60*100)/100;
+    $('aant_'+kid).value=uren;if($('een_'+kid))$('een_'+kid).value='uur';
+    if(hint)hint.textContent='Berekend: '+fmtNum(uren)+' uur ('+Math.floor(m/60)+' u '+String(m%60).padStart(2,'0')+' min)'+(nacht?', over middernacht':'');
+  };
+  $('main').oninput=e=>{if(e.target.id&&(e.target.id.startsWith('kbeg_')||e.target.id.startsWith('keind_'))){klusTijdRekenen(e.target.id.slice(e.target.id.indexOf('_')+1));saveConcept();calcAndRender();return}
+    if(['inDatum','inMedew','inStart','inEind','inPauze'].includes(e.target.id)){saveConcept();calcAndRender()}if(e.target.id.startsWith('klant_')||e.target.id.startsWith('dienst_')||e.target.id.startsWith('ket_')||e.target.id.startsWith('oms_')||e.target.id.startsWith('aant_')||e.target.id.startsWith('een_')){saveConcept();calcAndRender()}};
   $('main').onchange=async e=>{
     if(e.target.id&&e.target.id.startsWith('foto_')){
       const kid=e.target.id.slice(5),f=e.target.files&&e.target.files[0];if(!f)return;
@@ -519,6 +534,10 @@ function renderInvoer(){
       if(nettoDag>14)waarsch.push('Je werkdag is '+nettoDag.toFixed(1)+' uur netto. Dat is erg lang.');
       if(calcBruto(st,et)>6&&pauze===0)waarsch.push('Je hebt geen pauze ingevuld bij een dag van meer dan 6 uur.');
       if(klussen.some(k=>!(Number(k.aantal)>0)))waarsch.push('Bij een klus staat geen aantal ingevuld (of 0).');
+      const metTijd=klussen.filter(k=>k.startTijd&&k.eindTijd);
+      if(metTijd.some(k=>k.startTijd<st||k.eindTijd>et))waarsch.push('Een klus valt (deels) buiten je werkdag ('+st+' - '+et+').');
+      const gesorteerd=metTijd.filter(k=>k.startTijd<k.eindTijd).sort((a,b)=>a.startTijd<b.startTijd?-1:1);
+      if(gesorteerd.some((k,i)=>i>0&&k.startTijd<gesorteerd[i-1].eindTijd))waarsch.push('Twee klussen overlappen elkaar in tijd.');
       if(klussen.every(k=>(k.eenheid||'uur')==='uur')){const som=klussen.reduce((s,k)=>s+(Number(k.aantal)||0),0);if(Math.abs(som-nettoDag)>0.5)waarsch.push('Je klussen tellen op tot '+som.toFixed(1)+' uur, maar je werkdag is '+nettoDag.toFixed(1)+' uur netto.')}
       if(waarsch.length&&!confirm('Controleer even:\n\n- '+waarsch.join('\n- ')+'\n\nToch opslaan?'))return;
       if(ds.editId){
@@ -582,7 +601,7 @@ function renderDagKaart(d){
   return`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="flex justify-between items-center"><div><span class="font-semibold">${esc(d.medewerkerNaam)}</span> <span class="text-gray-400 text-sm">${d.datum}</span></div><span class="badge ${badgeClass}">${statusLabel}</span></div>
   <div class="mt-2 text-sm text-gray-600 dark:text-gray-300">${d.startTime} – ${d.endTime} · pauze ${d.pauzeMin}m · <strong>${fmtNum(d.nettoUren)}u netto</strong> · ${totalKlussen} klus${totalKlussen!==1?'sen':''}</div>
   <div class="flex items-center gap-4 mt-1"><button class="muToggle text-xs text-emerald-600 dark:text-emerald-400 font-medium min-h-[44px]" data-dag-id="${d.id}">Bekijk details</button>${isMedewerker()?(d.status==='verwerkt'?'<span class="text-xs text-gray-400">Verwerkt, niet meer te wijzigen</span>':`<button class="muEdit text-xs text-blue-600 dark:text-blue-400 font-medium min-h-[44px]" data-wijzig-id="${d.id}">Wijzigen</button>`):''}</div>
-  <div id="muDet_${d.id}" class="hidden mt-3 space-y-2 border-t border-gray-100 dark:border-gray-700 pt-3">${d.klussen.map(k=>{const kd=DB.get('klanten',k.klantId);const dd=DB.get('diensten',k.dienstId);return`<div class="text-sm bg-gray-50 dark:bg-gray-700 rounded-lg p-2"><div class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekend'}</div>${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500 dark:text-gray-400">${esc(klantAdres(kd))}</div>`:''}<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">${dd?esc(dd.naam):'Onbekend'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')} · ${k.aantal} ${esc(k.eenheid||'uur')}</div>${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">Wegen monsteren</span></div>':''}${fotoKnop(k)?'<div class="mt-1">'+fotoKnop(k)+'</div>':''}</div>`}).join('')}</div></div>`;
+  <div id="muDet_${d.id}" class="hidden mt-3 space-y-2 border-t border-gray-100 dark:border-gray-700 pt-3">${d.klussen.map(k=>{const kd=DB.get('klanten',k.klantId);const dd=DB.get('diensten',k.dienstId);return`<div class="text-sm bg-gray-50 dark:bg-gray-700 rounded-lg p-2"><div class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekend'}</div>${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500 dark:text-gray-400">${esc(klantAdres(kd))}</div>`:''}<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">${dd?esc(dd.naam):'Onbekend'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')} · ${k.startTijd&&k.eindTijd?esc(k.startTijd)+'-'+esc(k.eindTijd)+' · ':''}${k.aantal} ${esc(k.eenheid||'uur')}</div>${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">Wegen monsteren</span></div>':''}${fotoKnop(k)?'<div class="mt-1">'+fotoKnop(k)+'</div>':''}</div>`}).join('')}</div></div>`;
 }
 
 // === BEHEER: DASHBOARD ===
@@ -596,7 +615,7 @@ function renderDashRows(dagen){
     const detail=klussen.length?klussen.map(k=>{
       const kd=DB.get('klanten',k.klantId),dd=DB.get('diensten',k.dienstId);
       return `<div class="text-sm bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-2 mb-1">
-        <div class="flex justify-between gap-2"><span class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekende klant'}</span><span class="text-xs text-gray-500 whitespace-nowrap">${k.aantal} ${esc(k.eenheid||'uur')}</span></div>
+        <div class="flex justify-between gap-2"><span class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekende klant'}</span><span class="text-xs text-gray-500 whitespace-nowrap">${k.startTijd&&k.eindTijd?esc(k.startTijd)+'-'+esc(k.eindTijd)+' · ':''}${k.aantal} ${esc(k.eenheid||'uur')}</span></div>
         ${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500">${esc(klantAdres(kd))}</div>`:''}
         <div class="text-xs text-gray-500 mt-0.5">${dd?esc(dd.naam):'—'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')}</div>
         ${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">Wegen monsteren</span></div>':''}
@@ -869,7 +888,7 @@ function renderKlussenBeheer(){
         <td class="px-3 py-2">${k.dienst?esc(k.dienst.naam):'—'}</td>
         <td class="px-3 py-2">${esc(k.kenteken||'—')}</td>
         <td class="px-3 py-2 max-w-[220px]">${esc(k.omschrijving||'—')}${fotoKnop(k)?'<div>'+fotoKnop(k)+'</div>':''}</td>
-        <td class="px-3 py-2 text-right whitespace-nowrap">${k.aantal} ${esc(k.eenheid||'uur')}</td>
+        <td class="px-3 py-2 text-right whitespace-nowrap">${k.aantal} ${esc(k.eenheid||'uur')}${k.startTijd&&k.eindTijd?'<div class="text-xs text-gray-500">'+esc(k.startTijd)+'-'+esc(k.eindTijd)+'</div>':''}</td>
         <td class="px-3 py-2 text-right whitespace-nowrap">${klusBedrag(k)?euro(klusBedrag(k)):'—'}</td>
         <td class="px-3 py-2 text-center">${k.wegenMonsteren?'<span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium text-xs">Ja</span>':'<span class="text-xs text-gray-400">Nee</span>'}<div class="mt-1"><button data-mono="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.wegenMonsteren?'text-gray-500':'text-blue-700 dark:text-blue-400'}">${k.wegenMonsteren?'uitzetten':'aanvinken'}</button></div></td>
         <td class="px-3 py-2 text-center">${statusBadge(k)}<div class="mt-1"><button data-toggle="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.gefactureerd?'text-gray-500':'text-emerald-700 dark:text-emerald-400'}">${k.gefactureerd?'terugdraaien':'afvinken'}</button></div>${k.factuurdatum?`<div class="text-[11px] text-gray-500 mt-0.5">${k.factuurdatum}</div>`:''}</td>
