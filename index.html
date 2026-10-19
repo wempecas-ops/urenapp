@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Urenregistratie Transport & Loon</title>
+<title>Wempe op Pad</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>tailwind.config={darkMode:'class'}</script>
 <style>
@@ -30,7 +30,7 @@ input,select,textarea{min-height:48px;font-size:16px}
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen flex flex-col">
 <header class="bg-white dark:bg-gray-800 shadow-sm px-4 py-3 flex items-center justify-between sticky top-0 z-20">
-<h1 class="text-lg font-bold text-emerald-700 dark:text-emerald-400">UrenApp</h1>
+<h1 class="text-lg font-bold text-emerald-700 dark:text-emerald-400">Wempe op Pad</h1>
 <div class="flex items-center gap-3">
 <select id="modeToggle" class="text-sm border rounded-lg px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600" aria-label="Modus">
 <option value="medewerker">Medewerker</option>
@@ -1265,8 +1265,8 @@ function toonLogin(){
     <div class="w-full max-w-sm">
       <div class="text-center mb-6">
         
-        <h1 class="text-2xl font-bold text-emerald-700 dark:text-emerald-400">UrenApp</h1>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Transport &amp; Loonbedrijf</p>
+        <h1 class="text-2xl font-bold text-emerald-700 dark:text-emerald-400">Wempe op Pad</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Cas Wempe Mesthandel en Transport</p>
       </div>
       <form id="loginForm" class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-100 dark:border-gray-700">
         <label for="lgGebruiker" class="block text-sm font-medium mb-1">Gebruikersnaam</label>
@@ -1537,7 +1537,7 @@ function switchTab(tab){
 // === PWA ===
 function initPWA(){
   try{
-    const manifest={name:'Urenregistratie Transport & Loon',short_name:'UrenApp',start_url:'.',display:'standalone',theme_color:'#059669',background_color:'#ffffff',icons:[{src:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="#059669"/><circle cx="50" cy="52" r="22" fill="none" stroke="white" stroke-width="5"/><line x1="50" y1="52" x2="50" y2="38" stroke="white" stroke-width="5"/><line x1="50" y1="52" x2="62" y2="57" stroke="white" stroke-width="5"/></svg>')}],type:'image/svg+xml'};
+    const manifest={name:'Wempe op Pad',short_name:'Wempe op Pad',start_url:'.',display:'standalone',theme_color:'#059669',background_color:'#ffffff',icons:[{src:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="#059669"/><circle cx="50" cy="52" r="22" fill="none" stroke="white" stroke-width="5"/><line x1="50" y1="52" x2="50" y2="38" stroke="white" stroke-width="5"/><line x1="50" y1="52" x2="62" y2="57" stroke="white" stroke-width="5"/></svg>')}],type:'image/svg+xml'};
     const blob=new Blob([JSON.stringify(manifest)],{type:'application/json'});
     const link=document.createElement('link');link.rel='manifest';link.href=URL.createObjectURL(blob);document.head.appendChild(link);
     // Service worker
@@ -1565,7 +1565,7 @@ function startApp(){
 }
 function toonSetupNodig(){
   const s=$('loginScreen');s.classList.remove('hidden');s.style.display='block';
-  s.innerHTML='<div class="min-h-screen flex items-center justify-center px-4"><div class="max-w-sm text-center"><h1 class="text-xl font-bold mb-2">UrenApp is nog niet gekoppeld</h1><p class="text-sm text-gray-600 dark:text-gray-300">De koppeling met de database is nog niet ingesteld. Neem contact op met de beheerder.</p></div></div>';
+  s.innerHTML='<div class="min-h-screen flex items-center justify-center px-4"><div class="max-w-sm text-center"><h1 class="text-xl font-bold mb-2">Wempe op Pad is nog niet gekoppeld</h1><p class="text-sm text-gray-600 dark:text-gray-300">De koppeling met de database is nog niet ingesteld. Neem contact op met de beheerder.</p></div></div>';
 }
 function init(){
   if(CONFIG.MODE==='local'&&!['localhost','127.0.0.1',''].includes(location.hostname)){ toonSetupNodig(); return }
