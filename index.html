@@ -30,13 +30,13 @@ input,select,textarea{min-height:48px;font-size:16px}
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen flex flex-col">
 <header class="bg-white dark:bg-gray-800 shadow-sm px-4 py-3 flex items-center justify-between sticky top-0 z-20">
-<h1 class="text-lg font-bold text-emerald-700 dark:text-emerald-400">⏱ UrenApp</h1>
+<h1 class="text-lg font-bold text-emerald-700 dark:text-emerald-400">UrenApp</h1>
 <div class="flex items-center gap-3">
 <select id="modeToggle" class="text-sm border rounded-lg px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600" aria-label="Modus">
 <option value="medewerker">Medewerker</option>
 <option value="beheer">Beheer</option>
 </select>
-<button id="darkToggle" class="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Donker licht">🌙</button>
+<button id="darkToggle" class="px-3 h-10 text-sm flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Wissel tussen donker en licht">Donker</button>
 <span id="userChip" class="hidden md:inline text-xs text-gray-500 dark:text-gray-400"></span>
 <button id="logoutBtn" class="text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 min-h-[44px]" aria-label="Uitloggen">Uitloggen</button>
 </div>
@@ -52,8 +52,8 @@ input,select,textarea{min-height:48px;font-size:16px}
 </nav>
 <main id="main" class="flex-1 p-4 max-w-4xl mx-auto w-full pb-20"></main>
 <nav id="bottomNav" class="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-around py-2 z-20 md:hidden">
-<button class="flex flex-col items-center text-xs py-1 px-3 text-emerald-700 dark:text-emerald-400" data-view="invoer">📝 Invoer</button>
-<button class="flex flex-col items-center text-xs py-1 px-3 text-gray-500 dark:text-gray-400" data-view="mijnuren">📋 Mijn uren</button>
+<button class="flex flex-col items-center text-xs py-1 px-3 text-emerald-700 dark:text-emerald-400" data-view="invoer">Invoer</button>
+<button class="flex flex-col items-center text-xs py-1 px-3 text-gray-500 dark:text-gray-400" data-view="mijnuren">Mijn uren</button>
 </nav>
 <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 items-center pointer-events-none"></div>
 <div id="loginScreen" class="fixed inset-0 z-40 bg-white dark:bg-gray-900 overflow-auto"></div>
@@ -256,11 +256,11 @@ function toast(msg,type='info'){
 function initDarkMode(){
   const dark=localStorage.getItem('uren_dark')==='1';
   if(dark)document.documentElement.classList.add('dark');
-  $('darkToggle').textContent=dark?'☀️':'🌙';
+  $('darkToggle').textContent=dark?'Licht':'Donker';
   $('darkToggle').onclick=()=>{
     const isDark=document.documentElement.classList.toggle('dark');
     localStorage.setItem('uren_dark',isDark?'1':'0');
-    $('darkToggle').textContent=isDark?'☀️':'🌙';
+    $('darkToggle').textContent=isDark?'Licht':'Donker';
     renderCurrentView();
   };
 }
@@ -295,7 +295,7 @@ function renderInvoer(){
   const warn=ds.klussen.length>0&&Math.abs(netto-klusSum)>0.5;
   $("main").innerHTML=`
   <div class="max-w-lg mx-auto">
-    <h2 class="text-xl font-bold mb-4 text-emerald-700 dark:text-emerald-400">${bewerken?'✏️ Werkdag wijzigen':'📝 Werkdag invullen'}</h2>
+    <h2 class="text-xl font-bold mb-4 text-emerald-700 dark:text-emerald-400">${bewerken?'Werkdag wijzigen':'Werkdag invullen'}</h2>
     ${bewerken?'<div class="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-sm text-amber-900 dark:text-amber-100">Je wijzigt een eerder ingevulde werkdag. Na het opslaan moet de beheerder hem opnieuw goedkeuren. <button type="button" id="btnAnnuleerWijzig" class="underline font-medium ml-1">Annuleren</button></div>':''}
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-5 space-y-4 mb-4">
       <div><label class="block text-sm font-medium mb-1" for="inDatum">Datum</label><input id="inDatum" type="date" value="${ds.datum}" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div>
@@ -312,7 +312,7 @@ function renderInvoer(){
       <div id="calcInfo" class="bg-gray-50 dark:bg-gray-700 rounded-xl p-3 text-sm space-y-1" aria-live="polite">
         <div>Bruto duur: <strong>${fmtNum(bruto)}u</strong></div>
         <div>Netto uren: <strong class="text-emerald-700 dark:text-emerald-400">${fmtNum(netto)}u</strong></div>
-        <div>Klussen (uren): <strong>${fmtNum(klusSum)}u</strong>${warn?' <span class="text-amber-600 dark:text-amber-400">⚠ Verschil!</span>':''}</div>
+        <div>Klussen (uren): <strong>${fmtNum(klusSum)}u</strong>${warn?' <span class="text-amber-600 dark:text-amber-400">Verschil!</span>':''}</div>
       </div>
     </div>
     <h3 class="font-semibold mb-2">Klussen</h3>
@@ -339,7 +339,7 @@ function renderInvoer(){
     const info=$('calcInfo');if(info)info.innerHTML=
       `<div>Bruto duur: <strong>${fmtNum(bruto)}u</strong></div>
        <div>Netto uren: <strong class="text-emerald-700 dark:text-emerald-400">${fmtNum(netto)}u</strong></div>
-       <div>Klussen (uren): <strong>${fmtNum(ksUren)}u</strong>${warn?' <span class="text-amber-600 dark:text-amber-400">⚠ Verschil!</span>':''}</div>`;
+       <div>Klussen (uren): <strong>${fmtNum(ksUren)}u</strong>${warn?' <span class="text-amber-600 dark:text-amber-400">Verschil!</span>':''}</div>`;
   };
   function getKlussen(){return ds.klussen.map(k=>({...k, wegenMonsteren:($('wm_'+k.id)?$('wm_'+k.id).checked:!!k.wegenMonsteren), klantId:$('klant_'+k.id)?.value||k.klantId, dienstId:($('dienst_'+k.id)?$('dienst_'+k.id).value:'')||k.dienstId||(diensten[0]?diensten[0].id:''), kenteken:$('ket_'+k.id)?.value||k.kenteken, omschrijving:$('oms_'+k.id)?.value||k.omschrijving, aantal:+($('aant_'+k.id)?.value||k.aantal||1), eenheid:$('een_'+k.id)?.value||k.eenheid||'uur'}))}
   function klantZoek(q){
@@ -352,7 +352,7 @@ function renderInvoer(){
     const box=$('kres_'+kid);if(!box)return;
     const q=$('kzoek_'+kid)?$('kzoek_'+kid).value:'';
     const list=klantZoek(q);
-    box.innerHTML=list.length?list.map(k=>`<button type="button" data-pick="${k.id}" class="w-full text-left px-3 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0 hover:bg-emerald-50 dark:hover:bg-gray-600 min-h-[48px]"><div class="font-medium text-sm text-gray-800 dark:text-gray-100">${esc(k.naam)}</div><div class="text-xs text-gray-500 dark:text-gray-400">📍 ${esc(klantAdres(k)||'Geen adres bekend')}${k.contact?' · '+esc(k.contact):''}</div></button>`).join(''):`<div class="p-3 text-sm text-gray-500">Geen klant gevonden voor &ldquo;${esc(q)}&rdquo;</div>`;
+    box.innerHTML=list.length?list.map(k=>`<button type="button" data-pick="${k.id}" class="w-full text-left px-3 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0 hover:bg-emerald-50 dark:hover:bg-gray-600 min-h-[48px]"><div class="font-medium text-sm text-gray-800 dark:text-gray-100">${esc(k.naam)}</div><div class="text-xs text-gray-500 dark:text-gray-400">${esc(klantAdres(k)||'Geen adres bekend')}${k.contact?' · '+esc(k.contact):''}</div></button>`).join(''):`<div class="p-3 text-sm text-gray-500">Geen klant gevonden voor &ldquo;${esc(q)}&rdquo;</div>`;
     box.classList.remove('hidden');
   }
   function renderKlussen(){
@@ -361,13 +361,13 @@ function renderInvoer(){
     const selCls='w-full border rounded-lg px-2 py-2 bg-white dark:bg-gray-700 dark:border-gray-600 text-sm min-h-[48px]';
     c.innerHTML=ks.map((k,i)=>{
       const kd=DB.get('klanten',k.klantId);
-      return `<div class="klus-card"><div class="flex justify-between items-start mb-2"><span class="text-xs font-semibold text-gray-400">Klus ${i+1}</span><button data-remove-klus="${k.id}" class="text-red-500 hover:text-red-700 text-sm px-2 min-h-[48px]" aria-label="Verwijder klus">✕</button></div>
+      return `<div class="klus-card"><div class="flex justify-between items-start mb-2"><span class="text-xs font-semibold text-gray-400">Klus ${i+1}</span><button data-remove-klus="${k.id}" class="text-red-500 hover:text-red-700 text-sm px-2 min-h-[48px]" aria-label="Verwijder klus">Verwijder</button></div>
     <div class="grid grid-cols-2 gap-2">
     <div class="col-span-2 relative"><label for="kzoek_${k.id}" class="text-xs text-gray-500">Klant/Opdrachtgever</label>
       <input id="kzoek_${k.id}" type="text" autocomplete="off" placeholder="Zoek op naam, plaats of adres…" value="${esc(kd?kd.naam:'')}" class="${selCls}" role="combobox" aria-expanded="false" aria-controls="kres_${k.id}">
       <input id="klant_${k.id}" type="hidden" value="${esc(k.klantId||'')}">
       <div id="kres_${k.id}" class="hidden absolute left-0 right-0 mt-1 max-h-60 overflow-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-20" role="listbox"></div>
-      <div id="kadres_${k.id}" class="text-[11px] text-gray-500 dark:text-gray-400 mt-1">${kd?'📍 '+esc(klantAdres(kd)||'Geen adres bekend'):'Nog geen klant gekozen'}</div>
+      <div id="kadres_${k.id}" class="text-[11px] text-gray-500 dark:text-gray-400 mt-1">${kd?''+esc(klantAdres(kd)||'Geen adres bekend'):'Nog geen klant gekozen'}</div>
     </div>
     <div><label class="text-xs text-gray-500">Dienst</label><select id="dienst_${k.id}" class="${selCls}">${dOpt}</select></div>
     <div><label class="text-xs text-gray-500">Kenteken/Materieel</label><input id="ket_${k.id}" value="${esc(k.kenteken)}" list="ddKenteken" class="${selCls}"></div>
@@ -377,7 +377,7 @@ function renderInvoer(){
     <div class="col-span-2 border-t border-gray-100 dark:border-gray-700 pt-2">
       <label for="wm_${k.id}" class="flex items-center gap-3 min-h-[48px] cursor-pointer select-none">
         <input type="checkbox" id="wm_${k.id}" ${k.wegenMonsteren?'checked':''} class="w-6 h-6 accent-blue-600 shrink-0">
-        <span class="text-sm font-medium text-gray-800 dark:text-gray-100">⚖ Wegen monsteren</span>
+        <span class="text-sm font-medium text-gray-800 dark:text-gray-100">Wegen monsteren</span>
       </label>
       <p class="text-[11px] text-gray-500 dark:text-gray-400 -mt-1 ml-9">Aanvinken als deze klus gewogen en/of bemonsterd is. Zo zie je later per klus of het gebeurd is.</p>
     </div></div></div>`}).join('');
@@ -385,7 +385,7 @@ function renderInvoer(){
       const du=$('dienst_'+k.id);if(du)du.value=k.dienstId;
       const hi=$('klant_'+k.id),zo=$('kzoek_'+k.id),ad=$('kadres_'+k.id),bx=$('kres_'+k.id);
       if(!zo)return;
-      const toonAdres=id=>{const kk=DB.get('klanten',id);ad.textContent=kk?'📍 '+(klantAdres(kk)||'Geen adres bekend'):'Nog geen klant gekozen'};
+      const toonAdres=id=>{const kk=DB.get('klanten',id);ad.textContent=kk?''+(klantAdres(kk)||'Geen adres bekend'):'Nog geen klant gekozen'};
       zo.oninput=()=>{
         const t=zo.value.trim().toLowerCase();
         const exact=DB.list('klanten').find(x=>x.naam.toLowerCase()===t);
@@ -435,14 +435,14 @@ function renderInvoer(){
         if(oud.status==='goedgekeurd'&&!confirm('Deze werkdag was al goedgekeurd. Na je wijziging moet de beheerder hem opnieuw goedkeuren. Doorgaan?'))return;
         DB.update('dagstaten',ds.editId,{...oud,datum,startTime:st,endTime:et,pauzeMin:pauze,nettoUren:+nettoDag.toFixed(1),status:'in_afwachting',klussen:klussen.map(k=>({...k}))});
         localStorage.removeItem('uren_concept');
-        toast('Wijziging opgeslagen ✅','success');
+        toast('Wijziging opgeslagen','success');
         gaNaarMijnUren();
         return;
       }
       const dag={id:uid(),medewerkerId:wId,medewerkerNaam:w.naam,datum,startTime:st,endTime:et,pauzeMin:pauze,nettoUren:+nettoDag.toFixed(1),status:'in_afwachting',klussen:klussen.map(k=>({...k,gefactureerd:false,factuurdatum:''}))};
       DB.insert('dagstaten',dag);
       localStorage.removeItem('uren_concept');
-      toast('Werkdag ingediend! ✅','success');
+      toast('Werkdag ingediend!','success');
       renderInvoer();
     }
   };
@@ -468,13 +468,13 @@ function renderMijnUren(){
   const filtered=wId?dagstaten.filter(d=>d.medewerkerId===wId).sort((a,b)=>b.datum.localeCompare(a.datum)):[];
   $("main").innerHTML=`
   <div class="max-w-lg mx-auto">
-    <h2 class="text-xl font-bold mb-4 text-emerald-700 dark:text-emerald-400">📋 Mijn uren</h2>
+    <h2 class="text-xl font-bold mb-4 text-emerald-700 dark:text-emerald-400">Mijn uren</h2>
     <div class="mb-4"><label class="block text-sm font-medium mb-1">Medewerker</label><select id="muWerknemer" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700">${wOpt}</select></div>
     <div class="space-y-3" id="muLijst">${filtered.length?filtered.map(d=>renderDagKaart(d)).join(''):'<p class="text-gray-400 text-center py-8">Nog geen dagstaten</p>'}</div>
   </div>`;
   $('muLijst').onclick=e=>{
     const t=e.target.closest('button');if(!t)return;
-    if(t.classList.contains('muToggle')){const det=$('muDet_'+t.dataset.dagId);if(det){const dicht=det.classList.toggle('hidden');t.textContent=dicht?'▶ Bekijk details':'▼ Verberg details'}}
+    if(t.classList.contains('muToggle')){const det=$('muDet_'+t.dataset.dagId);if(det){const dicht=det.classList.toggle('hidden');t.textContent=dicht?'Bekijk details':'Verberg details'}}
     else if(t.dataset.wijzigId){wijzigDagstaat(t.dataset.wijzigId)}
   };
   $('muWerknemer').onchange=()=>{const w=$('muWerknemer').value;const fd=w?dagstaten.filter(d=>d.medewerkerId===w).sort((a,b)=>b.datum.localeCompare(a.datum)):[];$('muLijst').innerHTML=fd.length?fd.map(d=>renderDagKaart(d)).join(''):'<p class="text-gray-400 text-center py-8">Nog geen dagstaten</p>'};
@@ -485,8 +485,8 @@ function renderDagKaart(d){
   const statusLabel=d.status==='in_afwachting'?'In afwachting':d.status==='goedgekeurd'?'Goedgekeurd':'Verwerkt';
   return`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="flex justify-between items-center"><div><span class="font-semibold">${esc(d.medewerkerNaam)}</span> <span class="text-gray-400 text-sm">${d.datum}</span></div><span class="badge ${badgeClass}">${statusLabel}</span></div>
   <div class="mt-2 text-sm text-gray-600 dark:text-gray-300">${d.startTime} – ${d.endTime} · pauze ${d.pauzeMin}m · <strong>${fmtNum(d.nettoUren)}u netto</strong> · ${totalKlussen} klus${totalKlussen!==1?'sen':''}</div>
-  <div class="flex items-center gap-4 mt-1"><button class="muToggle text-xs text-emerald-600 dark:text-emerald-400 font-medium min-h-[44px]" data-dag-id="${d.id}">▶ Bekijk details</button>${isMedewerker()?(d.status==='verwerkt'?'<span class="text-xs text-gray-400">Verwerkt, niet meer te wijzigen</span>':`<button class="muEdit text-xs text-blue-600 dark:text-blue-400 font-medium min-h-[44px]" data-wijzig-id="${d.id}">✏️ Wijzigen</button>`):''}</div>
-  <div id="muDet_${d.id}" class="hidden mt-3 space-y-2 border-t border-gray-100 dark:border-gray-700 pt-3">${d.klussen.map(k=>{const kd=DB.get('klanten',k.klantId);const dd=DB.get('diensten',k.dienstId);return`<div class="text-sm bg-gray-50 dark:bg-gray-700 rounded-lg p-2"><div class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekend'}</div>${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500 dark:text-gray-400">📍 ${esc(klantAdres(kd))}</div>`:''}<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">${dd?esc(dd.naam):'Onbekend'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')} · ${k.aantal} ${esc(k.eenheid||'uur')}</div>${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">⚖ Wegen monsteren</span></div>':''}</div>`}).join('')}</div></div>`;
+  <div class="flex items-center gap-4 mt-1"><button class="muToggle text-xs text-emerald-600 dark:text-emerald-400 font-medium min-h-[44px]" data-dag-id="${d.id}">Bekijk details</button>${isMedewerker()?(d.status==='verwerkt'?'<span class="text-xs text-gray-400">Verwerkt, niet meer te wijzigen</span>':`<button class="muEdit text-xs text-blue-600 dark:text-blue-400 font-medium min-h-[44px]" data-wijzig-id="${d.id}">Wijzigen</button>`):''}</div>
+  <div id="muDet_${d.id}" class="hidden mt-3 space-y-2 border-t border-gray-100 dark:border-gray-700 pt-3">${d.klussen.map(k=>{const kd=DB.get('klanten',k.klantId);const dd=DB.get('diensten',k.dienstId);return`<div class="text-sm bg-gray-50 dark:bg-gray-700 rounded-lg p-2"><div class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekend'}</div>${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500 dark:text-gray-400">${esc(klantAdres(kd))}</div>`:''}<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">${dd?esc(dd.naam):'Onbekend'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')} · ${k.aantal} ${esc(k.eenheid||'uur')}</div>${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">Wegen monsteren</span></div>':''}</div>`}).join('')}</div></div>`;
 }
 
 // === BEHEER: DASHBOARD ===
@@ -501,21 +501,21 @@ function renderDashRows(dagen){
       const kd=DB.get('klanten',k.klantId),dd=DB.get('diensten',k.dienstId);
       return `<div class="text-sm bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-2 mb-1">
         <div class="flex justify-between gap-2"><span class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekende klant'}</span><span class="text-xs text-gray-500 whitespace-nowrap">${k.aantal} ${esc(k.eenheid||'uur')}</span></div>
-        ${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500">📍 ${esc(klantAdres(kd))}</div>`:''}
+        ${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500">${esc(klantAdres(kd))}</div>`:''}
         <div class="text-xs text-gray-500 mt-0.5">${dd?esc(dd.naam):'—'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')}</div>
-        ${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">⚖ Wegen monsteren</span></div>':''}
+        ${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">Wegen monsteren</span></div>':''}
       </div>`}).join(''):'<div class="text-sm text-gray-400">Geen klussen bij deze dagstaat</div>';
     return`<tr class="border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
-    <td class="px-2 py-2 text-center"><button data-uitklap="${d.id}" class="text-gray-400 hover:text-emerald-600 px-1 min-h-[48px]" aria-label="Toon klussen" aria-expanded="false">▸</button></td>
+    <td class="px-2 py-2 text-center"><button data-uitklap="${d.id}" class="text-gray-400 hover:text-emerald-600 px-1 min-h-[48px]" aria-label="Toon klussen" aria-expanded="false">Toon</button></td>
     <td class="px-3 py-2">${esc(d.medewerkerNaam)}</td><td class="px-3 py-2">${d.datum}</td><td class="px-3 py-2 text-center">${d.startTime}</td><td class="px-3 py-2 text-center">${d.endTime}</td>
     <td class="px-3 py-2 text-center">${d.pauzeMin}m</td><td class="px-3 py-2 text-center font-semibold">${fmtNum(d.nettoUren)}u</td>
-    <td class="px-3 py-2 text-center whitespace-nowrap">${klussen.length}${mono?` <span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-xs font-medium">⚖ ${mono}</span>`:''}</td>
+    <td class="px-3 py-2 text-center whitespace-nowrap">${klussen.length}${mono?` <span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-xs font-medium">Monsteren: ${mono}</span>`:''}</td>
     <td class="px-3 py-2 text-center"><span class="badge ${badgeClass}">${label}</span></td>
     <td class="px-3 py-2"><select data-dag-status="${d.id}" class="text-xs border rounded px-1 py-1 bg-white dark:bg-gray-700 dark:border-gray-600">
     <option value="in_afwachting"${d.status==='in_afwachting'?' selected':''}>In afwachting</option>
     <option value="goedgekeurd"${d.status==='goedgekeurd'?' selected':''}>Goedgekeurd</option>
     <option value="verwerkt"${d.status==='verwerkt'?' selected':''}>Verwerkt</option>
-    </select> <button data-del-dag="${d.id}" class="text-red-500 hover:text-red-700 text-xs px-1 min-h-[48px]" aria-label="Verwijder">🗑</button></td></tr>
+    </select> <button data-del-dag="${d.id}" class="text-red-500 hover:text-red-700 text-xs px-1 min-h-[48px]" aria-label="Verwijder">Verwijder</button></td></tr>
     <tr id="dashDet_${d.id}" class="hidden"><td colspan="10" class="bg-gray-50 dark:bg-gray-900/40 px-3 py-3">${detail}</td></tr>`}).join('');
 }
 // === BEHEER: DASHBOARD ===
@@ -540,13 +540,13 @@ function renderDashboard(){
   const kaart=(titel,waarde,kleur,extra)=>`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">${titel}</div><div class="text-2xl font-bold ${kleur}">${waarde}</div>${extra?`<div class="text-xs text-gray-500 mt-0.5">${extra}</div>`:''}</div>`;
   $("main").innerHTML=`
   <div class="max-w-4xl mx-auto">
-    <h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">📊 Dashboard</h2>
+    <h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">Dashboard</h2>
     <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">De tellers en de tabel gaan allebei over de gekozen selectie hieronder.</p>
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
       ${kaart('Dagstaten',gef.length,'text-emerald-700 dark:text-emerald-400',filterActief?`van ${totaalAlle} in totaal`:'')}
       ${kaart('Totaal netto uren',fmtNum(totalNetto),'text-blue-700 dark:text-blue-400','')}
       ${kaart('In afwachting',inAfwachting,'text-amber-600 dark:text-amber-400','')}
-      ${kaart('⚖ Wegen monsteren',alleMono,'text-purple-700 dark:text-purple-400','klussen in selectie')}
+      ${kaart('Wegen monsteren',alleMono,'text-purple-700 dark:text-purple-400','klussen in selectie')}
     </div>
     <div class="flex flex-wrap items-center gap-2 mb-3">
       ${knop('week','Deze week')}${knop('maand','Deze maand')}${knop('alles','Alles')}
@@ -560,7 +560,7 @@ function renderDashboard(){
         <option value="goedgekeurd"${dashFilter.status==='goedgekeurd'?' selected':''}>Goedgekeurd</option>
         <option value="verwerkt"${dashFilter.status==='verwerkt'?' selected':''}>Verwerkt</option>
       </select>
-      <button id="btnBulkApprove" class="px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 min-h-[48px] font-medium">✅ Alles in selectie goedkeuren</button>
+      <button id="btnBulkApprove" class="px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 min-h-[48px] font-medium">Alles in selectie goedkeuren</button>
       ${filterActief?'<button id="btnDashReset" class="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 rounded-lg min-h-[48px] font-medium">Filters wissen</button>':''}
     </div>
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700">
@@ -572,7 +572,7 @@ function renderDashboard(){
         <tbody id="dashBody">${renderDashRows(gef)}</tbody>
       </table></div>
     </div>
-    <p class="text-xs text-gray-400 mt-3">Klik op ▸ voor de klussen van die dag, inclusief of er gewogen/gemonsterd is.</p>
+    <p class="text-xs text-gray-400 mt-3">Klik op Toon voor de klussen van die dag, inclusief of er gewogen/gemonsterd is.</p>
   </div>`;
   bindDashFilters();
 }
@@ -582,7 +582,7 @@ function bindDashFilters(){
     if(!open.length){toast('Geen dagstaten om goed te keuren in deze selectie','info');return}
     if(!confirm('Alle '+open.length+' dagstaten in de huidige selectie goedkeuren?'))return;
     open.forEach(d=>DB.update('dagstaten',d.id,{...d,status:'goedgekeurd'}));
-    toast(open.length+' dagstaten goedgekeurd ✅','success');
+    toast(open.length+' dagstaten goedgekeurd','success');
     renderDashboard();
   };
   $('dashWerknemer').onchange=e=>{dashFilter.wId=e.target.value;renderDashboard()};
@@ -592,7 +592,7 @@ function bindDashFilters(){
   document.querySelectorAll('[data-uitklap]').forEach(b=>b.onclick=()=>{
     const r=$('dashDet_'+b.dataset.uitklap);if(!r)return;
     const dicht=r.classList.toggle('hidden');
-    b.textContent=dicht?'▸':'▾';
+    b.textContent=dicht?'Toon':'Verberg';
     b.setAttribute('aria-expanded',dicht?'false':'true');
   });
   document.querySelectorAll('[data-dag-status]').forEach(sel=>{sel.onchange=e=>{const id=e.target.dataset.dagStatus;const d=DB.get('dagstaten',id);if(d)DB.update('dagstaten',id,{...d,status:e.target.value});toast('Status bijgewerkt','success')}});
@@ -671,7 +671,7 @@ function zetMono(paren,waarde){
 function toggleKlusSelectie(id,aan){if(aan)klusSelectie.add(id);else klusSelectie.delete(id);updateKlusBulkLabel()}
 function updateKlusBulkLabel(){
   const b=$('btnKlusBulk');if(!b)return;
-  b.textContent=klusSelectie.size?`✅ Geselecteerde afvinken (${klusSelectie.size})`:'✅ Geselecteerde afvinken';
+  b.textContent=klusSelectie.size?`Geselecteerde afvinken (${klusSelectie.size})`:'Geselecteerde afvinken';
   b.disabled=klusSelectie.size===0;
   b.classList.toggle('opacity-40',klusSelectie.size===0);
 }
@@ -706,7 +706,7 @@ function renderKlussenBeheer(){
   const klantRijen=Object.values(perKlant).sort((a,b)=>a.naam.localeCompare(b.naam));
 
   $('main').innerHTML=`<div class="max-w-5xl mx-auto">
-  <h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">🧾 Klussen &amp; facturatie</h2>
+  <h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">Klussen &amp; facturatie</h2>
   <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Alle klusregels uit de dagstaten. Vink een klus af zodra je hem in je boekhoudprogramma hebt gefactureerd.</p>
 
   <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
@@ -714,7 +714,7 @@ function renderKlussenBeheer(){
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Uren in filter</div><div class="text-2xl font-bold text-blue-700 dark:text-blue-400">${fmtNum(uren)}</div></div>
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Nog te factureren</div><div class="text-2xl font-bold text-amber-600 dark:text-amber-400">${open.length}</div><div class="text-xs text-gray-500 mt-0.5">${euro(openBedrag)} indicatief</div></div>
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Gefactureerd</div><div class="text-2xl font-bold text-purple-700 dark:text-purple-400">${rows.length-open.length}</div><div class="text-xs text-gray-500 mt-0.5">${euro(klaarBedrag)} indicatief</div></div>
-    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">⚖ Wegen monsteren</div><div class="text-2xl font-bold text-blue-700 dark:text-blue-400">${monoAantal}</div><div class="text-xs text-gray-500 mt-0.5">van ${rows.length} klussen</div></div>
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Wegen monsteren</div><div class="text-2xl font-bold text-blue-700 dark:text-blue-400">${monoAantal}</div><div class="text-xs text-gray-500 mt-0.5">van ${rows.length} klussen</div></div>
   </div>
 
   <div class="flex flex-wrap gap-2 mb-2">${periodeKnop('week','Deze week')}${periodeKnop('maand','Deze maand')}${periodeKnop('alles','Alles')}</div>
@@ -728,17 +728,17 @@ function renderKlussenBeheer(){
       <option value="klaar"${klusFilter.factuur==='klaar'?' selected':''}>Gefactureerd</option>
     </select>
     <select id="klFMono" class="${SEL_S} bg-white dark:bg-gray-700" aria-label="Wegen monsteren">
-      <option value=""${klusFilter.mono===''?' selected':''}>⚖ Alle klussen</option>
-      <option value="wel"${klusFilter.mono==='wel'?' selected':''}>⚖ Wel gemonsterd</option>
-      <option value="niet"${klusFilter.mono==='niet'?' selected':''}>⚖ Niet gemonsterd</option>
+      <option value=""${klusFilter.mono===''?' selected':''}>Alle klussen</option>
+      <option value="wel"${klusFilter.mono==='wel'?' selected':''}>Wel gemonsterd</option>
+      <option value="niet"${klusFilter.mono==='niet'?' selected':''}>Niet gemonsterd</option>
     </select>
   </div>
 
   <div class="flex flex-wrap gap-2 mb-3">
-    <button id="btnKlusBulk" class="px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 min-h-[48px] font-medium opacity-40" disabled>✅ Geselecteerde afvinken</button>
+    <button id="btnKlusBulk" class="px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 min-h-[48px] font-medium opacity-40" disabled>Geselecteerde afvinken</button>
     <button id="btnKlusAlles" class="px-3 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800 min-h-[48px] font-medium">Alle ${open.length} open in filter afvinken</button>
     <button id="btnKlusSelectieWeg" class="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 rounded-lg min-h-[48px] font-medium">Selectie wissen</button>
-    <button id="btnKlusCSV" class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 min-h-[48px] font-medium">📄 Facturatielijst als CSV</button>
+    <button id="btnKlusCSV" class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 min-h-[48px] font-medium">Facturatielijst als CSV</button>
   </div>
 
   <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 mb-4">
@@ -749,7 +749,7 @@ function renderKlussenBeheer(){
         <th class="px-3 py-2 text-left">Klant</th><th class="px-3 py-2 text-left">Dienst</th>
         <th class="px-3 py-2 text-left">Kenteken/Materieel</th><th class="px-3 py-2 text-left">Omschrijving</th>
         <th class="px-3 py-2 text-right">Aantal</th><th class="px-3 py-2 text-right">Indicatief</th>
-        <th class="px-3 py-2">⚖ Wegen monsteren</th>
+        <th class="px-3 py-2">Wegen monsteren</th>
         <th class="px-3 py-2">Facturatie</th><th class="px-3 py-2">Dagstaat</th>
       </tr></thead>
       <tbody>${rows.length?rows.map(k=>`<tr class="border-t border-gray-100 dark:border-gray-700 align-top">
@@ -762,7 +762,7 @@ function renderKlussenBeheer(){
         <td class="px-3 py-2 max-w-[220px]">${esc(k.omschrijving||'—')}</td>
         <td class="px-3 py-2 text-right whitespace-nowrap">${k.aantal} ${esc(k.eenheid||'uur')}</td>
         <td class="px-3 py-2 text-right whitespace-nowrap">${klusBedrag(k)?euro(klusBedrag(k)):'—'}</td>
-        <td class="px-3 py-2 text-center">${k.wegenMonsteren?'<span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium text-xs">⚖ Ja</span>':'<span class="text-xs text-gray-400">Nee</span>'}<div class="mt-1"><button data-mono="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.wegenMonsteren?'text-gray-500':'text-blue-700 dark:text-blue-400'}">${k.wegenMonsteren?'uitzetten':'aanvinken'}</button></div></td>
+        <td class="px-3 py-2 text-center">${k.wegenMonsteren?'<span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium text-xs">Ja</span>':'<span class="text-xs text-gray-400">Nee</span>'}<div class="mt-1"><button data-mono="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.wegenMonsteren?'text-gray-500':'text-blue-700 dark:text-blue-400'}">${k.wegenMonsteren?'uitzetten':'aanvinken'}</button></div></td>
         <td class="px-3 py-2 text-center">${statusBadge(k)}<div class="mt-1"><button data-toggle="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.gefactureerd?'text-gray-500':'text-emerald-700 dark:text-emerald-400'}">${k.gefactureerd?'terugdraaien':'afvinken'}</button></div>${k.factuurdatum?`<div class="text-[11px] text-gray-500 mt-0.5">${k.factuurdatum}</div>`:''}</td>
         <td class="px-3 py-2 text-xs text-gray-500">${k.dagStatus==='goedgekeurd'?'Goedgekeurd':k.dagStatus==='verwerkt'?'Verwerkt':'In afwachting'}</td>
       </tr>`).join(''):'<tr><td colspan="12" class="px-3 py-8 text-center text-gray-400">Geen klussen in deze selectie</td></tr>'}</tbody>
@@ -848,24 +848,24 @@ function exportKlussenCSV(rows){
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download='facturatielijst_'+today()+'.csv';a.click();URL.revokeObjectURL(a.href);
-  toast('Facturatielijst geëxporteerd ✅ ('+rows.length+' regels)','success');
+  toast('Facturatielijst geëxporteerd ('+rows.length+' regels)','success');
 }
 
 // === BEHEER: CRUD VIEWS ===
 function renderKlanten(){
   const items=DB.list('klanten');
-  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">🏢 Klanten</h2>
+  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Klanten</h2>
   <div class="flex flex-wrap gap-2 mb-4">
     <button id="btnAddKlant" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuwe klant</button>
-    <button id="btnImportKlant" class="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 min-h-[48px] font-medium">📥 Klanten importeren (CSV)</button>
+    <button id="btnImportKlant" class="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 min-h-[48px] font-medium">Klanten importeren (CSV)</button>
   </div>
   <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x">
   <table class="w-full text-sm min-w-[600px]"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
   <th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2 text-left">Adres</th><th class="px-3 py-2 text-left">Plaats</th><th class="px-3 py-2 text-left">Contact</th><th class="px-3 py-2 text-left">Email</th><th class="px-3 py-2 text-left">Telefoon</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th>
   </tr></thead><tbody>${items.map(k=>`<tr class="border-t border-gray-100 dark:border-gray-700">
   <td class="px-3 py-2">${esc(k.naam)}</td><td class="px-3 py-2">${esc(k.adres)}${k.postcode?'<br><span class="text-xs text-gray-500">'+esc(k.postcode)+'</span>':''}</td><td class="px-3 py-2">${esc(k.plaats)}</td><td class="px-3 py-2">${esc(k.contact)}</td><td class="px-3 py-2">${esc(k.email)}</td><td class="px-3 py-2">${esc(k.telefoon)}</td>
-  <td class="px-3 py-2 text-center">${k.actief!==false?'✅':'❌'}</td>
-  <td class="px-3 py-2"><button data-edit-klant="${k.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">✏️</button><button data-del-klant="${k.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">🗑</button></td></tr>`).join('')}
+  <td class="px-3 py-2 text-center">${k.actief!==false?'<span class="text-emerald-700 dark:text-emerald-400 font-medium">Ja</span>':'<span class="text-gray-400">Nee</span>'}</td>
+  <td class="px-3 py-2"><button data-edit-klant="${k.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">Wijzig</button><button data-del-klant="${k.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">Verwijder</button></td></tr>`).join('')}
   </tbody></table></div></div>`;
   bindKlantenCRUD(items);
 }
@@ -926,7 +926,7 @@ function parseKlantenTekst(txt){
 }
 function openKlantImport(){
   const html=`<div class="fixed inset-0 bg-black/50 flex items-start justify-center z-30 p-4 overflow-auto" id="klantImport"><div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-2xl my-8">
-  <h3 class="font-bold mb-1">📥 Klanten importeren</h3>
+  <h3 class="font-bold mb-1">Klanten importeren</h3>
   <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Exporteer je klanten uit je factuurprogramma als CSV-bestand, of selecteer in Excel de kolommen en plak ze hieronder. Puntkomma, komma en tab worden automatisch herkend. Bestaande klanten met dezelfde naam worden overgeslagen.</p>
   <label class="block text-sm font-medium mb-1" for="kiFile">Bestand kiezen (.csv of .txt)</label>
   <input type="file" id="kiFile" accept=".csv,.txt,text/csv,text/plain" class="w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600">
@@ -992,7 +992,7 @@ function openKlantImport(){
   $('kiSave').onclick=()=>{
     if(!klaar.length)return;
     klaar.forEach(k=>DB.insert('klanten',k));
-    toast(klaar.length+' klant'+(klaar.length!==1?'en':'')+' geïmporteerd ✅','success');
+    toast(klaar.length+' klant'+(klaar.length!==1?'en':'')+' geïmporteerd','success');
     document.getElementById('klantImport').remove();
     renderCurrentView();
   };
@@ -1015,15 +1015,15 @@ function openKlantEditor(id,items){
 
 function renderDiensten(){
   const items=DB.list('diensten');
-  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">🔧 Diensten</h2>
+  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Diensten</h2>
   <button id="btnAddDienst" class="mb-4 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuwe dienst</button>
   <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x">
   <table class="w-full text-sm min-w-[600px]"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
   <th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2 text-left">Omschrijving</th><th class="px-3 py-2">Tarief</th><th class="px-3 py-2">Eenheid</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th>
   </tr></thead><tbody>${items.map(d=>`<tr class="border-t border-gray-100 dark:border-gray-700">
   <td class="px-3 py-2">${esc(d.naam)}</td><td class="px-3 py-2">${esc(d.omschrijving)}</td><td class="px-3 py-2 text-center">€${d.tarief}</td><td class="px-3 py-2 text-center">${esc(d.eenheid)}</td>
-  <td class="px-3 py-2 text-center">${d.actief!==false?'✅':'❌'}</td>
-  <td class="px-3 py-2"><button data-edit-dienst="${d.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">✏️</button><button data-del-dienst="${d.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">🗑</button></td></tr>`).join('')}
+  <td class="px-3 py-2 text-center">${d.actief!==false?'<span class="text-emerald-700 dark:text-emerald-400 font-medium">Ja</span>':'<span class="text-gray-400">Nee</span>'}</td>
+  <td class="px-3 py-2"><button data-edit-dienst="${d.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">Wijzig</button><button data-del-dienst="${d.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">Verwijder</button></td></tr>`).join('')}
   </tbody></table></div></div>`;
   bindDienstenCRUD(items);
 }
@@ -1048,15 +1048,15 @@ function openDienstEditor(id,items){
 
 function renderWerknemers(){
   const items=DB.list('werknemers');
-  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">👷 Werknemers</h2>
+  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Werknemers</h2>
   <button id="btnAddWn" class="mb-4 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuwe werknemer</button>
   <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x">
   <table class="w-full text-sm min-w-[600px]"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
   <th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2">Pers.Nr</th><th class="px-3 py-2">Functie</th><th class="px-3 py-2">Email</th><th class="px-3 py-2">Telefoon</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th>
   </tr></thead><tbody>${items.map(w=>`<tr class="border-t border-gray-100 dark:border-gray-700">
   <td class="px-3 py-2">${esc(w.naam)}</td><td class="px-3 py-2 text-center">${esc(w.persNr)}</td><td class="px-3 py-2">${esc(w.functie)}</td><td class="px-3 py-2">${esc(w.email)}</td><td class="px-3 py-2">${esc(w.telefoon)}</td>
-  <td class="px-3 py-2 text-center">${w.actief!==false?'✅':'❌'}</td>
-  <td class="px-3 py-2"><button data-edit-wn="${w.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">✏️</button><button data-del-wn="${w.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">🗑</button></td></tr>`).join('')}
+  <td class="px-3 py-2 text-center">${w.actief!==false?'<span class="text-emerald-700 dark:text-emerald-400 font-medium">Ja</span>':'<span class="text-gray-400">Nee</span>'}</td>
+  <td class="px-3 py-2"><button data-edit-wn="${w.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">Wijzig</button><button data-del-wn="${w.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">Verwijder</button></td></tr>`).join('')}
   </tbody></table></div></div>`;
   bindWerknemersCRUD(items);
 }
@@ -1086,13 +1086,13 @@ function renderExports(){
   const werknemers=DB.list('werknemers');
   const klanten=DB.list('klanten');
   const diensten=DB.list('diensten');
-  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">📤 Exporteren</h2>
+  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Exporteren</h2>
   <div class="space-y-3">
-  <button id="btnExportCSV" class="w-full px-4 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 font-medium min-h-[48px]">📄 Exporteren voor loonadministratie (CSV)</button>
-  <button id="btnExportJSON" class="w-full px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium min-h-[48px]">💾 JSON backup exporteren</button>
+  <button id="btnExportCSV" class="w-full px-4 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 font-medium min-h-[48px]">Exporteren voor loonadministratie (CSV)</button>
+  <button id="btnExportJSON" class="w-full px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium min-h-[48px]">JSON backup exporteren</button>
   <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-6 text-center">
   <p class="text-sm text-gray-500 mb-2">JSON backup importeren</p>
-  <label class="inline-block px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl cursor-pointer min-h-[48px] flex items-center gap-2"><span>📁 Kies bestand</span><input type="file" id="importJSON" accept=".json" class="hidden"></label>
+  <label class="inline-block px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl cursor-pointer min-h-[48px] flex items-center gap-2"><span>Kies bestand</span><input type="file" id="importJSON" accept=".json" class="hidden"></label>
   </div>
   </div></div>`;
   $('btnExportCSV').onclick=()=>exportCSV(dagstaten,werknemers,klanten,diensten);
@@ -1109,12 +1109,12 @@ function exportCSV(dagen,werknemers,klanten,diensten){
   const csv=bom+headers.join(';')+'\n'+rows.join('\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='urenadministratie_'+today()+'.csv';a.click();URL.revokeObjectURL(a.href);
-  toast('CSV geëxporteerd ✅','success');
+  toast('CSV geëxporteerd','success');
 }
-function exportJSON(){const data={werknemers:DB.list('werknemers'),klanten:DB.list('klanten'),diensten:DB.list('diensten'),dagstaten:DB.list('dagstaten')};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='uren_backup_'+today()+'.json';a.click();URL.revokeObjectURL(a.href);toast('JSON backup geëxporteerd ✅','success')}
+function exportJSON(){const data={werknemers:DB.list('werknemers'),klanten:DB.list('klanten'),diensten:DB.list('diensten'),dagstaten:DB.list('dagstaten')};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='uren_backup_'+today()+'.json';a.click();URL.revokeObjectURL(a.href);toast('JSON backup geëxporteerd','success')}
 function importJSON(e){
   const file=e.target.files[0];if(!file)return;
-  const reader=new FileReader();reader.onload=ev=>{try{const data=JSON.parse(ev.target.result);if(data.werknemers)data.werknemers.forEach(w=>{const ex=DB.get('werknemers',w.id);ex?DB.update('werknemers',w.id,w):DB.insert('werknemers',w)});if(data.klanten)data.klanten.forEach(k=>{const ex=DB.get('klanten',k.id);ex?DB.update('klanten',k.id,k):DB.insert('klanten',k)});if(data.diensten)data.diensten.forEach(d=>{const ex=DB.get('diensten',d.id);ex?DB.update('diensten',d.id,d):DB.insert('diensten',d)});if(data.dagstaten)data.dagstaten.forEach(d=>{const ex=DB.get('dagstaten',d.id);ex?DB.update('dagstaten',d.id,d):DB.insert('dagstaten',d)});toast('Backup geïmporteerd ✅','success');setTimeout(()=>renderCurrentView(),500)}catch(err){toast('Ongeldig JSON-bestand','error')}};reader.readAsText(file);e.target.value='';
+  const reader=new FileReader();reader.onload=ev=>{try{const data=JSON.parse(ev.target.result);if(data.werknemers)data.werknemers.forEach(w=>{const ex=DB.get('werknemers',w.id);ex?DB.update('werknemers',w.id,w):DB.insert('werknemers',w)});if(data.klanten)data.klanten.forEach(k=>{const ex=DB.get('klanten',k.id);ex?DB.update('klanten',k.id,k):DB.insert('klanten',k)});if(data.diensten)data.diensten.forEach(d=>{const ex=DB.get('diensten',d.id);ex?DB.update('diensten',d.id,d):DB.insert('diensten',d)});if(data.dagstaten)data.dagstaten.forEach(d=>{const ex=DB.get('dagstaten',d.id);ex?DB.update('dagstaten',d.id,d):DB.insert('dagstaten',d)});toast('Backup geïmporteerd','success');setTimeout(()=>renderCurrentView(),500)}catch(err){toast('Ongeldig JSON-bestand','error')}};reader.readAsText(file);e.target.value='';
 }
 
 // ============================================================================
@@ -1264,7 +1264,7 @@ function toonLogin(){
   <div class="min-h-screen flex items-center justify-center px-4 bg-gradient-to-b from-emerald-50 to-white dark:from-gray-900 dark:to-gray-800">
     <div class="w-full max-w-sm">
       <div class="text-center mb-6">
-        <div class="text-4xl mb-2">⏱</div>
+        
         <h1 class="text-2xl font-bold text-emerald-700 dark:text-emerald-400">UrenApp</h1>
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Transport &amp; Loonbedrijf</p>
       </div>
@@ -1390,7 +1390,7 @@ function renderAccounts(){
   if (!isBeheer()) { $('main').innerHTML = '<p class="p-6 text-center text-gray-500">Alleen voor beheerders.</p>'; return }
   const werknemers = DB.list('werknemers');
   $('main').innerHTML = `<div class="max-w-4xl mx-auto">
-  <h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">👤 Accounts</h2>
+  <h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">Accounts</h2>
   <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Maak per medewerker een account met een gebruikersnaam en wachtwoord. Een medewerker ziet dan alleen zijn eigen uren.</p>
   <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700 mb-4">
     <h3 class="font-semibold mb-3">Nieuw account</h3>
@@ -1422,7 +1422,7 @@ function renderAccounts(){
     const knop = $('naKnop'); knop.disabled = true; knop.textContent = 'Bezig…';
     try {
       await accountAanmaken({ gebruikersnaam: gebruiker, naam, wachtwoord, rol, werknemer_id });
-      toast('Account voor ' + naam + ' aangemaakt ✅', 'success');
+      toast('Account voor ' + naam + ' aangemaakt', 'success');
       renderAccounts();
     } catch (e) {
       toast(e.message, 'error');
@@ -1462,7 +1462,7 @@ async function vulAccountLijst(){
     <td class="px-3 py-2">${esc(a.naam)}</td>
     <td class="px-3 py-2">${a.rol === 'beheer' ? '<span class="badge bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">Beheerder</span>' : 'Medewerker'}</td>
     <td class="px-3 py-2">${a.werknemer_id && wMap[a.werknemer_id] ? esc(wMap[a.werknemer_id]) : '—'}</td>
-    <td class="px-3 py-2 text-center">${a.actief !== false ? '✅' : '❌'}</td>
+    <td class="px-3 py-2 text-center">${a.actief !== false ? '<span class="text-emerald-700 dark:text-emerald-400 font-medium">Ja</span>' : '<span class="text-gray-400">Nee</span>'}</td>
     <td class="px-3 py-2 whitespace-nowrap">
       <button data-acc-reset="${a.id}" class="text-xs underline text-blue-600 dark:text-blue-400 min-h-[48px]">nieuw wachtwoord</button>
       <button data-acc-toggle="${a.id}" data-actief="${a.actief !== false ? '1' : '0'}" class="text-xs underline text-gray-600 dark:text-gray-300 min-h-[48px] ml-2">${a.actief !== false ? 'deactiveren' : 'activeren'}</button>
@@ -1476,7 +1476,7 @@ async function vulAccountLijst(){
         const a = accounts(); const i = a.findIndex(x => x.id === b.dataset.accReset);
         if (i >= 0) { a[i].wachtwoordHash = hashWachtwoord(nieuw); bewaarAccounts(a) }
       } else { await apiAccounts({ actie: 'reset', id: b.dataset.accReset, wachtwoord: nieuw }) }
-      toast('Nieuw wachtwoord ingesteld ✅', 'success');
+      toast('Nieuw wachtwoord ingesteld', 'success');
     } catch (e) { toast(e.message, 'error') }
   });
   body.querySelectorAll('[data-acc-toggle]').forEach(b => b.onclick = async () => {
@@ -1565,7 +1565,7 @@ function startApp(){
 }
 function toonSetupNodig(){
   const s=$('loginScreen');s.classList.remove('hidden');s.style.display='block';
-  s.innerHTML='<div class="min-h-screen flex items-center justify-center px-4"><div class="max-w-sm text-center"><div class="text-4xl mb-2">⚙️</div><h1 class="text-xl font-bold mb-2">UrenApp is nog niet gekoppeld</h1><p class="text-sm text-gray-600 dark:text-gray-300">De koppeling met de database is nog niet ingesteld. Neem contact op met de beheerder.</p></div></div>';
+  s.innerHTML='<div class="min-h-screen flex items-center justify-center px-4"><div class="max-w-sm text-center"><h1 class="text-xl font-bold mb-2">UrenApp is nog niet gekoppeld</h1><p class="text-sm text-gray-600 dark:text-gray-300">De koppeling met de database is nog niet ingesteld. Neem contact op met de beheerder.</p></div></div>';
 }
 function init(){
   if(CONFIG.MODE==='local'&&!['localhost','127.0.0.1',''].includes(location.hostname)){ toonSetupNodig(); return }
