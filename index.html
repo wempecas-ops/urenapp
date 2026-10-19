@@ -37,6 +37,8 @@ input,select,textarea{min-height:48px;font-size:16px}
 <option value="beheer">Beheer</option>
 </select>
 <button id="darkToggle" class="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Donker licht">🌙</button>
+<span id="userChip" class="hidden md:inline text-xs text-gray-500 dark:text-gray-400"></span>
+<button id="logoutBtn" class="text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 min-h-[44px]" aria-label="Uitloggen">Uitloggen</button>
 </div>
 </header>
 <nav id="beheerNav" class="hidden bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 overflow-x-auto whitespace-nowrap">
@@ -46,6 +48,7 @@ input,select,textarea{min-height:48px;font-size:16px}
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="diensten">Diensten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="werknemers">Werknemers</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="export">Export</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="accounts">Accounts</button>
 </nav>
 <main id="main" class="flex-1 p-4 max-w-4xl mx-auto w-full pb-20"></main>
 <nav id="bottomNav" class="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-around py-2 z-20 md:hidden">
@@ -53,10 +56,10 @@ input,select,textarea{min-height:48px;font-size:16px}
 <button class="flex flex-col items-center text-xs py-1 px-3 text-gray-500 dark:text-gray-400" data-view="mijnuren">📋 Mijn uren</button>
 </nav>
 <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 items-center pointer-events-none"></div>
+<div id="loginScreen" class="fixed inset-0 z-40 bg-white dark:bg-gray-900 overflow-auto"></div>
 <script>
 // === CONFIG ===
-const CONFIG={MODE:'supabase',SUPABASE_URL:'https://wyadokfyktrweosdchlj.supabase.co',SUPABASE_ANON_KEY:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5YWRva2Z5a3Ryd2Vvc2RjaGxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzODY5MjQsImV4cCI6MjEwNzk2MjkyNH0.xTsp2w1H_IeiQ9Pf6Q__ptxTSubuuLjHZ6btOwIQUGA'};
-
+const CONFIG={MODE:'local',SUPABASE_URL:'',SUPABASE_ANON_KEY:''};
 /* 
   Voor Supabase: zet MODE op 'supabase', vul SUPABASE_URL en SUPABASE_ANON_KEY in.
   De DB-laag selecteert automatisch op basis van CONFIG.MODE.
@@ -94,7 +97,7 @@ const SB_DB={
   async update(t,id,o){const r=await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{method:'PATCH',headers:{'apikey':CONFIG.SUPABASE_ANON_KEY,'Authorization':`Bearer ${CONFIG.SUPABASE_ANON_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(o)});return r.json()},
   async remove(t,id){await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{method:'DELETE',headers:{'apikey':CONFIG.SUPABASE_ANON_KEY,'Authorization':`Bearer ${CONFIG.SUPABASE_ANON_KEY}`}})}
 };
-const DB=CONFIG.MODE==='supabase'?SB_DB:LS_DB;
+const DB=CONFIG.MODE==='supabase'?CACHE_DB:LS_DB;
 
 // === SEED DATA ===
 function seedData(){
@@ -1068,6 +1071,352 @@ function importJSON(e){
   const reader=new FileReader();reader.onload=ev=>{try{const data=JSON.parse(ev.target.result);if(data.werknemers)data.werknemers.forEach(w=>{const ex=DB.get('werknemers',w.id);ex?DB.update('werknemers',w.id,w):DB.insert('werknemers',w)});if(data.klanten)data.klanten.forEach(k=>{const ex=DB.get('klanten',k.id);ex?DB.update('klanten',k.id,k):DB.insert('klanten',k)});if(data.diensten)data.diensten.forEach(d=>{const ex=DB.get('diensten',d.id);ex?DB.update('diensten',d.id,d):DB.insert('diensten',d)});if(data.dagstaten)data.dagstaten.forEach(d=>{const ex=DB.get('dagstaten',d.id);ex?DB.update('dagstaten',d.id,d):DB.insert('dagstaten',d)});toast('Backup geïmporteerd ✅','success');setTimeout(()=>renderCurrentView(),500)}catch(err){toast('Ongeldig JSON-bestand','error')}};reader.readAsText(file);e.target.value='';
 }
 
+// ============================================================================
+// === AUTH, ROLLEN EN SYNCHRONISATIE =========================================
+// ============================================================================
+// local    : werkt zonder server, met demo-accounts (om te testen).
+// supabase : login via Supabase Auth. De data wordt bij het inloggen in een
+//            lokale CACHE gezet, zodat de rest van de app synchroon kan blijven
+//            werken. Wegschrijven gebeurt op de achtergrond naar Supabase.
+//
+// Accounts worden door de beheerder aangemaakt. Dat kan niet rechtstreeks
+// vanuit de browser (daarvoor is de service_role-sleutel nodig, die nooit in
+// de browser mag staan), dus loopt dat via /api/admin-users op Vercel.
+const EMAIL_DOMEIN = 'urenapp.local';   // 'jan' -> 'jan@urenapp.local'
+let SESSIE = null;        // {id,naam,rol,werknemer_id,gebruikersnaam}
+let AUTH_TOKEN = null, AUTH_REFRESH = null, AUTH_VERLOOPT = 0;
+const CACHE = {};
+const TABELLEN = ['werknemers', 'klanten', 'diensten', 'dagstaten'];
+
+const isBeheer = () => !!SESSIE && SESSIE.rol === 'beheer';
+const isMedewerker = () => !!SESSIE && SESSIE.rol === 'medewerker';
+const naarEmail = g => { g = String(g || '').trim().toLowerCase(); return g.includes('@') ? g : g + '@' + EMAIL_DOMEIN };
+// Alleen voor de demo-modus; echte wachtwoorden worden door Supabase beheerd.
+function hashWachtwoord(p){ let h = 5381; const s = String(p) + '|urenapp'; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return 'demo-' + h.toString(16) }
+
+// ---- demo-accounts (local modus) ----
+function accounts(){ return JSON.parse(localStorage.getItem('uren_accounts') || '[]') }
+function bewaarAccounts(a){ localStorage.setItem('uren_accounts', JSON.stringify(a)) }
+function seedAccounts(){
+  if (localStorage.getItem('uren_accounts')) return;
+  bewaarAccounts([
+    { id:'acc1', gebruikersnaam:'beheer', naam:'Beheerder', rol:'beheer', werknemer_id:'', actief:true, wachtwoordHash:hashWachtwoord('welkom123') },
+    { id:'acc2', gebruikersnaam:'jan', naam:'Jan de Boer', rol:'medewerker', werknemer_id:'w1', actief:true, wachtwoordHash:hashWachtwoord('welkom123') },
+    { id:'acc3', gebruikersnaam:'piet', naam:'Piet Visser', rol:'medewerker', werknemer_id:'w2', actief:true, wachtwoordHash:hashWachtwoord('welkom123') }
+  ]);
+}
+
+// ---- sleutelconversie ----
+// De database gebruikt snake_case kolommen (medewerker_id), de app werkt met
+// camelCase (medewerkerId). Deze twee omzettertjes overbruggen dat verschil,
+// ook binnen de klussen die als JSON in de dagstaat zitten.
+const naarSnake = s => String(s).replace(/[A-Z]/g, c => '_' + c.toLowerCase());
+const naarCamel = s => String(s).replace(/_([a-z0-9])/g, (m, c) => c.toUpperCase());
+function sleutelsOm(o, fn){
+  if (Array.isArray(o)) return o.map(x => sleutelsOm(x, fn));
+  if (o && typeof o === 'object') { const u = {}; Object.keys(o).forEach(k => { u[fn(k)] = sleutelsOm(o[k], fn) }); return u }
+  return o;
+}
+
+// ---- Supabase REST ----
+async function sbREST(pad, opties){
+  opties = opties || {};
+  const h = Object.assign({ 'apikey': CONFIG.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, opties.headers || {});
+  h['Authorization'] = 'Bearer ' + (AUTH_TOKEN || CONFIG.SUPABASE_ANON_KEY);
+  if (opties.prefer) h['Prefer'] = opties.prefer;
+  const r = await fetch(CONFIG.SUPABASE_URL + pad, { method: opties.method || 'GET', headers: h, body: opties.body ? JSON.stringify(sleutelsOm(opties.body, naarSnake)) : undefined });
+  const tekst = await r.text();
+  let data = null;
+  try { data = tekst ? JSON.parse(tekst) : null } catch (e) { data = null }
+  if (!r.ok) throw new Error((data && (data.message || data.error_description || data.msg || data.hint)) || ('Fout ' + r.status));
+  return opties.raw ? data : sleutelsOm(data, naarCamel);
+}
+async function sbLogin(gebruiker, wachtwoord){
+  const r = await fetch(CONFIG.SUPABASE_URL + '/auth/v1/token?grant_type=password', {
+    method: 'POST',
+    headers: { 'apikey': CONFIG.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: naarEmail(gebruiker), password: wachtwoord })
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error_description || data.msg || data.error || 'Inloggen mislukt');
+  AUTH_TOKEN = data.access_token; AUTH_REFRESH = data.refresh_token;
+  AUTH_VERLOOPT = Date.now() + ((data.expires_in || 3600) * 1000) - 60000;
+  localStorage.setItem('uren_auth', JSON.stringify({ r: AUTH_REFRESH, v: AUTH_VERLOOPT }));
+  return data.user;
+}
+async function sbVernieuw(){
+  const bewaard = JSON.parse(localStorage.getItem('uren_auth') || 'null');
+  if (!bewaard || !bewaard.r) return false;
+  const r = await fetch(CONFIG.SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
+    method: 'POST',
+    headers: { 'apikey': CONFIG.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: bewaard.r })
+  });
+  if (!r.ok) { localStorage.removeItem('uren_auth'); return false }
+  const data = await r.json();
+  AUTH_TOKEN = data.access_token; AUTH_REFRESH = data.refresh_token;
+  AUTH_VERLOOPT = Date.now() + ((data.expires_in || 3600) * 1000) - 60000;
+  localStorage.setItem('uren_auth', JSON.stringify({ r: AUTH_REFRESH, v: AUTH_VERLOOPT }));
+  return true;
+}
+// Profiel (rol + koppeling aan een werknemer) ophalen bij de ingelogde gebruiker
+async function sbProfiel(userId){
+  const rijen = await sbREST('/rest/v1/profiles?id=eq.' + encodeURIComponent(userId) + '&select=*', { raw: true });
+  return (rijen && rijen[0]) || null;
+}
+async function sbUitloggen(){
+  try { await fetch(CONFIG.SUPABASE_URL + '/auth/v1/logout', { method: 'POST', headers: { 'apikey': CONFIG.SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + AUTH_TOKEN } }) } catch (e) {}
+  localStorage.removeItem('uren_auth');
+  AUTH_TOKEN = null; AUTH_REFRESH = null;
+}
+
+// ---- synchronisatielaag: synchrone cache bovenop Supabase ----
+const CACHE_DB = {
+  list(t){ return CACHE[t] || [] },
+  get(t, id){ return this.list(t).find(r => r.id === id) },
+  insert(t, o){ if (!o.id) o.id = uid(); (CACHE[t] = CACHE[t] || []).push(o); verstuur('insert', t, o); return o },
+  update(t, id, o){ const a = CACHE[t] || []; const i = a.findIndex(x => x.id === id); if (i >= 0) a[i] = Object.assign({}, o, { id }); verstuur('update', t, id, o); return a[i] },
+  remove(t, id){ CACHE[t] = (CACHE[t] || []).filter(x => x.id !== id); verstuur('remove', t, id); return CACHE[t] }
+};
+async function verstuur(actie, tabel, a, b){
+  if (CONFIG.MODE !== 'supabase' || !AUTH_TOKEN) return;
+  try {
+    if (actie === 'insert') await sbREST('/rest/v1/' + tabel, { method: 'POST', prefer: 'return=minimal', body: a });
+    else if (actie === 'update') await sbREST('/rest/v1/' + tabel + '?id=eq.' + encodeURIComponent(a), { method: 'PATCH', prefer: 'return=minimal', body: b });
+    else if (actie === 'remove') await sbREST('/rest/v1/' + tabel + '?id=eq.' + encodeURIComponent(a), { method: 'DELETE', prefer: 'return=minimal' });
+  } catch (e) { toast('Niet opgeslagen in de database: ' + e.message, 'error') }
+}
+async function laadAlles(){
+  for (const t of TABELLEN) {
+    const rijen = await sbREST('/rest/v1/' + t + '?select=*');
+    CACHE[t] = Array.isArray(rijen) ? rijen : [];
+  }
+}
+
+// ---- inlogscherm ----
+function toonLogin(){
+  const scherm = document.getElementById('loginScreen');
+  scherm.innerHTML = `
+  <div class="min-h-screen flex items-center justify-center px-4 bg-gradient-to-b from-emerald-50 to-white dark:from-gray-900 dark:to-gray-800">
+    <div class="w-full max-w-sm">
+      <div class="text-center mb-6">
+        <div class="text-4xl mb-2">⏱</div>
+        <h1 class="text-2xl font-bold text-emerald-700 dark:text-emerald-400">UrenApp</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Transport &amp; Loonbedrijf</p>
+      </div>
+      <form id="loginForm" class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-100 dark:border-gray-700">
+        <label for="lgGebruiker" class="block text-sm font-medium mb-1">Gebruikersnaam</label>
+        <input id="lgGebruiker" autocomplete="username" autocapitalize="none" class="w-full border rounded-xl px-3 py-3 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600 text-base" placeholder="bijv. jan">
+        <label for="lgWachtwoord" class="block text-sm font-medium mb-1">Wachtwoord</label>
+        <input id="lgWachtwoord" type="password" autocomplete="current-password" class="w-full border rounded-xl px-3 py-3 mb-4 bg-white dark:bg-gray-700 dark:border-gray-600 text-base" placeholder="••••••••">
+        <button id="lgKnop" type="submit" class="w-full bg-emerald-600 text-white py-3 rounded-xl font-semibold hover:bg-emerald-700 min-h-[52px]">Inloggen</button>
+        <p id="lgFout" class="text-sm text-red-600 dark:text-red-400 mt-3 min-h-[20px]"></p>
+      </form>
+      <p class="text-xs text-gray-500 dark:text-gray-400 text-center mt-4" id="lgHint"></p>
+    </div>
+  </div>`;
+  const hint = document.getElementById('lgHint');
+  if (hint) hint.textContent = CONFIG.MODE === 'local'
+    ? 'Demo-modus. Inloggen met "beheer" of "jan" — wachtwoord welkom123.'
+    : 'Vraag je gebruikersnaam en wachtwoord aan de beheerder.';
+  document.getElementById('loginForm').onsubmit = async e => {
+    e.preventDefault();
+    const fout = document.getElementById('lgFout');
+    const knop = document.getElementById('lgKnop');
+    fout.textContent = '';
+    knop.disabled = true; knop.textContent = 'Bezig…';
+    try {
+      await inloggen(document.getElementById('lgGebruiker').value, document.getElementById('lgWachtwoord').value);
+    } catch (err) {
+      fout.textContent = err.message || 'Inloggen mislukt';
+      knop.disabled = false; knop.textContent = 'Inloggen';
+    }
+  };
+  const g = document.getElementById('lgGebruiker');
+  if (g) g.focus();
+}
+function verbergLogin(){ const s = document.getElementById('loginScreen'); if (s) s.innerHTML = '' }
+
+async function inloggen(gebruiker, wachtwoord){
+  if (!gebruiker || !wachtwoord) throw new Error('Vul je gebruikersnaam en wachtwoord in');
+  if (CONFIG.MODE === 'local') {
+    const acc = accounts().find(a => a.gebruikersnaam.toLowerCase() === String(gebruiker).trim().toLowerCase());
+    if (!acc || acc.wachtwoordHash !== hashWachtwoord(wachtwoord)) throw new Error('Onbekende gebruikersnaam of verkeerd wachtwoord');
+    if (acc.actief === false) throw new Error('Dit account is gedeactiveerd');
+    SESSIE = { id: acc.id, naam: acc.naam, rol: acc.rol, werknemer_id: acc.werknemer_id || '', gebruikersnaam: acc.gebruikersnaam };
+  } else {
+    const user = await sbLogin(gebruiker, wachtwoord);
+    const profiel = await sbProfiel(user.id);
+    if (!profiel) throw new Error('Dit account heeft nog geen profiel. Vraag de beheerder om toegang.');
+    if (profiel.actief === false) throw new Error('Dit account is gedeactiveerd');
+    SESSIE = { id: user.id, naam: profiel.naam || gebruikersnaam, rol: profiel.rol || 'medewerker', werknemer_id: profiel.werknemer_id || '', gebruikersnaam: gebruikersnaam };
+    toast('Gegevens laden…', 'info');
+    await laadAlles();
+  }
+  localStorage.setItem('uren_sessie', JSON.stringify(SESSIE));
+  verbergLogin();
+  startApp();
+}
+async function uitloggen(){
+  if (CONFIG.MODE === 'supabase') await sbUitloggen();
+  SESSIE = null;
+  localStorage.removeItem('uren_sessie');
+  location.reload();
+}
+
+// ---- bestaande sessie hervatten (supabase) ----
+async function hervatSessie(){
+  const bewaard=JSON.parse(localStorage.getItem('uren_auth')||'null');
+  if(!bewaard||!bewaard.r){ toonLogin(); return }
+  try{
+    if(!AUTH_TOKEN){ const ok=await sbVernieuw(); if(!ok){ toonLogin(); return } }
+    const u=await sbREST('/auth/v1/user');
+    if(!u||!u.id){ toonLogin(); return }
+    const profiel=await sbProfiel(u.id);
+    if(!profiel||profiel.actief===false){ toonLogin(); return }
+    SESSIE={id:u.id,naam:profiel.naam||u.email,rol:profiel.rol||'medewerker',werknemer_id:profiel.werknemer_id||'',gebruikersnaam:u.email};
+    await laadAlles();
+    verbergLogin();
+    startApp();
+  }catch(e){ toonLogin() }
+}
+
+// ---- rol toepassen op de interface ----
+function pasRolToe(){
+  const mw = isMedewerker();
+  const mt = $('modeToggle');
+  if (mt) { if (mw) mt.classList.add('hidden'); else mt.classList.remove('hidden') }
+  if (mw) currentMode = 'medewerker';
+  const chip = $('userChip');
+  if (chip && SESSIE) chip.textContent = SESSIE.naam + ' · ' + (isBeheer() ? 'beheer' : 'medewerker');
+  const accTab = document.querySelector('.tab-btn[data-tab="accounts"]');
+  if (accTab) accTab.style.display = isBeheer() ? '' : 'none';
+  if (mw && SESSIE) {
+    const im = $('inMedew');
+    if (im) { im.value = SESSIE.werknemer_id; im.disabled = true }
+    const mu = $('muWerknemer');
+    if (mu) { mu.value = SESSIE.werknemer_id; mu.disabled = true; mu.dispatchEvent(new Event('change')) }
+  }
+}
+
+// ---- accounts (beheer) ----
+async function apiAccounts(payload){
+  const r = await fetch('/api/admin-users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + AUTH_TOKEN },
+    body: JSON.stringify(payload)
+  });
+  let d = null;
+  try { d = await r.json() } catch (e) { d = null }
+  if (!r.ok) throw new Error((d && (d.fout || d.message)) || 'Actie mislukt (' + r.status + ')');
+  return d;
+}
+function renderAccounts(){
+  if (!isBeheer()) { $('main').innerHTML = '<p class="p-6 text-center text-gray-500">Alleen voor beheerders.</p>'; return }
+  const werknemers = DB.list('werknemers');
+  $('main').innerHTML = `<div class="max-w-4xl mx-auto">
+  <h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">👤 Accounts</h2>
+  <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Maak per medewerker een account met een gebruikersnaam en wachtwoord. Een medewerker ziet dan alleen zijn eigen uren.</p>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700 mb-4">
+    <h3 class="font-semibold mb-3">Nieuw account</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div><label class="block text-xs text-gray-500 mb-1" for="naGebruiker">Gebruikersnaam</label><input id="naGebruiker" autocapitalize="none" class="${SEL_S} w-full bg-white dark:bg-gray-700" placeholder="bijv. jan"></div>
+      <div><label class="block text-xs text-gray-500 mb-1" for="naNaam">Naam</label><input id="naNaam" class="${SEL_S} w-full bg-white dark:bg-gray-700" placeholder="Jan de Boer"></div>
+      <div><label class="block text-xs text-gray-500 mb-1" for="naWachtwoord">Wachtwoord</label><input id="naWachtwoord" type="text" class="${SEL_S} w-full bg-white dark:bg-gray-700" placeholder="min. 6 tekens"></div>
+      <div><label class="block text-xs text-gray-500 mb-1" for="naRol">Rol</label><select id="naRol" class="${SEL_S} w-full bg-white dark:bg-gray-700"><option value="medewerker">Medewerker</option><option value="beheer">Beheerder</option></select></div>
+      <div class="md:col-span-2"><label class="block text-xs text-gray-500 mb-1" for="naWerknemer">Koppelen aan werknemer (voor medewerkers)</label>
+        <select id="naWerknemer" class="${SEL_S} w-full bg-white dark:bg-gray-700"><option value="">— geen —</option>${werknemers.map(w => `<option value="${w.id}">${esc(w.naam)}</option>`).join('')}</select></div>
+    </div>
+    <button id="naKnop" class="mt-3 w-full md:w-auto px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">Account aanmaken</button>
+  </div>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700">
+    <div class="scroll-x"><table class="w-full text-sm min-w-[640px]">
+      <thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-3 py-2 text-left">Gebruikersnaam</th><th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2 text-left">Rol</th><th class="px-3 py-2 text-left">Werknemer</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th></tr></thead>
+      <tbody id="accLijst"><tr><td colspan="6" class="px-3 py-6 text-center text-gray-400">Laden…</td></tr></tbody>
+    </table></div>
+  </div></div>`;
+  $('naKnop').onclick = async () => {
+    const gebruiker = $('naGebruiker').value.trim();
+    const naam = $('naNaam').value.trim();
+    const wachtwoord = $('naWachtwoord').value;
+    const rol = $('naRol').value;
+    const werknemer_id = $('naWerknemer').value;
+    if (!gebruiker || !naam || !wachtwoord) { toast('Vul gebruikersnaam, naam en wachtwoord in', 'error'); return }
+    if (wachtwoord.length < 6) { toast('Kies een wachtwoord van minstens 6 tekens', 'error'); return }
+    if (rol === 'medewerker' && !werknemer_id) { toast('Kies aan welke werknemer dit account gekoppeld is', 'error'); return }
+    const knop = $('naKnop'); knop.disabled = true; knop.textContent = 'Bezig…';
+    try {
+      await accountAanmaken({ gebruikersnaam: gebruiker, naam, wachtwoord, rol, werknemer_id });
+      toast('Account voor ' + naam + ' aangemaakt ✅', 'success');
+      renderAccounts();
+    } catch (e) {
+      toast(e.message, 'error');
+      knop.disabled = false; knop.textContent = 'Account aanmaken';
+    }
+  };
+  vulAccountLijst();
+}
+async function accountAanmaken(d){
+  if (CONFIG.MODE === 'local') {
+    const a = accounts();
+    if (a.some(x => x.gebruikersnaam.toLowerCase() === d.gebruikersnaam.toLowerCase())) throw new Error('Die gebruikersnaam bestaat al');
+    a.push({ id: uid(), gebruikersnaam: d.gebruikersnaam, naam: d.naam, rol: d.rol, werknemer_id: d.werknemer_id, actief: true, wachtwoordHash: hashWachtwoord(d.wachtwoord) });
+    bewaarAccounts(a);
+  } else {
+    await apiAccounts(Object.assign({ actie: 'create' }, d));
+  }
+}
+async function vulAccountLijst(){
+  const body = $('accLijst'); if (!body) return;
+  let rijen = [];
+  try {
+    if (CONFIG.MODE === 'local') {
+      rijen = accounts().map(a => ({ id: a.id, gebruikersnaam: a.gebruikersnaam, naam: a.naam, rol: a.rol, werknemer_id: a.werknemer_id, actief: a.actief !== false }));
+    } else {
+      const d = await apiAccounts({ actie: 'list' });
+      rijen = (d && d.accounts) || [];
+    }
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="6" class="px-3 py-6 text-center text-red-600 dark:text-red-400">Kon accounts niet laden: ${esc(e.message)}</td></tr>`;
+    return;
+  }
+  if (!rijen.length) { body.innerHTML = '<tr><td colspan="6" class="px-3 py-6 text-center text-gray-400">Nog geen accounts</td></tr>'; return }
+  const wMap = {}; DB.list('werknemers').forEach(w => wMap[w.id] = w.naam);
+  body.innerHTML = rijen.map(a => `<tr class="border-t border-gray-100 dark:border-gray-700">
+    <td class="px-3 py-2 font-medium">${esc(a.gebruikersnaam)}</td>
+    <td class="px-3 py-2">${esc(a.naam)}</td>
+    <td class="px-3 py-2">${a.rol === 'beheer' ? '<span class="badge bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">Beheerder</span>' : 'Medewerker'}</td>
+    <td class="px-3 py-2">${a.werknemer_id && wMap[a.werknemer_id] ? esc(wMap[a.werknemer_id]) : '—'}</td>
+    <td class="px-3 py-2 text-center">${a.actief !== false ? '✅' : '❌'}</td>
+    <td class="px-3 py-2 whitespace-nowrap">
+      <button data-acc-reset="${a.id}" class="text-xs underline text-blue-600 dark:text-blue-400 min-h-[48px]">nieuw wachtwoord</button>
+      <button data-acc-toggle="${a.id}" data-actief="${a.actief !== false ? '1' : '0'}" class="text-xs underline text-gray-600 dark:text-gray-300 min-h-[48px] ml-2">${a.actief !== false ? 'deactiveren' : 'activeren'}</button>
+    </td></tr>`).join('');
+  body.querySelectorAll('[data-acc-reset]').forEach(b => b.onclick = async () => {
+    const nieuw = prompt('Nieuw wachtwoord (min. 6 tekens):');
+    if (!nieuw) return;
+    if (nieuw.length < 6) { toast('Minstens 6 tekens', 'error'); return }
+    try {
+      if (CONFIG.MODE === 'local') {
+        const a = accounts(); const i = a.findIndex(x => x.id === b.dataset.accReset);
+        if (i >= 0) { a[i].wachtwoordHash = hashWachtwoord(nieuw); bewaarAccounts(a) }
+      } else { await apiAccounts({ actie: 'reset', id: b.dataset.accReset, wachtwoord: nieuw }) }
+      toast('Nieuw wachtwoord ingesteld ✅', 'success');
+    } catch (e) { toast(e.message, 'error') }
+  });
+  body.querySelectorAll('[data-acc-toggle]').forEach(b => b.onclick = async () => {
+    const actief = b.dataset.actief !== '1';
+    try {
+      if (CONFIG.MODE === 'local') {
+        const a = accounts(); const i = a.findIndex(x => x.id === b.dataset.accToggle);
+        if (i >= 0) { a[i].actief = actief; bewaarAccounts(a) }
+      } else { await apiAccounts({ actie: 'toggle', id: b.dataset.accToggle, actief }) }
+      toast(actief ? 'Account geactiveerd' : 'Account gedeactiveerd', 'success');
+      renderAccounts();
+    } catch (e) { toast(e.message, 'error') }
+  });
+}
+
 // === NAVIGATION ===
 let currentView='invoer', currentBeheerTab='dashboard', currentMode='medewerker';
 function renderCurrentView(){
@@ -1086,16 +1435,29 @@ function renderCurrentView(){
       case 'diensten':renderDiensten();break;
       case 'werknemers':renderWerknemers();break;
       case 'export':renderExports();break;
+      case 'accounts':renderAccounts();break;
       default:renderDashboard();
     }
   }
+  naRender();
 }
 function renderBottomNav(){
   $('bottomNav').style.display=currentMode==='medewerker'?'flex':'none';
   $('beheerNav').style.display=currentMode==='beheer'?'flex':'none';
 }
+// Na elke render de rolregels toepassen (medewerker = alleen eigen uren)
+function naRender(){ try{pasRolToe()}catch(e){} }
 function switchView(view){currentView=view;renderCurrentView()}
-function switchTab(tab){currentBeheerTab=tab;renderCurrentView();document.querySelectorAll('.tab-btn').forEach(b=>{b.classList.toggle('border-emerald-600',b.dataset.tab===tab);b.classList.toggle('text-emerald-700',b.dataset.tab===tab);b.classList.toggle('border-transparent',b.dataset.tab!==tab)})}
+function switchTab(tab){
+  if(tab==='accounts'&&!isBeheer()){toast('Alleen voor beheerders','error');return}
+  // Een beheertabblad aanklikken betekent ook echt naar de beheermodus.
+  currentMode='beheer';
+  const mt=$('modeToggle');if(mt)mt.value='beheer';
+  currentBeheerTab=tab;
+  renderBottomNav();
+  renderCurrentView();
+  document.querySelectorAll('.tab-btn').forEach(b=>{b.classList.toggle('border-emerald-600',b.dataset.tab===tab);b.classList.toggle('text-emerald-700',b.dataset.tab===tab);b.classList.toggle('border-transparent',b.dataset.tab!==tab)});
+}
 
 // === PWA ===
 function initPWA(){
@@ -1111,22 +1473,35 @@ function initPWA(){
 }
 
 // === INIT ===
-function init(){
-  seedData();
-  migrateKlanten();
-  migrateDagstaten();
-  migrateFacturatie();
-  migrateIds();
-  initDarkMode();
-  renderBottomNav();
-  // Mode toggle
+function bindChrome(){
   $('modeToggle').onchange=e=>{currentMode=e.target.value;renderBottomNav();renderCurrentView()};
-  // Bottom nav
   document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{switchView(b.dataset.view);document.querySelectorAll('[data-view]').forEach(x=>{x.classList.toggle('text-emerald-700',x.dataset.view===currentView);x.classList.toggle('text-gray-500',x.dataset.view!==currentView)})});
-  // Beheer tabs
   document.querySelectorAll('.tab-btn').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+  const uit=$('logoutBtn');
+  if(uit)uit.onclick=()=>{ if(confirm('Weet je zeker dat je wilt uitloggen?')) uitloggen() };
+}
+function startApp(){
+  // Beheerder begint in het dashboard, medewerker in de invoer.
+  currentMode=isBeheer()?'beheer':'medewerker';
+  const mt=$('modeToggle');if(mt)mt.value=currentMode;
+  renderBottomNav();
+  naRender();
   renderCurrentView();
+}
+function init(){
+  if(CONFIG.MODE==='local'){
+    seedData();migrateKlanten();migrateDagstaten();migrateFacturatie();migrateIds();seedAccounts();
+  }
+  initDarkMode();
+  bindChrome();
   initPWA();
+  if(CONFIG.MODE==='supabase'){
+    hervatSessie();
+  } else {
+    const bewaard=localStorage.getItem('uren_sessie');
+    if(bewaard){ try{SESSIE=JSON.parse(bewaard)}catch(e){SESSIE=null} }
+    if(SESSIE){ verbergLogin(); startApp() } else { toonLogin() }
+  }
 }
 init();
 </script>
