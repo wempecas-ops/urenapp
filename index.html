@@ -1103,7 +1103,7 @@ function planTekst(){
   const klantVan=t=>{t=(t||'').trim();if(!t)return null;const l=t.toLowerCase();return kl.find(k=>(k.naam+(k.plaats?' ('+k.plaats+')':'')).toLowerCase()===l)||kl.find(k=>(k.naam||'').toLowerCase()===l)||null};
   let dat='';
   if(PLAN.datum){const d=new Date(PLAN.datum+'T12:00:00');dat=d.toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long'})}
-  const regels=PLAN.regels.filter(r=>(r.klant||'').trim()||(r.omschr||'').trim()).slice().sort((a,b)=>(a.tijd||'99:99')<(b.tijd||'99:99')?-1:1);
+  const regels=PLAN.regels.filter(r=>(r.klant||'').trim()||(r.omschr||'').trim()||(r.laadnr||'').trim()).slice().sort((a,b)=>(a.tijd||'99:99')<(b.tijd||'99:99')?-1:1);
   const plek=r=>{const k=klantVan(r.klant);if(!k)return (r.klant||'').trim();return k.naam+(klantAdres(k)?' - '+klantAdres(k):'')};
   const uit=[];
   uit.push('*Planning'+(dat?' '+dat:'')+'*');
@@ -1112,6 +1112,7 @@ function planTekst(){
     regels.forEach(r=>{
       uit.push('');
       uit.push('*'+(r.tijd?r.tijd+' - ':'')+(plek(r)||'Klus')+'*');
+      if((r.laadnr||'').trim())uit.push('Laadnummer: '+r.laadnr.trim());
       if((r.omschr||'').trim())uit.push(r.omschr.trim());
       const namen=(r.wie||[]).map(id=>wn[id]).filter(Boolean);
       if(namen.length)uit.push('Wie: '+namen.join(', '));
@@ -1121,10 +1122,10 @@ function planTekst(){
     regels.forEach(r=>{(r.wie||[]).forEach(id=>{(per[id]=per[id]||[]).push(r)})});
     Object.keys(per).sort((a,b)=>(wn[a]||'').localeCompare(wn[b]||'')).forEach(id=>{
       uit.push('');uit.push('*'+(wn[id]||'?')+'*');
-      per[id].forEach(r=>{uit.push('- '+(r.tijd?r.tijd+' ':'')+(plek(r)||'Klus')+((r.omschr||'').trim()?': '+r.omschr.trim():''))});
+      per[id].forEach(r=>{uit.push('- '+(r.tijd?r.tijd+' ':'')+(plek(r)||'Klus')+((r.laadnr||'').trim()?' (laadnr '+r.laadnr.trim()+')':'')+((r.omschr||'').trim()?': '+r.omschr.trim():''))});
     });
     const zonder=regels.filter(r=>!(r.wie||[]).length);
-    if(zonder.length){uit.push('');uit.push('*Nog niemand ingedeeld*');zonder.forEach(r=>uit.push('- '+(r.tijd?r.tijd+' ':'')+(plek(r)||'Klus')))}
+    if(zonder.length){uit.push('');uit.push('*Nog niemand ingedeeld*');zonder.forEach(r=>uit.push('- '+(r.tijd?r.tijd+' ':'')+(plek(r)||'Klus')+((r.laadnr||'').trim()?' (laadnr '+r.laadnr.trim()+')':'')))}
   }
   return uit.join('\n');
 }
@@ -1138,6 +1139,7 @@ function renderPlanning(){
       <input list="plKlanten" data-f="klant" value="${esc(r.klant||'')}" placeholder="Klant (zoek op naam)" class="flex-1 min-w-[200px] border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600" aria-label="Klant">
       <button data-del="${r.id}" class="text-red-500 hover:text-red-700 text-sm px-2 min-h-[48px]">Verwijder</button>
     </div>
+    <input data-f="laadnr" value="${esc(r.laadnr||'')}" placeholder="Laadnummer" class="w-full border rounded-lg px-3 mb-2 dark:bg-gray-700 dark:border-gray-600" aria-label="Laadnummer">
     <input data-f="omschr" value="${esc(r.omschr||'')}" placeholder="Werkzaamheden / opmerking (bijv. mest laden, kenteken)" class="w-full border rounded-lg px-3 mb-2 dark:bg-gray-700 dark:border-gray-600" aria-label="Werkzaamheden">
     <div class="flex flex-wrap gap-2">${wn.map(w=>`<label class="flex items-center gap-1 text-sm border border-gray-200 dark:border-gray-600 rounded-full px-3 py-1 cursor-pointer"><input type="checkbox" data-wie="${esc(w.id)}" ${(r.wie||[]).includes(w.id)?'checked':''} style="min-height:auto"> ${esc(w.naam)}</label>`).join('')||'<span class="text-sm text-gray-500">Nog geen werknemers aangemaakt.</span>'}</div>
   </div>`;
@@ -1172,7 +1174,7 @@ function renderPlanning(){
   box.oninput=e=>{const f=e.target.dataset.f;if(!f)return;const r=r$(e.target);if(r){r[f]=e.target.value;ververs()}};
   box.onchange=e=>{if(e.target.dataset.wie===undefined)return;const r=r$(e.target);if(!r)return;r.wie=r.wie||[];const id=e.target.dataset.wie;r.wie=e.target.checked?[...new Set([...r.wie,id])]:r.wie.filter(x=>x!==id);ververs()};
   box.onclick=e=>{const d=e.target.dataset.del;if(!d)return;PLAN.regels=PLAN.regels.filter(r=>r.id!==d);planBewaar();renderPlanning()};
-  $('plNieuw').onclick=()=>{PLAN.regels.push({id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),tijd:'',klant:'',omschr:'',wie:[]});planBewaar();renderPlanning()};
+  $('plNieuw').onclick=()=>{PLAN.regels.push({id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),tijd:'',klant:'',laadnr:'',omschr:'',wie:[]});planBewaar();renderPlanning()};
   $('plWis').onclick=()=>{if(!PLAN.regels.length&&!PLAN.notitie||confirm('Alle klussen uit de planning wissen?')){PLAN.regels=[];PLAN.notitie='';planBewaar();renderPlanning()}};
   $('plKopieer').onclick=async()=>{const t=$('plTekst').value;try{await navigator.clipboard.writeText(t);toast('Bericht gekopieerd','success')}catch(e){$('plTekst').select();document.execCommand('copy');toast('Bericht gekopieerd','success')}};
   $('plWa').onclick=()=>{window.open('https://wa.me/?text='+encodeURIComponent($('plTekst').value),'_blank','noopener')};
