@@ -1,0 +1,1613 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Urenregistratie Transport & Loon</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class'}</script>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif}
+.toast-enter{animation:tIn .3s ease forwards}
+.toast-out{animation:tOut .3s ease forwards}
+@keyframes tIn{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes tOut{from{opacity:1}to{opacity:0;transform:translateY(20px)}}
+.badge{padding:2px 10px;border-radius:9999px;font-size:11px;font-weight:600;white-space:nowrap}
+.badge-afwachting{background:#fef3c7;color:#92400e}
+.badge-goedgekeurd{background:#d1fae5;color:#065f46}
+.badge-verwerkt{background:#ede9fe;color:#5b21b6}
+.dark .badge-afwachting{background:#78350f;color:#fde68a}
+.dark .badge-goedgekeurd{background:#064e3b;color:#a7f3d0}
+.dark .badge-verwerkt{background:#3b0764;color:#ddd6fe}
+.hint{font-size:11px;color:#6b7280;margin-top:2px}
+.klus-card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fff;transition:box-shadow .2s}
+.dark .klus-card{border-color:#374151;background:#1f2937}
+.klus-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.sticky-bottom{position:sticky;bottom:0;z-index:10;background:inherit;backdrop-filter:blur(8px)}
+.scroll-x{overflow-x:auto;-webkit-overflow-scrolling:touch}
+input,select,textarea{min-height:48px;font-size:16px}
+</style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen flex flex-col">
+<header class="bg-white dark:bg-gray-800 shadow-sm px-4 py-3 flex items-center justify-between sticky top-0 z-20">
+<h1 class="text-lg font-bold text-emerald-700 dark:text-emerald-400">⏱ UrenApp</h1>
+<div class="flex items-center gap-3">
+<select id="modeToggle" class="text-sm border rounded-lg px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600" aria-label="Modus">
+<option value="medewerker">Medewerker</option>
+<option value="beheer">Beheer</option>
+</select>
+<button id="darkToggle" class="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Donker licht">🌙</button>
+<span id="userChip" class="hidden md:inline text-xs text-gray-500 dark:text-gray-400"></span>
+<button id="logoutBtn" class="text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 min-h-[44px]" aria-label="Uitloggen">Uitloggen</button>
+</div>
+</header>
+<nav id="beheerNav" class="hidden bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 overflow-x-auto whitespace-nowrap">
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="dashboard">Dashboard</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="klussen">Klussen</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="klanten">Klanten</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="diensten">Diensten</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="werknemers">Werknemers</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="export">Export</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="accounts">Accounts</button>
+</nav>
+<main id="main" class="flex-1 p-4 max-w-4xl mx-auto w-full pb-20"></main>
+<nav id="bottomNav" class="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-around py-2 z-20 md:hidden">
+<button class="flex flex-col items-center text-xs py-1 px-3 text-emerald-700 dark:text-emerald-400" data-view="invoer">📝 Invoer</button>
+<button class="flex flex-col items-center text-xs py-1 px-3 text-gray-500 dark:text-gray-400" data-view="mijnuren">📋 Mijn uren</button>
+</nav>
+<div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 items-center pointer-events-none"></div>
+<div id="loginScreen" class="fixed inset-0 z-40 bg-white dark:bg-gray-900 overflow-auto"></div>
+<script>
+// === CONFIG ===
+const CONFIG={MODE:'local',SUPABASE_URL:'',SUPABASE_ANON_KEY:''};
+/* 
+  Voor Supabase: zet MODE op 'supabase', vul SUPABASE_URL en SUPABASE_ANON_KEY in.
+  De DB-laag selecteert automatisch op basis van CONFIG.MODE.
+*/
+
+// === HELPERS ===
+const $=id=>document.getElementById(id);
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const iso=d=>d.toISOString().slice(0,10);
+const today=()=>iso(new Date());
+const fmtNum=n=>Number(n).toFixed(1);
+const weekNum=d=>{const t=new Date(d);t.setHours(0,0,0,0);t.setDate(t.getDate()+4-(t.getDay()||7));return Math.ceil(((t-new Date(t.getFullYear(),0,1))/86400000+1)/7)};
+const weekRange=(y,w)=>{const d=new Date(y,0,1+(w-1)*7);d.setDate(d.getDate()-d.getDay()+4);const s=new Date(d);s.setDate(s.getDate()-6);return{start:iso(s),end:iso(d)}};
+// Datum N dagen terug vanaf vandaag (voor de voorbeelddata)
+const dagGeleden=n=>{const d=new Date();d.setDate(d.getDate()-n);return iso(d)};
+const SEL_S='text-sm border rounded-lg px-2 py-2 dark:border-gray-600 min-h-[44px]';
+const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+// Adresregel van een klant, bv. "Havenweg 12, 1043 AB Amsterdam"
+const klantAdres=k=>k?[k.adres,[k.postcode,k.plaats].filter(Boolean).join(' ')].filter(Boolean).join(', '):'';
+
+// === DB LAYER ===
+const LS_DB={
+  _k:prefix=>'uren_'+prefix,
+  list(t){return JSON.parse(localStorage.getItem(this._k(t))||'[]')},
+  get(t,id){return this.list(t).find(r=>r.id===id)},
+  insert(t,o){if(!o.id)o.id=uid();const r=this.list(t);r.push(o);localStorage.setItem(this._k(t),JSON.stringify(r));return o},
+  update(t,id,o){const r=this.list(t);const i=r.findIndex(x=>x.id===id);if(i>=0)r[i]={...o,id};localStorage.setItem(this._k(t),JSON.stringify(r));return r[i]},
+  remove(t,id){const r=this.list(t).filter(x=>x.id!==id);localStorage.setItem(this._k(t),JSON.stringify(r));return r}
+};
+const SB_DB={
+  async list(t){const r=await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${t}`,{headers:{'apikey':CONFIG.SUPABASE_ANON_KEY,'Authorization':`Bearer ${CONFIG.SUPABASE_ANON_KEY}`,'Content-Type':'application/json'}});return r.json()},
+  async get(t,id){const r=await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{headers:{'apikey':CONFIG.SUPABASE_ANON_KEY,'Authorization':`Bearer ${CONFIG.SUPABASE_ANON_KEY}`}});return (await r.json())[0]},
+  async insert(t,o){if(!o.id)o.id=uid();const r=await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${t}`,{method:'POST',headers:{'apikey':CONFIG.SUPABASE_ANON_KEY,'Authorization':`Bearer ${CONFIG.SUPABASE_ANON_KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(o)});return r.json()},
+  async update(t,id,o){const r=await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{method:'PATCH',headers:{'apikey':CONFIG.SUPABASE_ANON_KEY,'Authorization':`Bearer ${CONFIG.SUPABASE_ANON_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(o)});return r.json()},
+  async remove(t,id){await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{method:'DELETE',headers:{'apikey':CONFIG.SUPABASE_ANON_KEY,'Authorization':`Bearer ${CONFIG.SUPABASE_ANON_KEY}`}})}
+};
+const DB=CONFIG.MODE==='supabase'?CACHE_DB:LS_DB;
+
+// === SEED DATA ===
+function seedData(){
+  if(localStorage.getItem('uren_seeded'))return;
+  const werknemers=[
+    {id:'w1',naam:'Jan de Boer',persNr:'LB-001',functie:'Chauffeur',email:'jan@loonbedrijf.nl',telefoon:'06-12345678',actief:true},
+    {id:'w2',naam:'Piet Visser',persNr:'LB-002',functie:'Loonwerker',email:'piet@loonbedrijf.nl',telefoon:'06-87654321',actief:true},
+    {id:'w3',naam:'Mohammed El Amrani',persNr:'LB-003',functie:'Chauffeur',email:'mohamed@loonbedrijf.nl',telefoon:'06-11122233',actief:true},
+    {id:'w4',naam:'Lisa Jansen',persNr:'LB-004',functie:'Medewerker loonadmin',email:'lisa@loonbedrijf.nl',telefoon:'06-44455566',actief:true}
+  ];
+  const klanten=[
+    {id:'k1',naam:'Loonbedrijf Van Dijk',adres:'Havenweg 12',postcode:'1043 AB',plaats:'Amsterdam',contact:'Piet van Dijk',email:'pvandijk@vandijk.nl',telefoon:'020-1111111',actief:true},
+    {id:'k2',naam:'Melkveebedrijf De Vries',adres:'Zuiderdijk 84',postcode:'1509 GH',plaats:'Zaandam',contact:'Jan de Vries',email:'jdevries@devries.nl',telefoon:'075-2222222',actief:true},
+    {id:'k3',naam:'Gemeente Waadhoeke',adres:'Harlingerstraatweg 113',postcode:'8801 PX',plaats:'Franeker',contact:'Mevr. de Groot',email:'gemeente@waadhoeke.nl',telefoon:'0519-3333333',actief:true},
+    {id:'k4',naam:'Aannemersbedrijf Postma',adres:'Friesestraat 47',postcode:'8911 BZ',plaats:'Leeuwarden',contact:'Dirk Postma',email:'dpostma@postma.nl',telefoon:'058-4444444',actief:true},
+    {id:'k5',naam:'Akkerbouw Havinga',adres:'Oude Nijeveenseweg 8',postcode:'8441 PL',plaats:'Heerenveen',contact:'Hannie Havinga',email:'havinga@havinga.nl',telefoon:'0513-5555555',actief:true},
+    {id:'k6',naam:'Zuivelboerderij Nicolai',adres:'Hemdijk 25',postcode:'8601 XX',plaats:'Sneek',contact:'Piet Nicolai',email:'nicolai@zuivel.nl',telefoon:'0515-6666666',actief:true}
+  ];
+  const diensten=[
+    {id:'d1',naam:'Transport',omschrijving:'Goederen verplaatsen per vrachtwagen',tarief:45,eenheid:'uur',actief:true},
+    {id:'d2',naam:'Mest aanwenden',omschrijving:'Mest verspreiden over percelen',tarief:35,eenheid:'uur',actief:true},
+    {id:'d3',naam:'Grondverzet',omschrijving:'Grond verplaatsen en egaliseren',tarief:40,eenheid:'uur',actief:true},
+    {id:'d4',naam:'Kuilen',omschrijving:'Kuilen graven voor fundering',tarief:38,eenheid:'uur',actief:true},
+    {id:'d5',naam:'Mais haken',omschrijving:'Maisstalen ruimen en afvoeren',tarief:30,eenheid:'uur',actief:true},
+    {id:'d6',naam:'Overig',omschrijving:'Overige werkzaamheden',tarief:35,eenheid:'uur',actief:true}
+  ];
+  const dagstaten=[];
+  function addDag(wId,wNaam,d,st,et,pauze,status,klussen){
+    const netto=Math.max(0,((new Date(`2000-01-01T${et}`)-new Date(`2000-01-01T${st}`))/3600000)-pauze/60);
+    dagstaten.push({id:uid(),medewerkerId:wId,medewerkerNaam:wNaam,datum:d,startTime:st,endTime:et,pauzeMin:pauze,nettoUren:+netto.toFixed(1),status,klussen});
+  }
+  const w1=werknemers[0],w2=werknemers[1],w3=werknemers[2];
+  addDag('w1','Jan de Boer',dagGeleden(4),'07:00','16:00',30,'in_afwachting',[
+    {id:uid(),klantId:'k1',dienstId:'d1',kenteken:'DA-99-KP',omschrijving:'Transport bouwmaterialen',aantal:7,eenheid:'uur'},
+    {id:uid(),klantId:'k4',dienstId:'d3',kenteken:'',omschrijving:'Grondverzet op locatie',aantal:2,eenheid:'uur'}
+  ]);
+  addDag('w1','Jan de Boer',dagGeleden(3),'07:30','17:00',30,'goedgekeurd',[
+    {id:uid(),klantId:'k2',dienstId:'d2',kenteken:'',omschrijving:'Mest aanwenden veld A',aantal:8,eenheid:'uur',wegenMonsteren:true}
+  ]);
+  addDag('w2','Piet Visser',dagGeleden(4),'06:00','15:00',45,'verwerkt',[
+    {id:uid(),klantId:'k3',dienstId:'d4',kenteken:'DA-42-AB',omschrijving:'Kuilen graven fundering',aantal:6,eenheid:'uur'},
+    {id:uid(),klantId:'k5',dienstId:'d5',kenteken:'',omschrijving:'Maisstalen haken',aantal:3,eenheid:'uur'}
+  ]);
+  addDag('w2','Piet Visser',dagGeleden(3),'07:00','16:30',30,'in_afwachting',[
+    {id:uid(),klantId:'k6',dienstId:'d1',kenteken:'DA-11-CD',omschrijving:'Transport melkproducten',aantal:8,eenheid:'uur',wegenMonsteren:true}
+  ]);
+  addDag('w3','Mohammed El Amrani',dagGeleden(2),'08:00','17:00',30,'goedgekeurd',[
+    {id:uid(),klantId:'k1',dienstId:'d1',kenteken:'DA-99-KP',omschrijving:'Transport naar Amsterdam',aantal:8,eenheid:'uur'},
+    {id:uid(),klantId:'k4',dienstId:'d3',kenteken:'',omschrijving:'Aanvulling grondverzet',aantal:1,eenheid:'uur'}
+  ]);
+  addDag('w3','Mohammed El Amrani',dagGeleden(1),'07:00','14:00',30,'in_afwachting',[
+    {id:uid(),klantId:'k2',dienstId:'d2',kenteken:'',omschrijving:'Mest aanwenden Weide 2',aantal:6,eenheid:'uur',wegenMonsteren:true}
+  ]);
+  addDag('w1','Jan de Boer',dagGeleden(2),'07:00','16:00',30,'goedgekeurd',[
+    {id:uid(),klantId:'k6',dienstId:'d6',kenteken:'',omschrijving:'Overig werk - laden en lossen',aantal:7,eenheid:'uur'}
+  ]);
+  addDag('w2','Piet Visser',dagGeleden(2),'06:30','15:30',45,'verwerkt',[
+    {id:uid(),klantId:'k5',dienstId:'d5',kenteken:'DA-42-AB',omschrijving:'Mais haken ochtend',aantal:7,eenheid:'uur'}
+  ]);
+  werknemers.forEach(w=>DB.insert('werknemers',w));
+  klanten.forEach(k=>DB.insert('klanten',k));
+  diensten.forEach(d=>DB.insert('diensten',d));
+  dagstaten.forEach(d=>DB.insert('dagstaten',d));
+  localStorage.setItem('uren_seeded','1');
+}
+
+// === MIGRATIE: adres + postcode toevoegen aan bestaande klanten (behoudt ingevoerde data) ===
+function migrateKlanten(){
+  const adressen={
+    'Loonbedrijf Van Dijk':['Havenweg 12','1043 AB','Amsterdam'],
+    'Melkveebedrijf De Vries':['Zuiderdijk 84','1509 GH','Zaandam'],
+    'Gemeente Waadhoeke':['Harlingerstraatweg 113','8801 PX','Franeker'],
+    'Gemeente Waadfaeke':['Harlingerstraatweg 113','8801 PX','Franeker'],
+    'Aannemersbedrijf Postma':['Friesestraat 47','8911 BZ','Leeuwarden'],
+    'Akkerbouw Havinga':['Oude Nijeveenseweg 8','8441 PL','Heerenveen'],
+    'Zuivelboerderij Nicolai':['Hemdijk 25','8601 XX','Sneek']
+  };
+  DB.list('klanten').forEach(k=>{
+    const fix=adressen[k.naam];let nieuw=false;
+    if(fix){if(!k.adres){k.adres=fix[0];nieuw=true}if(!k.postcode){k.postcode=fix[1];nieuw=true}if(!k.plaats){k.plaats=fix[2];nieuw=true}}
+    if(k.naam==='Gemeente Waadfaeke'){k.naam='Gemeente Waadhoeke';nieuw=true}
+    if(nieuw)DB.update('klanten',k.id,{...k});
+  });
+}
+
+// === MIGRATIE: oude voorbeelddata naar recente datums schuiven ===
+// Alleen wanneer ALLE dagstaten ouder zijn dan 60 dagen (dus ongebruikte seed-data),
+// zodat echte invoer van de gebruiker nooit wordt aangeraakt.
+function migrateDagstaten(){
+  if(localStorage.getItem('uren_dates_shifted'))return;
+  const rows=DB.list('dagstaten');if(!rows.length){localStorage.setItem('uren_dates_shifted','1');return}
+  const vandaag=new Date();vandaag.setHours(0,0,0,0);
+  const nieuwste=rows.map(r=>r.datum).sort().pop();
+  const dagen=(vandaag-new Date(nieuwste+'T00:00:00'))/86400000;
+  if(dagen<=60){localStorage.setItem('uren_dates_shifted','1');return}
+  const verschuif=Math.floor(dagen)-1;
+  rows.forEach(r=>{const d=new Date(r.datum+'T00:00:00');d.setDate(d.getDate()+verschuif);DB.update('dagstaten',r.id,{...r,datum:iso(d)})});
+  localStorage.setItem('uren_dates_shifted','1');
+}
+
+// === MIGRATIE: facturatiestatus toevoegen aan bestaande klusregels ===
+function migrateFacturatie(){
+  DB.list('dagstaten').forEach(d=>{
+    let gewijzigd=false;
+    const klussen=(d.klussen||[]).map(k=>{
+      if(typeof k.gefactureerd!=='boolean'||typeof k.wegenMonsteren!=='boolean'){
+        gewijzigd=true;
+        return {...k,gefactureerd:typeof k.gefactureerd==='boolean'?k.gefactureerd:false,factuurdatum:k.factuurdatum||'',wegenMonsteren:typeof k.wegenMonsteren==='boolean'?k.wegenMonsteren:false};
+      }
+      return k;
+    });
+    if(gewijzigd)DB.update('dagstaten',d.id,{...d,klussen});
+  });
+}
+
+// === MIGRATIE: records zonder id herstellen ===
+// Rijen die zijn toegevoegd voordat insert automatisch een id toekende.
+function migrateIds(){
+  ['werknemers','klanten','diensten','dagstaten'].forEach(tabel=>{
+    const rows=DB.list(tabel);
+    let gewijzigd=false;
+    const nieuw=rows.map(r=>{
+      if(r.id)return r;
+      gewijzigd=true;return {...r,id:uid()};
+    });
+    if(gewijzigd){
+      localStorage.setItem('uren_'+tabel,JSON.stringify(nieuw));
+    }
+  });
+}
+
+// === TOAST ===
+function toast(msg,type='info'){
+  const t=document.createElement('div');
+  t.className=`toast-enter px-5 py-3 rounded-xl shadow-lg text-sm font-medium pointer-events-auto ${type==='success'?'bg-emerald-600 text-white':type==='error'?'bg-red-600 text-white':'bg-gray-800 text-white'}`;
+  t.textContent=msg;
+  $('toast').appendChild(t);
+  setTimeout(()=>{t.classList.replace('toast-enter','toast-out');setTimeout(()=>t.remove(),300)},3000);
+}
+
+// === DARK MODE ===
+function initDarkMode(){
+  const dark=localStorage.getItem('uren_dark')==='1';
+  if(dark)document.documentElement.classList.add('dark');
+  $('darkToggle').textContent=dark?'☀️':'🌙';
+  $('darkToggle').onclick=()=>{
+    const isDark=document.documentElement.classList.toggle('dark');
+    localStorage.setItem('uren_dark',isDark?'1':'0');
+    $('darkToggle').textContent=isDark?'☀️':'🌙';
+    renderCurrentView();
+  };
+}
+
+// === MEWERKER: INVOER ===
+function renderInvoer(){
+  const werknemers=DB.list('werknemers').filter(w=>w.actief!==false);
+  const klanten=DB.list('klanten').filter(k=>k.actief!==false);
+  const diensten=DB.list('diensten').filter(d=>d.actief!==false);
+  const concept=JSON.parse(localStorage.getItem('uren_concept')||'null');
+  const ds=concept||{datum:today(),medewerkerId:'',startTime:'07:00',endTime:'16:00',pauzeMin:30,klussen:[]};
+  const wOpt=werknemers.map(w=>`<option value="${w.id}"${ds.medewerkerId===w.id?' selected':''}>${esc(w.naam)}</option>`).join('');
+  const kOpt=klanten.map(k=>`<option value="${k.id}">${esc(k.naam)}</option>`).join('');
+  const dOpt=diensten.map(d=>`<option value="${d.id}">${esc(d.naam)} (${d.eenheid})</option>`).join('');
+  const bruto=calcBruto(ds.startTime,ds.endTime);
+  const netto=Math.max(0,bruto-ds.pauzeMin/60);
+  const klusSum=ds.klussen.reduce((s,k)=>s+(k.eenheid==='uur'?k.aantal:0),0);
+  const warn=ds.klussen.length>0&&Math.abs(netto-klusSum)>0.5;
+  $("main").innerHTML=`
+  <div class="max-w-lg mx-auto">
+    <h2 class="text-xl font-bold mb-4 text-emerald-700 dark:text-emerald-400">📝 Werkdag invullen</h2>
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-5 space-y-4 mb-4">
+      <div><label class="block text-sm font-medium mb-1" for="inDatum">Datum</label><input id="inDatum" type="date" value="${ds.datum}" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div>
+      <div><label class="block text-sm font-medium mb-1" for="inMedew">Medewerker</label><select id="inMedew" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600">${wOpt}</select></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="block text-sm font-medium mb-1" for="inStart">Starttijd</label><input id="inStart" type="time" value="${ds.startTime}" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div>
+        <div><label class="block text-sm font-medium mb-1" for="inEind">Eindtijd</label><input id="inEind" type="time" value="${ds.endTime}" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div>
+      </div>
+      <div><label class="block text-sm font-medium mb-1">Pauze (minuten)</label><div class="flex gap-2 items-center"><input id="inPauze" type="number" value="${ds.pauzeMin}" min="0" max="480" class="w-24 border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600">
+      <button type="button" data-pauze="15" class="px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 min-h-[48px]">15</button>
+      <button type="button" data-pauze="30" class="px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 min-h-[48px]">30</button>
+      <button type="button" data-pauze="45" class="px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 min-h-[48px]">45</button>
+      <button type="button" data-pauze="60" class="px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 min-h-[48px]">60</button></div></div>
+      <div id="calcInfo" class="bg-gray-50 dark:bg-gray-700 rounded-xl p-3 text-sm space-y-1" aria-live="polite">
+        <div>Bruto duur: <strong>${fmtNum(bruto)}u</strong></div>
+        <div>Netto uren: <strong class="text-emerald-700 dark:text-emerald-400">${fmtNum(netto)}u</strong></div>
+        <div>Klussen (uren): <strong>${fmtNum(klusSum)}u</strong>${warn?' <span class="text-amber-600 dark:text-amber-400">⚠ Verschil!</span>':''}</div>
+      </div>
+    </div>
+    <h3 class="font-semibold mb-2">Klussen</h3>
+    <div id="klusLijst" class="space-y-3 mb-4"></div>
+    <button type="button" id="btnAddKlus" class="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl text-emerald-700 dark:text-emerald-400 font-medium hover:bg-emerald-50 dark:hover:bg-gray-700 min-h-[48px]">+ Klus toevoegen</button>
+    <div class="sticky-bottom mt-4 pt-2">
+      <button id="btnSubmit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl text-lg shadow-lg min-h-[52px]">Werkdag indienen voor loonadministratie</button>
+      ${concept?'<p class="text-center text-xs text-gray-400 mt-2">Concept opgeslagen</p>':''}
+    </div>
+  </div>`;
+  // Event bindings
+  const saveConcept=()=>{
+    if(!$('inDatum'))return;
+    const s={datum:$('inDatum').value,medewerkerId:$('inMedew').value,startTime:$('inStart').value,endTime:$('inEind').value,pauzeMin:+$('inPauze').value,klussen:getKlussen()};
+    localStorage.setItem('uren_concept',JSON.stringify(s));
+  };
+  const calcAndRender=()=>{
+    if(!$('inDatum'))return;
+    const bruto=calcBruto($('inStart').value,$('inEind').value);
+    const netto=Math.max(0,bruto-+$('inPauze').value/60);
+    const ks=getKlussen();
+    const ksUren=ks.reduce((s,k)=>s+(k.eenheid==='uur'?k.aantal:0),0);
+    const warn=ks.length>0&&Math.abs(netto-ksUren)>0.5;
+    const info=$('calcInfo');if(info)info.innerHTML=
+      `<div>Bruto duur: <strong>${fmtNum(bruto)}u</strong></div>
+       <div>Netto uren: <strong class="text-emerald-700 dark:text-emerald-400">${fmtNum(netto)}u</strong></div>
+       <div>Klussen (uren): <strong>${fmtNum(ksUren)}u</strong>${warn?' <span class="text-amber-600 dark:text-amber-400">⚠ Verschil!</span>':''}</div>`;
+  };
+  function getKlussen(){return ds.klussen.map(k=>({...k, wegenMonsteren:($('wm_'+k.id)?$('wm_'+k.id).checked:!!k.wegenMonsteren), klantId:$('klant_'+k.id)?.value||k.klantId, dienstId:($('dienst_'+k.id)?$('dienst_'+k.id).value:'')||k.dienstId||(diensten[0]?diensten[0].id:''), kenteken:$('ket_'+k.id)?.value||k.kenteken, omschrijving:$('oms_'+k.id)?.value||k.omschrijving, aantal:+($('aant_'+k.id)?.value||k.aantal||1), eenheid:$('een_'+k.id)?.value||k.eenheid||'uur'}))}
+  function klantZoek(q){
+    const all=DB.list('klanten').filter(k=>k.actief!==false);
+    const t=(q||'').trim().toLowerCase();
+    if(!t)return all;
+    return all.filter(k=>[k.naam,k.plaats,k.adres,k.postcode,k.contact].some(v=>(v||'').toLowerCase().includes(t)));
+  }
+  function klantResultaat(kid){
+    const box=$('kres_'+kid);if(!box)return;
+    const q=$('kzoek_'+kid)?$('kzoek_'+kid).value:'';
+    const list=klantZoek(q);
+    box.innerHTML=list.length?list.map(k=>`<button type="button" data-pick="${k.id}" class="w-full text-left px-3 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0 hover:bg-emerald-50 dark:hover:bg-gray-600 min-h-[48px]"><div class="font-medium text-sm text-gray-800 dark:text-gray-100">${esc(k.naam)}</div><div class="text-xs text-gray-500 dark:text-gray-400">📍 ${esc(klantAdres(k)||'Geen adres bekend')}${k.contact?' · '+esc(k.contact):''}</div></button>`).join(''):`<div class="p-3 text-sm text-gray-500">Geen klant gevonden voor &ldquo;${esc(q)}&rdquo;</div>`;
+    box.classList.remove('hidden');
+  }
+  function renderKlussen(){
+    const c=$('klusLijst');if(!c)return;
+    const ks=getKlussen();
+    const selCls='w-full border rounded-lg px-2 py-2 bg-white dark:bg-gray-700 dark:border-gray-600 text-sm min-h-[48px]';
+    c.innerHTML=ks.map((k,i)=>{
+      const kd=DB.get('klanten',k.klantId);
+      return `<div class="klus-card"><div class="flex justify-between items-start mb-2"><span class="text-xs font-semibold text-gray-400">Klus ${i+1}</span><button data-remove-klus="${k.id}" class="text-red-500 hover:text-red-700 text-sm px-2 min-h-[48px]" aria-label="Verwijder klus">✕</button></div>
+    <div class="grid grid-cols-2 gap-2">
+    <div class="col-span-2 relative"><label for="kzoek_${k.id}" class="text-xs text-gray-500">Klant/Opdrachtgever</label>
+      <input id="kzoek_${k.id}" type="text" autocomplete="off" placeholder="Zoek op naam, plaats of adres…" value="${esc(kd?kd.naam:'')}" class="${selCls}" role="combobox" aria-expanded="false" aria-controls="kres_${k.id}">
+      <input id="klant_${k.id}" type="hidden" value="${esc(k.klantId||'')}">
+      <div id="kres_${k.id}" class="hidden absolute left-0 right-0 mt-1 max-h-60 overflow-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-20" role="listbox"></div>
+      <div id="kadres_${k.id}" class="text-[11px] text-gray-500 dark:text-gray-400 mt-1">${kd?'📍 '+esc(klantAdres(kd)||'Geen adres bekend'):'Nog geen klant gekozen'}</div>
+    </div>
+    <div><label class="text-xs text-gray-500">Dienst</label><select id="dienst_${k.id}" class="${selCls}">${dOpt}</select></div>
+    <div><label class="text-xs text-gray-500">Kenteken/Materieel</label><input id="ket_${k.id}" value="${esc(k.kenteken)}" list="ddKenteken" class="${selCls}"></div>
+    <div><label class="text-xs text-gray-500">Aantal</label><input id="aant_${k.id}" type="number" value="${k.aantal||1}" min="0.1" step="0.1" class="${selCls}"></div>
+    <div><label class="text-xs text-gray-500">Eenheid</label><select id="een_${k.id}" class="${selCls}"><option value="uur"${k.eenheid==='uur'?' selected':''}>uur</option><option value="m3"${k.eenheid==='m3'?' selected':''}>m³</option><option value="ha"${k.eenheid==='ha'?' selected':''}>ha</option><option value="ritten"${k.eenheid==='ritten'?' selected':''}>ritten</option><option value="km"${k.eenheid==='km'?' selected':''}>km</option><option value="stukken"${k.eenheid==='stukken'?' selected':''}>stuks</option></select></div>
+    <div class="col-span-2"><label class="text-xs text-gray-500">Omschrijving</label><textarea id="oms_${k.id}" rows="2" class="${selCls}">${esc(k.omschrijving)}</textarea></div>
+    <div class="col-span-2 border-t border-gray-100 dark:border-gray-700 pt-2">
+      <label for="wm_${k.id}" class="flex items-center gap-3 min-h-[48px] cursor-pointer select-none">
+        <input type="checkbox" id="wm_${k.id}" ${k.wegenMonsteren?'checked':''} class="w-6 h-6 accent-blue-600 shrink-0">
+        <span class="text-sm font-medium text-gray-800 dark:text-gray-100">⚖ Wegen monsteren</span>
+      </label>
+      <p class="text-[11px] text-gray-500 dark:text-gray-400 -mt-1 ml-9">Aanvinken als deze klus gewogen en/of bemonsterd is. Zo zie je later per klus of het gebeurd is.</p>
+    </div></div></div>`}).join('');
+    ks.forEach(k=>{
+      const du=$('dienst_'+k.id);if(du)du.value=k.dienstId;
+      const hi=$('klant_'+k.id),zo=$('kzoek_'+k.id),ad=$('kadres_'+k.id),bx=$('kres_'+k.id);
+      if(!zo)return;
+      const toonAdres=id=>{const kk=DB.get('klanten',id);ad.textContent=kk?'📍 '+(klantAdres(kk)||'Geen adres bekend'):'Nog geen klant gekozen'};
+      zo.oninput=()=>{
+        const t=zo.value.trim().toLowerCase();
+        const exact=DB.list('klanten').find(x=>x.naam.toLowerCase()===t);
+        hi.value=exact?exact.id:'';
+        toonAdres(hi.value);klantResultaat(k.id);saveConcept();
+      };
+      zo.onfocus=()=>{zo.select();klantResultaat(k.id)};
+      bx.onmousedown=e=>{
+        const b=e.target.closest('[data-pick]');if(!b)return;
+        e.preventDefault();
+        const kk=DB.get('klanten',b.dataset.pick);
+        hi.value=b.dataset.pick;zo.value=kk?kk.naam:'';
+        toonAdres(b.dataset.pick);bx.classList.add('hidden');saveConcept();
+      };
+    });
+    if(!document.body.dataset.klBuiten){
+      document.body.dataset.klBuiten='1';
+      document.addEventListener('mousedown',e=>{
+        if(e.target.closest('[id^="kres_"]')||e.target.closest('[id^="kzoek_"]'))return;
+        document.querySelectorAll('[id^="kres_"]').forEach(b=>b.classList.add('hidden'));
+      });
+    }
+  }
+  $('main').oninput=e=>{if(['inDatum','inMedew','inStart','inEind','inPauze'].includes(e.target.id)){saveConcept();calcAndRender()}if(e.target.id.startsWith('klant_')||e.target.id.startsWith('dienst_')||e.target.id.startsWith('ket_')||e.target.id.startsWith('oms_')||e.target.id.startsWith('aant_')||e.target.id.startsWith('een_')){saveConcept();calcAndRender()}};
+  $('main').onchange=e=>{saveConcept();calcAndRender()};
+  $('main').onclick=e=>{
+    if(e.target.dataset.pauze!==undefined){$('inPauze').value=e.target.dataset.pauze;saveConcept();calcAndRender()}
+    if(e.target.dataset.removeKlus){ds.klussen=ds.klussen.filter(k=>k.id!==e.target.dataset.removeKlus);saveConcept();renderKlussen();calcAndRender()}
+    if(e.target.id==='btnAddKlus'){ds.klussen.push({id:uid(),klantId:'',dienstId:(diensten[0]?diensten[0].id:''),kenteken:'',omschrijving:'',aantal:1,eenheid:'uur',gefactureerd:false,factuurdatum:'',wegenMonsteren:false});saveConcept();renderKlussen()}
+    if(e.target.id==='btnSubmit'){
+      // Alles uit het formulier lezen: ds is alleen de beginwaarde, niet de invoer.
+      const wId=$('inMedew').value,datum=$('inDatum').value,st=$('inStart').value,et=$('inEind').value,pauze=(+$('inPauze').value)||0;
+      const w=werknemers.find(x=>x.id===wId);if(!w){toast('Kies een medewerker','error');return}
+      if(!datum){toast('Kies een datum','error');return}
+      const klussen=getKlussen();
+      if(klussen.length===0){toast('Voeg minstens 1 klus toe','error');return}
+      if(klussen.some(k=>!k.klantId)){toast('Kies bij elke klus een klant','error');return}
+      if(!st||!et||st>=et){toast('Eindtijd moet na starttijd zijn','error');return}
+      const bestaat=DB.list('dagstaten').some(d=>d.medewerkerId===wId&&d.datum===datum);
+      if(bestaat&&!confirm('Er staat al een dagstaat voor deze medewerker op '+datum+'. Toch nog een indienen?'))return;
+      const nettoDag=Math.max(0,calcBruto(st,et)-pauze/60);
+      const dag={id:uid(),medewerkerId:wId,medewerkerNaam:w.naam,datum,startTime:st,endTime:et,pauzeMin:pauze,nettoUren:+nettoDag.toFixed(1),status:'in_afwachting',klussen:klussen.map(k=>({...k,gefactureerd:false,factuurdatum:''}))};
+      DB.insert('dagstaten',dag);
+      localStorage.removeItem('uren_concept');
+      toast('Werkdag ingediend! ✅','success');
+      renderInvoer();
+    }
+  };
+  // Datalist for kenteken suggestions
+  const existing=DB.list('dagstaten').flatMap(d=>d.klussen.filter(k=>k.kenteken).map(k=>k.kenteken));
+  const unique=[...new Set(existing)];
+  if(unique.length>0)$('main').insertAdjacentHTML('beforeend',`<datalist id="ddKenteken">${unique.map(k=>`<option value="${esc(k)}">`).join('')}</datalist>`);
+  renderKlussen();calcAndRender();
+}
+
+function calcBruto(st,et){
+  if(!st||!et)return 0;
+  const [sh,sm]=st.split(':').map(Number),[eh,em]=et.split(':').map(Number);
+  return(Math.max(0,(eh*60+em)-(sh*60+sm)))/60;
+}
+
+// === MEWERKER: MIJN UREN ===
+function renderMijnUren(){
+  const werknemers=DB.list('werknemers').filter(w=>w.actief!==false);
+  const dagstaten=DB.list('dagstaten');
+  const wOpt=werknemers.map(w=>`<option value="${w.id}">${esc(w.naam)}</option>`).join('');
+  const wId=werknemers[0]?.id||'';
+  const filtered=wId?dagstaten.filter(d=>d.medewerkerId===wId).sort((a,b)=>b.datum.localeCompare(a.datum)):[];
+  $("main").innerHTML=`
+  <div class="max-w-lg mx-auto">
+    <h2 class="text-xl font-bold mb-4 text-emerald-700 dark:text-emerald-400">📋 Mijn uren</h2>
+    <div class="mb-4"><label class="block text-sm font-medium mb-1">Medewerker</label><select id="muWerknemer" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700">${wOpt}</select></div>
+    <div class="space-y-3" id="muLijst">${filtered.length?filtered.map(d=>renderDagKaart(d)).join(''):'<p class="text-gray-400 text-center py-8">Nog geen dagstaten</p>'}</div>
+  </div>`;
+  $('muWerknemer').onchange=()=>{const w=$('muWerknemer').value;const fd=w?dagstaten.filter(d=>d.medewerkerId===w).sort((a,b)=>b.datum.localeCompare(a.datum)):[];$('muLijst').innerHTML=fd.length?fd.map(d=>renderDagKaart(d)).join(''):'<p class="text-gray-400 text-center py-8">Nog geen dagstaten</p>'};
+}
+function renderDagKaart(d){
+  const totalKlussen=d.klussen.length;
+  const badgeClass=d.status==='in_afwachting'?'badge-afwachting':d.status==='goedgekeurd'?'badge-goedgekeurd':'badge-verwerkt';
+  const statusLabel=d.status==='in_afwachting'?'In afwachting':d.status==='goedgekeurd'?'Goedgekeurd':'Verwerkt';
+  return`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="flex justify-between items-center"><div><span class="font-semibold">${esc(d.medewerkerNaam)}</span> <span class="text-gray-400 text-sm">${d.datum}</span></div><span class="badge ${badgeClass}">${statusLabel}</span></div>
+  <div class="mt-2 text-sm text-gray-600 dark:text-gray-300">${d.startTime} – ${d.endTime} · pauze ${d.pauzeMin}m · <strong>${fmtNum(d.nettoUren)}u netto</strong> · ${totalKlussen} klus${totalKlussen!==1?'sen':''}</div>
+  <button class="muToggle mt-2 text-xs text-emerald-600 dark:text-emerald-400 font-medium" data-dag-id="${d.id}">▶ Bekijk details</button>
+  <div id="muDet_${d.id}" class="hidden mt-3 space-y-2 border-t border-gray-100 dark:border-gray-700 pt-3">${d.klussen.map(k=>{const kd=DB.get('klanten',k.klantId);const dd=DB.get('diensten',k.dienstId);return`<div class="text-sm bg-gray-50 dark:bg-gray-700 rounded-lg p-2"><div class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekend'}</div>${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500 dark:text-gray-400">📍 ${esc(klantAdres(kd))}</div>`:''}<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">${dd?esc(dd.naam):'Onbekend'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')} · ${k.aantal} ${esc(k.eenheid||'uur')}</div>${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">⚖ Wegen monsteren</span></div>':''}</div>`}).join('')}</div></div>`;
+}
+
+// === BEHEER: DASHBOARD ===
+function renderDashRows(dagen){
+  if(!dagen.length)return'<tr><td colspan="10" class="px-4 py-8 text-center text-gray-400">Geen dagstaten in deze selectie</td></tr>';
+  return dagen.map(d=>{
+    const badgeClass=d.status==='in_afwachting'?'badge-afwachting':d.status==='goedgekeurd'?'badge-goedgekeurd':'badge-verwerkt';
+    const label=d.status==='in_afwachting'?'In afwachting':d.status==='goedgekeurd'?'Goedgekeurd':'Verwerkt';
+    const klussen=d.klussen||[];
+    const mono=klussen.filter(k=>k.wegenMonsteren).length;
+    const detail=klussen.length?klussen.map(k=>{
+      const kd=DB.get('klanten',k.klantId),dd=DB.get('diensten',k.dienstId);
+      return `<div class="text-sm bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-2 mb-1">
+        <div class="flex justify-between gap-2"><span class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekende klant'}</span><span class="text-xs text-gray-500 whitespace-nowrap">${k.aantal} ${esc(k.eenheid||'uur')}</span></div>
+        ${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500">📍 ${esc(klantAdres(kd))}</div>`:''}
+        <div class="text-xs text-gray-500 mt-0.5">${dd?esc(dd.naam):'—'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')}</div>
+        ${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">⚖ Wegen monsteren</span></div>':''}
+      </div>`}).join(''):'<div class="text-sm text-gray-400">Geen klussen bij deze dagstaat</div>';
+    return`<tr class="border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+    <td class="px-2 py-2 text-center"><button data-uitklap="${d.id}" class="text-gray-400 hover:text-emerald-600 px-1 min-h-[48px]" aria-label="Toon klussen" aria-expanded="false">▸</button></td>
+    <td class="px-3 py-2">${esc(d.medewerkerNaam)}</td><td class="px-3 py-2">${d.datum}</td><td class="px-3 py-2 text-center">${d.startTime}</td><td class="px-3 py-2 text-center">${d.endTime}</td>
+    <td class="px-3 py-2 text-center">${d.pauzeMin}m</td><td class="px-3 py-2 text-center font-semibold">${fmtNum(d.nettoUren)}u</td>
+    <td class="px-3 py-2 text-center whitespace-nowrap">${klussen.length}${mono?` <span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-xs font-medium">⚖ ${mono}</span>`:''}</td>
+    <td class="px-3 py-2 text-center"><span class="badge ${badgeClass}">${label}</span></td>
+    <td class="px-3 py-2"><select data-dag-status="${d.id}" class="text-xs border rounded px-1 py-1 bg-white dark:bg-gray-700 dark:border-gray-600">
+    <option value="in_afwachting"${d.status==='in_afwachting'?' selected':''}>In afwachting</option>
+    <option value="goedgekeurd"${d.status==='goedgekeurd'?' selected':''}>Goedgekeurd</option>
+    <option value="verwerkt"${d.status==='verwerkt'?' selected':''}>Verwerkt</option>
+    </select> <button data-del-dag="${d.id}" class="text-red-500 hover:text-red-700 text-xs px-1 min-h-[48px]" aria-label="Verwijder">🗑</button></td></tr>
+    <tr id="dashDet_${d.id}" class="hidden"><td colspan="10" class="bg-gray-50 dark:bg-gray-900/40 px-3 py-3">${detail}</td></tr>`}).join('');
+}
+// === BEHEER: DASHBOARD ===
+// De gekozen filters blijven bewaard buiten het tekenen, zodat de keuze niet
+// steeds wordt gewist wanneer de tabel opnieuw wordt opgebouwd.
+let dashFilter={periode:'week',wId:'',status:''};
+function dashGefilterd(){
+  return DB.list('dagstaten')
+    .filter(d=>matchesFilter(d,{wId:dashFilter.wId,status:dashFilter.status,period:dashFilter.periode}))
+    .sort((a,b)=>(b.datum||'').localeCompare(a.datum||''));
+}
+function renderDashboard(){
+  const werknemers=DB.list('werknemers');
+  const gef=dashGefilterd();
+  const totaalAlle=DB.list('dagstaten').length;
+  const totalNetto=gef.reduce((s,d)=>s+(Number(d.nettoUren)||0),0);
+  const inAfwachting=gef.filter(d=>d.status==='in_afwachting').length;
+  const activeW=werknemers.filter(w=>w.actief!==false).length;
+  const alleMono=gef.reduce((s,d)=>s+(d.klussen||[]).filter(k=>k.wegenMonsteren).length,0);
+  const knop=(val,label)=>`<button class="dash-filter px-3 py-1.5 text-sm rounded-lg font-medium ${dashFilter.periode===val?'bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200':'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}" data-filter="${val}">${label}</button>`;
+  const filterActief=!!(dashFilter.wId||dashFilter.status)||dashFilter.periode==='maand';
+  const kaart=(titel,waarde,kleur,extra)=>`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">${titel}</div><div class="text-2xl font-bold ${kleur}">${waarde}</div>${extra?`<div class="text-xs text-gray-500 mt-0.5">${extra}</div>`:''}</div>`;
+  $("main").innerHTML=`
+  <div class="max-w-4xl mx-auto">
+    <h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">📊 Dashboard</h2>
+    <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">De tellers en de tabel gaan allebei over de gekozen selectie hieronder.</p>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      ${kaart('Dagstaten',gef.length,'text-emerald-700 dark:text-emerald-400',filterActief?`van ${totaalAlle} in totaal`:'')}
+      ${kaart('Totaal netto uren',fmtNum(totalNetto),'text-blue-700 dark:text-blue-400','')}
+      ${kaart('In afwachting',inAfwachting,'text-amber-600 dark:text-amber-400','')}
+      ${kaart('⚖ Wegen monsteren',alleMono,'text-purple-700 dark:text-purple-400','klussen in selectie')}
+    </div>
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      ${knop('week','Deze week')}${knop('maand','Deze maand')}${knop('alles','Alles')}
+      <span class="text-xs text-gray-400">${activeW} actieve medewerkers</span>
+    </div>
+    <div class="flex flex-wrap gap-2 mb-3">
+      <select id="dashWerknemer" class="${SEL_S} bg-white dark:bg-gray-700"><option value="">Alle medewerkers</option>${werknemers.map(w=>`<option value="${w.id}"${dashFilter.wId===w.id?' selected':''}>${esc(w.naam)}</option>`).join('')}</select>
+      <select id="dashStatus" class="${SEL_S} bg-white dark:bg-gray-700">
+        <option value="">Alle statussen</option>
+        <option value="in_afwachting"${dashFilter.status==='in_afwachting'?' selected':''}>In afwachting</option>
+        <option value="goedgekeurd"${dashFilter.status==='goedgekeurd'?' selected':''}>Goedgekeurd</option>
+        <option value="verwerkt"${dashFilter.status==='verwerkt'?' selected':''}>Verwerkt</option>
+      </select>
+      <button id="btnBulkApprove" class="px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 min-h-[48px] font-medium">✅ Alles in selectie goedkeuren</button>
+      ${filterActief?'<button id="btnDashReset" class="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 rounded-lg min-h-[48px] font-medium">Filters wissen</button>':''}
+    </div>
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700">
+      <div class="scroll-x"><table class="w-full text-sm min-w-[900px]">
+        <thead class="bg-gray-50 dark:bg-gray-700"><tr>
+          <th class="px-2 py-2"></th><th class="px-3 py-2 text-left">Medewerker</th><th class="px-3 py-2 text-left">Datum</th><th class="px-3 py-2">Start</th><th class="px-3 py-2">Eind</th>
+          <th class="px-3 py-2">Pauze</th><th class="px-3 py-2">Netto</th><th class="px-3 py-2">Klussen</th><th class="px-3 py-2">Status</th><th class="px-3 py-2">Acties</th>
+        </tr></thead>
+        <tbody id="dashBody">${renderDashRows(gef)}</tbody>
+      </table></div>
+    </div>
+    <p class="text-xs text-gray-400 mt-3">Klik op ▸ voor de klussen van die dag, inclusief of er gewogen/gemonsterd is.</p>
+  </div>`;
+  bindDashFilters();
+}
+function bindDashFilters(){
+  $('btnBulkApprove').onclick=()=>{
+    const open=dashGefilterd().filter(d=>d.status!=='goedgekeurd');
+    if(!open.length){toast('Geen dagstaten om goed te keuren in deze selectie','info');return}
+    if(!confirm('Alle '+open.length+' dagstaten in de huidige selectie goedkeuren?'))return;
+    open.forEach(d=>DB.update('dagstaten',d.id,{...d,status:'goedgekeurd'}));
+    toast(open.length+' dagstaten goedgekeurd ✅','success');
+    renderDashboard();
+  };
+  $('dashWerknemer').onchange=e=>{dashFilter.wId=e.target.value;renderDashboard()};
+  $('dashStatus').onchange=e=>{dashFilter.status=e.target.value;renderDashboard()};
+  document.querySelectorAll('.dash-filter').forEach(b=>b.onclick=()=>{dashFilter.periode=b.dataset.filter;renderDashboard()});
+  if($('btnDashReset'))$('btnDashReset').onclick=()=>{dashFilter={periode:'week',wId:'',status:''};renderDashboard()};
+  document.querySelectorAll('[data-uitklap]').forEach(b=>b.onclick=()=>{
+    const r=$('dashDet_'+b.dataset.uitklap);if(!r)return;
+    const dicht=r.classList.toggle('hidden');
+    b.textContent=dicht?'▸':'▾';
+    b.setAttribute('aria-expanded',dicht?'false':'true');
+  });
+  document.querySelectorAll('[data-dag-status]').forEach(sel=>{sel.onchange=e=>{const id=e.target.dataset.dagStatus;const d=DB.get('dagstaten',id);if(d)DB.update('dagstaten',id,{...d,status:e.target.value});toast('Status bijgewerkt','success')}});
+  document.querySelectorAll('[data-del-dag]').forEach(b=>b.onclick=e=>{if(confirm('Weet je zeker dat je deze dagstaat wilt verwijderen?')){DB.remove('dagstaten',e.target.dataset.delDag);toast('Dagstaat verwijderd','success');renderDashboard()}});
+}
+
+function getDashFilter(){
+  const wId=$('dashWerknemer')?.value||'';
+  const status=$('dashStatus')?.value||'';
+  let period='all';
+  const active=document.querySelector('.dash-filter.bg-emerald-100,.dark\\:bg-emerald-900');
+  if(active)period=active.dataset.filter||'all';
+  return{wId,status,period};
+}
+function matchesFilter(d,f){
+  if(f.wId&&d.medewerkerId!==f.wId)return false;
+  if(f.status&&d.status!==f.status)return false;
+  if(f.period==='week'){const w=weekNum(new Date(d.datum));const y=new Date(d.datum).getFullYear();const{start,end}=weekRange(y,w);if(d.datum<start||d.datum>end)return false}
+  else if(f.period==='maand'){const now=new Date();const dm=now.getMonth(),dy=now.getFullYear();const d=new Date(d.datum);if(d.getMonth()!==dm||d.getFullYear()!==dy)return false}
+  return true;
+}
+
+// === BEHEER: KLUSSEN & FACTURATIE ===
+let klusFilter={periode:'maand',klant:'',dienst:'',werknemer:'',factuur:'',mono:''};
+let klusSelectie=new Set();
+
+// Alle klusregels uit alle dagstaten, platgeslagen tot losse regels
+function alleKlussen(){
+  const kMap={};DB.list('klanten').forEach(k=>kMap[k.id]=k);
+  const dMap={};DB.list('diensten').forEach(d=>dMap[d.id]=d);
+  const out=[];
+  DB.list('dagstaten').forEach(d=>(d.klussen||[]).forEach(k=>out.push({
+    ...k,dagId:d.id,datum:d.datum,medewerkerId:d.medewerkerId,medewerkerNaam:d.medewerkerNaam,dagStatus:d.status,
+    klant:kMap[k.klantId]||null,dienst:dMap[k.dienstId]||null
+  })));
+  return out.sort((a,b)=>(b.datum||'').localeCompare(a.datum||''));
+}
+function klusBedrag(k){const t=k.dienst&&k.dienst.tarief?Number(k.dienst.tarief):0;return t*(Number(k.aantal)||0)}
+function klusMatch(k,f){
+  if(f.klant&&k.klantId!==f.klant)return false;
+  if(f.dienst&&k.dienstId!==f.dienst)return false;
+  if(f.werknemer&&k.medewerkerId!==f.werknemer)return false;
+  if(f.factuur==='open'&&k.gefactureerd)return false;
+  if(f.factuur==='klaar'&&!k.gefactureerd)return false;
+  if(f.mono==='wel'&&!k.wegenMonsteren)return false;
+  if(f.mono==='niet'&&k.wegenMonsteren)return false;
+  if(f.periode&&f.periode!=='alles'){
+    const dt=new Date(k.datum);
+    if(f.periode==='week'){const y=dt.getFullYear(),w=weekNum(dt);const r=weekRange(y,w);if(k.datum<r.start||k.datum>r.end)return false}
+    else if(f.periode==='maand'){const n=new Date();if(dt.getMonth()!==n.getMonth()||dt.getFullYear()!==n.getFullYear())return false}
+  }
+  return true;
+}
+// Facturatiestatus van klusregels wegschrijven naar de dagstaat
+function zetFacturatieBulk(paren,waarde){
+  const perDag={};
+  paren.forEach(p=>{(perDag[p.dagId]=perDag[p.dagId]||[]).push(p.klusId)});
+  Object.keys(perDag).forEach(dagId=>{
+    const d=DB.get('dagstaten',dagId);if(!d)return;
+    const ids=perDag[dagId];
+    const klussen=(d.klussen||[]).map(k=>ids.includes(k.id)?{...k,gefactureerd:!!waarde,factuurdatum:waarde?today():''}:k);
+    DB.update('dagstaten',dagId,{...d,klussen});
+  });
+}
+// "Wegen monsteren" van klusregels wegschrijven naar de dagstaat
+function zetMono(paren,waarde){
+  const perDag={};
+  paren.forEach(p=>{(perDag[p.dagId]=perDag[p.dagId]||[]).push(p.klusId)});
+  Object.keys(perDag).forEach(dagId=>{
+    const d=DB.get('dagstaten',dagId);if(!d)return;
+    const ids=perDag[dagId];
+    const klussen=(d.klussen||[]).map(k=>ids.includes(k.id)?{...k,wegenMonsteren:!!waarde}:k);
+    DB.update('dagstaten',dagId,{...d,klussen});
+  });
+}
+function toggleKlusSelectie(id,aan){if(aan)klusSelectie.add(id);else klusSelectie.delete(id);updateKlusBulkLabel()}
+function updateKlusBulkLabel(){
+  const b=$('btnKlusBulk');if(!b)return;
+  b.textContent=klusSelectie.size?`✅ Geselecteerde afvinken (${klusSelectie.size})`:'✅ Geselecteerde afvinken';
+  b.disabled=klusSelectie.size===0;
+  b.classList.toggle('opacity-40',klusSelectie.size===0);
+}
+function renderKlussenBeheer(){
+  const alle=alleKlussen();
+  const klanten=DB.list('klanten'),diensten=DB.list('diensten'),werknemers=DB.list('werknemers');
+  const geldig=new Set(alle.map(k=>k.id));
+  klusSelectie=new Set([...klusSelectie].filter(id=>geldig.has(id)));
+  const rows=alle.filter(k=>klusMatch(k,klusFilter));
+
+  const uren=rows.filter(k=>k.eenheid==='uur').reduce((a,k)=>a+(Number(k.aantal)||0),0);
+  const monoAantal=rows.filter(k=>k.wegenMonsteren).length;
+  const open=rows.filter(k=>!k.gefactureerd);
+  const openBedrag=open.reduce((a,k)=>a+klusBedrag(k),0);
+  const klaarBedrag=rows.filter(k=>k.gefactureerd).reduce((a,k)=>a+klusBedrag(k),0);
+  const euro=n=>'€ '+n.toFixed(2).replace('.',',');
+
+  const opt=(list,sel,leeg)=>`<option value="">${leeg}</option>`+list.map(x=>`<option value="${x.id}"${sel===x.id?' selected':''}>${esc(x.naam)}</option>`).join('');
+  const periodeKnop=(val,label)=>`<button class="klus-filter px-3 py-1.5 text-sm rounded-lg font-medium ${klusFilter.periode===val?'bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200':'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}" data-filter="${val}">${label}</button>`;
+  const statusBadge=k=>k.gefactureerd
+    ?'<span class="badge bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">Gefactureerd</span>'
+    :'<span class="badge bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">Te factureren</span>';
+
+  // samenvatting per klant (handig bij het maken van de facturen)
+  const perKlant={};
+  rows.forEach(k=>{
+    const key=k.klantId||'_';
+    const g=perKlant[key]=perKlant[key]||{naam:k.klant?k.klant.naam:'Onbekende klant',adres:k.klant?klantAdres(k.klant):'',aantal:0,uren:0,open:0,openBedrag:0};
+    g.aantal++;if(k.eenheid==='uur')g.uren+=Number(k.aantal)||0;
+    if(!k.gefactureerd){g.open++;g.openBedrag+=klusBedrag(k)}
+  });
+  const klantRijen=Object.values(perKlant).sort((a,b)=>a.naam.localeCompare(b.naam));
+
+  $('main').innerHTML=`<div class="max-w-5xl mx-auto">
+  <h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">🧾 Klussen &amp; facturatie</h2>
+  <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Alle klusregels uit de dagstaten. Vink een klus af zodra je hem in je boekhoudprogramma hebt gefactureerd.</p>
+
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Klussen in filter</div><div class="text-2xl font-bold text-emerald-700 dark:text-emerald-400">${rows.length}</div></div>
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Uren in filter</div><div class="text-2xl font-bold text-blue-700 dark:text-blue-400">${fmtNum(uren)}</div></div>
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Nog te factureren</div><div class="text-2xl font-bold text-amber-600 dark:text-amber-400">${open.length}</div><div class="text-xs text-gray-500 mt-0.5">${euro(openBedrag)} indicatief</div></div>
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Gefactureerd</div><div class="text-2xl font-bold text-purple-700 dark:text-purple-400">${rows.length-open.length}</div><div class="text-xs text-gray-500 mt-0.5">${euro(klaarBedrag)} indicatief</div></div>
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">⚖ Wegen monsteren</div><div class="text-2xl font-bold text-blue-700 dark:text-blue-400">${monoAantal}</div><div class="text-xs text-gray-500 mt-0.5">van ${rows.length} klussen</div></div>
+  </div>
+
+  <div class="flex flex-wrap gap-2 mb-2">${periodeKnop('week','Deze week')}${periodeKnop('maand','Deze maand')}${periodeKnop('alles','Alles')}</div>
+  <div class="flex flex-wrap gap-2 mb-3">
+    <select id="klFKlant" class="${SEL_S} bg-white dark:bg-gray-700">${opt(klanten,klusFilter.klant,'Alle klanten')}</select>
+    <select id="klFDienst" class="${SEL_S} bg-white dark:bg-gray-700">${opt(diensten,klusFilter.dienst,'Alle diensten')}</select>
+    <select id="klFWerknemer" class="${SEL_S} bg-white dark:bg-gray-700">${opt(werknemers,klusFilter.werknemer,'Alle medewerkers')}</select>
+    <select id="klFFactuur" class="${SEL_S} bg-white dark:bg-gray-700">
+      <option value=""${klusFilter.factuur===''?' selected':''}>Alle statussen</option>
+      <option value="open"${klusFilter.factuur==='open'?' selected':''}>Te factureren</option>
+      <option value="klaar"${klusFilter.factuur==='klaar'?' selected':''}>Gefactureerd</option>
+    </select>
+    <select id="klFMono" class="${SEL_S} bg-white dark:bg-gray-700" aria-label="Wegen monsteren">
+      <option value=""${klusFilter.mono===''?' selected':''}>⚖ Alle klussen</option>
+      <option value="wel"${klusFilter.mono==='wel'?' selected':''}>⚖ Wel gemonsterd</option>
+      <option value="niet"${klusFilter.mono==='niet'?' selected':''}>⚖ Niet gemonsterd</option>
+    </select>
+  </div>
+
+  <div class="flex flex-wrap gap-2 mb-3">
+    <button id="btnKlusBulk" class="px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 min-h-[48px] font-medium opacity-40" disabled>✅ Geselecteerde afvinken</button>
+    <button id="btnKlusAlles" class="px-3 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800 min-h-[48px] font-medium">Alle ${open.length} open in filter afvinken</button>
+    <button id="btnKlusSelectieWeg" class="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 rounded-lg min-h-[48px] font-medium">Selectie wissen</button>
+    <button id="btnKlusCSV" class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 min-h-[48px] font-medium">📄 Facturatielijst als CSV</button>
+  </div>
+
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 mb-4">
+    <div class="scroll-x"><table class="w-full text-sm min-w-[900px]">
+      <thead class="bg-gray-50 dark:bg-gray-700"><tr>
+        <th class="px-3 py-2"><input type="checkbox" id="klusAllesChk" aria-label="Alles selecteren"></th>
+        <th class="px-3 py-2 text-left">Datum</th><th class="px-3 py-2 text-left">Medewerker</th>
+        <th class="px-3 py-2 text-left">Klant</th><th class="px-3 py-2 text-left">Dienst</th>
+        <th class="px-3 py-2 text-left">Kenteken/Materieel</th><th class="px-3 py-2 text-left">Omschrijving</th>
+        <th class="px-3 py-2 text-right">Aantal</th><th class="px-3 py-2 text-right">Indicatief</th>
+        <th class="px-3 py-2">⚖ Wegen monsteren</th>
+        <th class="px-3 py-2">Facturatie</th><th class="px-3 py-2">Dagstaat</th>
+      </tr></thead>
+      <tbody>${rows.length?rows.map(k=>`<tr class="border-t border-gray-100 dark:border-gray-700 align-top">
+        <td class="px-3 py-2 text-center"><input type="checkbox" data-chk="${k.id}" data-dag="${k.dagId}" ${klusSelectie.has(k.id)?'checked':''} aria-label="Selecteer klus"></td>
+        <td class="px-3 py-2 whitespace-nowrap">${k.datum}</td>
+        <td class="px-3 py-2">${esc(k.medewerkerNaam||'')}</td>
+        <td class="px-3 py-2"><div class="font-medium">${k.klant?esc(k.klant.naam):'<span class="text-amber-600">Onbekend</span>'}</div>${k.klant&&klantAdres(k.klant)?`<div class="text-xs text-gray-500">${esc(klantAdres(k.klant))}</div>`:''}</td>
+        <td class="px-3 py-2">${k.dienst?esc(k.dienst.naam):'—'}</td>
+        <td class="px-3 py-2">${esc(k.kenteken||'—')}</td>
+        <td class="px-3 py-2 max-w-[220px]">${esc(k.omschrijving||'—')}</td>
+        <td class="px-3 py-2 text-right whitespace-nowrap">${k.aantal} ${esc(k.eenheid||'uur')}</td>
+        <td class="px-3 py-2 text-right whitespace-nowrap">${klusBedrag(k)?euro(klusBedrag(k)):'—'}</td>
+        <td class="px-3 py-2 text-center">${k.wegenMonsteren?'<span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium text-xs">⚖ Ja</span>':'<span class="text-xs text-gray-400">Nee</span>'}<div class="mt-1"><button data-mono="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.wegenMonsteren?'text-gray-500':'text-blue-700 dark:text-blue-400'}">${k.wegenMonsteren?'uitzetten':'aanvinken'}</button></div></td>
+        <td class="px-3 py-2 text-center">${statusBadge(k)}<div class="mt-1"><button data-toggle="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.gefactureerd?'text-gray-500':'text-emerald-700 dark:text-emerald-400'}">${k.gefactureerd?'terugdraaien':'afvinken'}</button></div>${k.factuurdatum?`<div class="text-[11px] text-gray-500 mt-0.5">${k.factuurdatum}</div>`:''}</td>
+        <td class="px-3 py-2 text-xs text-gray-500">${k.dagStatus==='goedgekeurd'?'Goedgekeurd':k.dagStatus==='verwerkt'?'Verwerkt':'In afwachting'}</td>
+      </tr>`).join(''):'<tr><td colspan="12" class="px-3 py-8 text-center text-gray-400">Geen klussen in deze selectie</td></tr>'}</tbody>
+    </table></div>
+  </div>
+
+  <h3 class="font-semibold mb-2 text-gray-800 dark:text-gray-100">Samenvatting per klant</h3>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700">
+    <div class="scroll-x"><table class="w-full text-sm min-w-[700px]">
+      <thead class="bg-gray-50 dark:bg-gray-700"><tr>
+        <th class="px-3 py-2 text-left">Klant</th><th class="px-3 py-2 text-left">Adres</th>
+        <th class="px-3 py-2 text-right">Klussen</th><th class="px-3 py-2 text-right">Uren</th>
+        <th class="px-3 py-2 text-right">Open</th><th class="px-3 py-2 text-right">Indicatief open</th>
+      </tr></thead>
+      <tbody>${klantRijen.length?klantRijen.map(g=>`<tr class="border-t border-gray-100 dark:border-gray-700">
+        <td class="px-3 py-2 font-medium">${esc(g.naam)}</td><td class="px-3 py-2 text-xs text-gray-500">${esc(g.adres||'—')}</td>
+        <td class="px-3 py-2 text-right">${g.aantal}</td><td class="px-3 py-2 text-right">${fmtNum(g.uren)}</td>
+        <td class="px-3 py-2 text-right">${g.open}</td><td class="px-3 py-2 text-right">${euro(g.openBedrag)}</td>
+      </tr>`).join(''):'<tr><td colspan="6" class="px-3 py-6 text-center text-gray-400">Geen gegevens</td></tr>'}</tbody>
+    </table></div>
+  </div>
+  <p class="text-xs text-gray-400 mt-3">Het indicatieve bedrag is aantal &times; het uurtarief van de dienst. Controleer dit altijd tegen je eigen tarieven.</p>
+  </div>`;
+
+  // ---- filters ----
+  document.querySelectorAll('.klus-filter').forEach(b=>b.onclick=()=>{klusFilter.periode=b.dataset.filter;renderKlussenBeheer()});
+  $('klFKlant').onchange=e=>{klusFilter.klant=e.target.value;renderKlussenBeheer()};
+  $('klFDienst').onchange=e=>{klusFilter.dienst=e.target.value;renderKlussenBeheer()};
+  $('klFWerknemer').onchange=e=>{klusFilter.werknemer=e.target.value;renderKlussenBeheer()};
+  $('klFFactuur').onchange=e=>{klusFilter.factuur=e.target.value;renderKlussenBeheer()};
+  $('klFMono').onchange=e=>{klusFilter.mono=e.target.value;renderKlussenBeheer()};
+
+  // ---- selectie ----
+  document.querySelectorAll('[data-chk]').forEach(c=>c.onchange=()=>toggleKlusSelectie(c.dataset.chk,c.checked));
+  if($('klusAllesChk'))$('klusAllesChk').onchange=e=>{
+    rows.forEach(k=>{if(!k.gefactureerd)klusSelectie[e.target.checked?'add':'delete'](k.id)});
+    renderKlussenBeheer();
+  };
+  document.querySelectorAll('[data-mono]').forEach(b=>b.onclick=()=>{
+    const rij=alle.find(r=>r.id===b.dataset.mono);
+    zetMono([{dagId:b.dataset.dag,klusId:b.dataset.mono}],!(rij&&rij.wegenMonsteren));
+    toast(rij&&rij.wegenMonsteren?'Wegen monsteren uitgezet':'Wegen monsteren aangevinkt','success');
+    renderKlussenBeheer();
+  });
+  $('btnKlusSelectieWeg').onclick=()=>{klusSelectie=new Set();renderKlussenBeheer()};
+  updateKlusBulkLabel();
+
+  // ---- afvinken ----
+  document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{
+    const rij=alle.find(r=>r.id===b.dataset.toggle);
+    zetFacturatieBulk([{dagId:b.dataset.dag,klusId:b.dataset.toggle}],!(rij&&rij.gefactureerd));
+    toast(rij&&rij.gefactureerd?'Teruggezet naar te factureren':'Afgevinkt als gefactureerd','success');
+    renderKlussenBeheer();
+  });
+  $('btnKlusBulk').onclick=()=>{
+    if(!klusSelectie.size)return;
+    const paren=rows.filter(k=>klusSelectie.has(k.id)&&!k.gefactureerd).map(k=>({dagId:k.dagId,klusId:k.id}));
+    if(!paren.length){toast('Niets te doen — alles is al afgevinkt','info');return}
+    zetFacturatieBulk(paren,true);klusSelectie=new Set();
+    toast(paren.length+' klus'+(paren.length!==1?'sen':'')+' afgevinkt als gefactureerd','success');
+    renderKlussenBeheer();
+  };
+  $('btnKlusAlles').onclick=()=>{
+    const paren=open.map(k=>({dagId:k.dagId,klusId:k.id}));
+    if(!paren.length){toast('Geen open klussen in deze selectie','info');return}
+    if(!confirm('Alle '+paren.length+' open klussen in de huidige selectie afvinken als gefactureerd?'))return;
+    zetFacturatieBulk(paren,true);klusSelectie=new Set();
+    toast(paren.length+' klussen afgevinkt','success');
+    renderKlussenBeheer();
+  };
+  $('btnKlusCSV').onclick=()=>exportKlussenCSV(rows);
+}
+
+// Facturatielijst als CSV (puntkomma + UTF-8 BOM, opent goed in Nederlandse Excel)
+function exportKlussenCSV(rows){
+  const headers=['Datum','Medewerker','Klant','Adres klant','Dienst','Kenteken/Materieel','Omschrijving','Aantal','Eenheid','Uurtarief','Indicatief bedrag','Wegen monsteren','Facturatiestatus','Factuurdatum','Dagstaatstatus'];
+  const lijnen=rows.map(k=>{
+    const tarief=k.dienst&&k.dienst.tarief?Number(k.dienst.tarief):0;
+    const bud=klusBedrag(k);
+    return [k.datum,k.medewerkerNaam||'',k.klant?esc(k.klant.naam):'',esc(k.klant?klantAdres(k.klant):''),k.dienst?esc(k.dienst.naam):'',esc(k.kenteken||''),esc(k.omschrijving||''),k.aantal,k.eenheid||'uur',tarief?tarief.toFixed(2):'',bud?bud.toFixed(2):'',k.wegenMonsteren?'Ja':'Nee',k.gefactureerd?'Gefactureerd':'Te factureren',k.factuurdatum||'',k.dagStatus||''].join(';');
+  });
+  const csv='\uFEFF'+headers.join(';')+'\n'+lijnen.join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='facturatielijst_'+today()+'.csv';a.click();URL.revokeObjectURL(a.href);
+  toast('Facturatielijst geëxporteerd ✅ ('+rows.length+' regels)','success');
+}
+
+// === BEHEER: CRUD VIEWS ===
+function renderKlanten(){
+  const items=DB.list('klanten');
+  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">🏢 Klanten</h2>
+  <div class="flex flex-wrap gap-2 mb-4">
+    <button id="btnAddKlant" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuwe klant</button>
+    <button id="btnImportKlant" class="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 min-h-[48px] font-medium">📥 Klanten importeren (CSV)</button>
+  </div>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x">
+  <table class="w-full text-sm min-w-[600px]"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
+  <th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2 text-left">Adres</th><th class="px-3 py-2 text-left">Plaats</th><th class="px-3 py-2 text-left">Contact</th><th class="px-3 py-2 text-left">Email</th><th class="px-3 py-2 text-left">Telefoon</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th>
+  </tr></thead><tbody>${items.map(k=>`<tr class="border-t border-gray-100 dark:border-gray-700">
+  <td class="px-3 py-2">${esc(k.naam)}</td><td class="px-3 py-2">${esc(k.adres)}${k.postcode?'<br><span class="text-xs text-gray-500">'+esc(k.postcode)+'</span>':''}</td><td class="px-3 py-2">${esc(k.plaats)}</td><td class="px-3 py-2">${esc(k.contact)}</td><td class="px-3 py-2">${esc(k.email)}</td><td class="px-3 py-2">${esc(k.telefoon)}</td>
+  <td class="px-3 py-2 text-center">${k.actief!==false?'✅':'❌'}</td>
+  <td class="px-3 py-2"><button data-edit-klant="${k.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">✏️</button><button data-del-klant="${k.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">🗑</button></td></tr>`).join('')}
+  </tbody></table></div></div>`;
+  bindKlantenCRUD(items);
+}
+function bindKlantenCRUD(items){
+  $('btnAddKlant').onclick=()=>openKlantEditor(null,items);
+  $('btnImportKlant').onclick=()=>openKlantImport();
+  document.querySelectorAll('[data-edit-klant]').forEach(b=>b.onclick=e=>openKlantEditor(e.target.dataset.editKlant,items));
+  document.querySelectorAll('[data-del-klant]').forEach(b=>b.onclick=e=>{if(confirm('Klant verwijderen?')){DB.remove('klanten',e.target.dataset.delKlant);toast('Klant verwijderd','success');renderCurrentView()}});
+}
+// === KLANTEN IMPORTEREN (CSV-bestand of plakken uit Excel) ===
+function normaliseerKop(h){return String(h||'').toLowerCase().replace(/["']/g,'').replace(/[^a-z]/g,'')}
+const KLANT_KOLOMMEN={
+  naam:['naam','klant','klantnaam','bedrijfsnaam','bedrijf','relatie','relatienaam','name','company','opdrachtgever','debiteur'],
+  adres:['adres','straat','straatnaam','address','street','adres1','bezoekadres','adresregel1'],
+  postcode:['postcode','zip','zipcode','postalcode'],
+  plaats:['plaats','stad','woonplaats','city','town','vestigingsplaats'],
+  contact:['contact','contactpersoon','contactpersoonnaam','naamcontactpersoon','tav','tennamevan'],
+  email:['email','emailadres','mail','emailaddress','email1'],
+  telefoon:['telefoon','telefoonnummer','tel','telefoonnr','phone','phonenumber','mobiel','gsm']
+};
+function splitsCSVRegel(regel,dl){
+  const uit=[];let cur='';let q=false;
+  for(let i=0;i<regel.length;i++){
+    const c=regel[i];
+    if(c==='"'){ if(q&&regel[i+1]==='"'){cur+='"';i++} else q=!q }
+    else if(c===dl&&!q){uit.push(cur);cur=''}
+    else cur+=c;
+  }
+  uit.push(cur);return uit.map(x=>x.trim());
+}
+// Leest geplakte of geüploade tekst en haalt er klanten uit.
+// Herkent Nederlandse kolomkoppen; is er geen kop, dan is kolom 1 de naam.
+function parseKlantenTekst(txt){
+  const regels=String(txt||'').replace(/\r\n?/g,'\n').split('\n').filter(r=>r.trim()!=='');
+  if(!regels.length)return{fout:'Geen regels gevonden'};
+  const eerste=regels[0];
+  const telling=[['\t',(eerste.match(/\t/g)||[]).length],[';',(eerste.match(/;/g)||[]).length],[',',(eerste.match(/,/g)||[]).length]];
+  telling.sort((a,b)=>b[1]-a[1]);
+  const dl=telling[0][1]>0?telling[0][0]:';';
+  const kop=splitsCSVRegel(regels[0],dl);
+  const kol={};
+  Object.keys(KLANT_KOLOMMEN).forEach(veld=>{
+    const i=kop.findIndex(h=>KLANT_KOLOMMEN[veld].includes(normaliseerKop(h)));
+    if(i>=0)kol[veld]=i;
+  });
+  const heeftKop=Object.keys(kol).length>0;
+  if(!heeftKop)kol.naam=0;
+  const datarijen=heeftKop?regels.slice(1):regels;
+  const klanten=[];
+  datarijen.forEach(r=>{
+    const c=splitsCSVRegel(r,dl);
+    const naam=(c[kol.naam]||'').trim();
+    if(!naam)return;
+    const pak=v=>kol[v]!=null?(c[kol[v]]||'').trim():'';
+    klanten.push({naam,adres:pak('adres'),postcode:pak('postcode'),plaats:pak('plaats'),contact:pak('contact'),email:pak('email'),telefoon:pak('telefoon'),actief:true});
+  });
+  return{klanten,heeftKop,kol,dl};
+}
+function openKlantImport(){
+  const html=`<div class="fixed inset-0 bg-black/50 flex items-start justify-center z-30 p-4 overflow-auto" id="klantImport"><div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-2xl my-8">
+  <h3 class="font-bold mb-1">📥 Klanten importeren</h3>
+  <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Exporteer je klanten uit je factuurprogramma als CSV-bestand, of selecteer in Excel de kolommen en plak ze hieronder. Puntkomma, komma en tab worden automatisch herkend. Bestaande klanten met dezelfde naam worden overgeslagen.</p>
+  <label class="block text-sm font-medium mb-1" for="kiFile">Bestand kiezen (.csv of .txt)</label>
+  <input type="file" id="kiFile" accept=".csv,.txt,text/csv,text/plain" class="w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600">
+  <label class="block text-sm font-medium mb-1" for="kiTekst">…of plak hier de gegevens</label>
+  <textarea id="kiTekst" rows="6" class="w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600 font-mono text-xs" placeholder="naam;adres;postcode;plaats;contactpersoon;email;telefoon"></textarea>
+  <div class="flex flex-wrap gap-2 mb-3">
+    <button id="kiCheck" class="px-3 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800 min-h-[48px] font-medium">Controleren</button>
+    <button id="kiTemplate" class="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 rounded-lg min-h-[48px] font-medium">Voorbeeld-CSV downloaden</button>
+  </div>
+  <div id="kiResultaat" class="mb-4"></div>
+  <div class="flex gap-2"><button id="kiSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px] opacity-40" disabled>Importeren</button><button id="kiCancel" class="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div>
+  </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  let klaar=[];
+
+  const bron=()=>$('kiTekst').value||'';
+
+  // Leest het gekozen bestand in (met tekst-fallback zodat het ook op file:// werkt)
+  $('kiFile').onchange=e=>{
+    const f=e.target.files&&e.target.files[0];if(!f)return;
+    const r=new FileReader();
+    r.onload=ev=>{$('kiTekst').value=String(ev.target.result||'');controleer()};
+    r.onerror=()=>toast('Bestand lezen mislukt — plak de gegevens in het tekstvak','error');
+    r.readAsText(f,'UTF-8');
+  };
+  $('kiTekst').oninput=()=>{$('kiResultaat').innerHTML='';$('kiSave').disabled=true;$('kiSave').classList.add('opacity-40')};
+
+  function controleer(){
+    const res=parseKlantenTekst(bron());
+    const box=$('kiResultaat');
+    if(res.fout||!res.klanten.length){
+      box.innerHTML=`<div class="p-3 rounded-xl bg-red-50 dark:bg-red-900/30 text-sm text-red-700 dark:text-red-300">Geen klanten gevonden. Zorg dat de eerste regel kolomkoppen bevat (bijv. naam;adres;postcode;plaats) en dat elke regel een klantnaam heeft.</div>`;
+      $('kiSave').disabled=true;$('kiSave').classList.add('opacity-40');return;
+    }
+    const bestaand=new Set(DB.list('klanten').map(k=>(k.naam||'').trim().toLowerCase()));
+    const gezien=new Set(),nieuw=[],dubbel=[];
+    res.klanten.forEach(k=>{
+      const sleutel=k.naam.toLowerCase();
+      if(bestaand.has(sleutel)||gezien.has(sleutel))dubbel.push(k); else {gezien.add(sleutel);nieuw.push(k)}
+    });
+    klaar=nieuw;
+    const herkend=Object.keys(res.kol||{}).length;
+    const kopInfo=res.heeftKop
+      ?`Kolomkoppen herkend: <strong>${Object.keys(res.kol).join(', ')}</strong>`+(herkend<7?' <span class="text-amber-600">(niet alle velden herkend — controleer de preview)</span>':'')
+      :'<span class="text-amber-600">Geen kolomkoppen herkend — alleen de eerste kolom wordt als klantnaam gebruikt.</span> Zet kolomkoppen boven je gegevens (naam;adres;postcode;plaats;contactpersoon;email;telefoon) om ook adres, plaats en contact mee te nemen.';
+    const voorbeeld=nieuw.slice(0,5);
+    box.innerHTML=`<div class="p-3 rounded-xl bg-gray-50 dark:bg-gray-700/60 text-sm">
+      <div class="mb-1">${kopInfo}</div>
+      <div>Gevonden: <strong>${res.klanten.length}</strong> regels · nieuw: <strong class="text-emerald-700 dark:text-emerald-400">${nieuw.length}</strong> · al aanwezig of dubbel in het bestand: <strong>${dubbel.length}</strong></div>
+      <div class="text-xs text-gray-500 mt-1">Scheidingsteken: ${res.dl==='\t'?'tab':res.dl===';'?'puntkomma':'komma'}</div>
+    </div>
+    ${voorbeeld.length?`<div class="mt-3 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden"><div class="scroll-x"><table class="w-full text-xs min-w-[600px]"><thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-2 py-1 text-left">Naam</th><th class="px-2 py-1 text-left">Adres</th><th class="px-2 py-1 text-left">Postcode</th><th class="px-2 py-1 text-left">Plaats</th><th class="px-2 py-1 text-left">Contact</th></tr></thead><tbody>${voorbeeld.map(k=>`<tr class="border-t border-gray-100 dark:border-gray-700"><td class="px-2 py-1">${esc(k.naam)}</td><td class="px-2 py-1">${esc(k.adres||'—')}</td><td class="px-2 py-1">${esc(k.postcode||'—')}</td><td class="px-2 py-1">${esc(k.plaats||'—')}</td><td class="px-2 py-1">${esc(k.contact||'—')}</td></tr>`).join('')}</tbody></table></div></div><div class="text-xs text-gray-500 mt-1">Eerste ${voorbeeld.length} van ${nieuw.length} nieuwe klanten.</div>`:''}`;
+    const kan=nieuw.length>0;
+    $('kiSave').disabled=!kan;$('kiSave').classList.toggle('opacity-40',!kan);
+  }
+
+  $('kiCheck').onclick=controleer;
+  $('kiTemplate').onclick=()=>{
+    const csv='\uFEFFnaam;adres;postcode;plaats;contactpersoon;email;telefoon\nLoonbedrijf Voorbeeld;Havenweg 1;1234 AB;Amsterdam;Jan Jansen;jan@voorbeeld.nl;06-12345678\n';
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='klanten_voorbeeld.csv';a.click();URL.revokeObjectURL(a.href);
+  };
+  $('kiSave').onclick=()=>{
+    if(!klaar.length)return;
+    klaar.forEach(k=>DB.insert('klanten',k));
+    toast(klaar.length+' klant'+(klaar.length!==1?'en':'')+' geïmporteerd ✅','success');
+    document.getElementById('klantImport').remove();
+    renderCurrentView();
+  };
+  $('kiCancel').onclick=()=>document.getElementById('klantImport').remove();
+}
+function openKlantEditor(id,items){
+  const existing=id?items.find(k=>k.id===id):null;
+  const fields=['naam','adres','postcode','plaats','contact','email','telefoon'];
+  const labels=['Naam','Adres (straat + nr)','Postcode','Plaats','Contactpersoon','E-mail','Telefoon'];
+  const values=existing?fields.map(f=>existing[f]||''):fields.map(()=>'');
+  const actief=existing?existing.actief!==false:true;
+  const html=`<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-30" id="klantEditor"><div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-md mx-4"><h3 class="font-bold mb-4">${existing?'Klant bewerken':'Nieuwe klant'}</h3>
+  ${fields.map((f,i)=>`<label class="block text-sm font-medium mb-1">${labels[i]}</label><input id="kl_${f}" value="${esc(values[i])}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">`).join('')}
+  <label class="flex items-center gap-2 mb-4"><input type="checkbox" id="kl_actief" ${actief?'checked':''}> Actief</label>
+  <div class="flex gap-2"><button id="klSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button><button id="klCancel" class="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  $('klSave').onclick=()=>{const data={naam:$('kl_naam').value,adres:$('kl_adres').value,postcode:$('kl_postcode').value,plaats:$('kl_plaats').value,contact:$('kl_contact').value,email:$('kl_email').value,telefoon:$('kl_telefoon').value,actief:$('kl_actief').checked};if(!data.naam){toast('Naam is verplicht','error');return}if(existing)DB.update('klanten',id,data);else DB.insert('klanten',data);toast('Klant opgeslagen','success');document.getElementById('klantEditor').remove();renderCurrentView()};
+  $('klCancel').onclick=()=>document.getElementById('klantEditor').remove();
+}
+
+function renderDiensten(){
+  const items=DB.list('diensten');
+  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">🔧 Diensten</h2>
+  <button id="btnAddDienst" class="mb-4 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuwe dienst</button>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x">
+  <table class="w-full text-sm min-w-[600px]"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
+  <th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2 text-left">Omschrijving</th><th class="px-3 py-2">Tarief</th><th class="px-3 py-2">Eenheid</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th>
+  </tr></thead><tbody>${items.map(d=>`<tr class="border-t border-gray-100 dark:border-gray-700">
+  <td class="px-3 py-2">${esc(d.naam)}</td><td class="px-3 py-2">${esc(d.omschrijving)}</td><td class="px-3 py-2 text-center">€${d.tarief}</td><td class="px-3 py-2 text-center">${esc(d.eenheid)}</td>
+  <td class="px-3 py-2 text-center">${d.actief!==false?'✅':'❌'}</td>
+  <td class="px-3 py-2"><button data-edit-dienst="${d.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">✏️</button><button data-del-dienst="${d.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">🗑</button></td></tr>`).join('')}
+  </tbody></table></div></div>`;
+  bindDienstenCRUD(items);
+}
+function bindDienstenCRUD(items){
+  $('btnAddDienst').onclick=()=>openDienstEditor(null,items);
+  document.querySelectorAll('[data-edit-dienst]').forEach(b=>b.onclick=e=>openDienstEditor(e.target.dataset.editDienst,items));
+  document.querySelectorAll('[data-del-dienst]').forEach(b=>b.onclick=e=>{if(confirm('Dienst verwijderen?')){DB.remove('diensten',e.target.dataset.delDienst);toast('Dienst verwijderd','success');renderCurrentView()}});
+}
+function openDienstEditor(id,items){
+  const existing=id?items.find(d=>d.id===id):null;
+  const html=`<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-30" id="dienstEditor"><div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-md mx-4"><h3 class="font-bold mb-4">${existing?'Dienst bewerken':'Nieuwe dienst'}</h3>
+  <label class="block text-sm font-medium mb-1">Naam</label><input id="dv_naam" value="${esc(existing?.naam||'')}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">
+  <label class="block text-sm font-medium mb-1">Omschrijving</label><textarea id="dv_oms" rows="2" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">${esc(existing?.omschrijving||'')}</textarea>
+  <label class="block text-sm font-medium mb-1">Uurtarief (€)</label><input id="dv_tarief" type="number" value="${existing?.tarief||35}" min="0" step="0.01" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">
+  <label class="block text-sm font-medium mb-1">Standaard eenheid</label><select id="dv_eenheid" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600"><option value="uur"${existing?.eenheid==='uur'?' selected':''}>uur</option><option value="m3"${existing?.eenheid==='m3'?' selected':''}>m³</option><option value="ha"${existing?.eenheid==='ha'?' selected':''}>ha</option><option value="ritten"${existing?.eenheid==='ritten'?' selected':''}>ritten</option><option value="km"${existing?.eenheid==='km'?' selected':''}>km</option><option value="stukken"${existing?.eenheid==='stukken'?' selected':''}>stuks</option></select>
+  <label class="flex items-center gap-2 mb-4"><input type="checkbox" id="dv_actief" ${existing?.actief!==false?'checked':''}> Actief</label>
+  <div class="flex gap-2"><button id="dvSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button><button id="dvCancel" class="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  $('dvSave').onclick=()=>{const data={naam:$('dv_naam').value,omschrijving:$('dv_oms').value,tarief:+$('dv_tarief').value,eenheid:$('dv_eenheid').value,actief:$('dv_actief').checked};if(!data.naam){toast('Naam is verplicht','error');return}if(existing)DB.update('diensten',id,data);else DB.insert('diensten',data);toast('Dienst opgeslagen','success');document.getElementById('dienstEditor').remove();renderCurrentView()};
+  $('dvCancel').onclick=()=>document.getElementById('dienstEditor').remove();
+}
+
+function renderWerknemers(){
+  const items=DB.list('werknemers');
+  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">👷 Werknemers</h2>
+  <button id="btnAddWn" class="mb-4 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuwe werknemer</button>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x">
+  <table class="w-full text-sm min-w-[600px]"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
+  <th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2">Pers.Nr</th><th class="px-3 py-2">Functie</th><th class="px-3 py-2">Email</th><th class="px-3 py-2">Telefoon</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th>
+  </tr></thead><tbody>${items.map(w=>`<tr class="border-t border-gray-100 dark:border-gray-700">
+  <td class="px-3 py-2">${esc(w.naam)}</td><td class="px-3 py-2 text-center">${esc(w.persNr)}</td><td class="px-3 py-2">${esc(w.functie)}</td><td class="px-3 py-2">${esc(w.email)}</td><td class="px-3 py-2">${esc(w.telefoon)}</td>
+  <td class="px-3 py-2 text-center">${w.actief!==false?'✅':'❌'}</td>
+  <td class="px-3 py-2"><button data-edit-wn="${w.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">✏️</button><button data-del-wn="${w.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">🗑</button></td></tr>`).join('')}
+  </tbody></table></div></div>`;
+  bindWerknemersCRUD(items);
+}
+function bindWerknemersCRUD(items){
+  $('btnAddWn').onclick=()=>openWnEditor(null,items);
+  document.querySelectorAll('[data-edit-wn]').forEach(b=>b.onclick=e=>openWnEditor(e.target.dataset.editWn,items));
+  document.querySelectorAll('[data-del-wn]').forEach(b=>b.onclick=e=>{if(confirm('Werknemer verwijderen?')){DB.remove('werknemers',e.target.dataset.delWn);toast('Werknemer verwijderd','success');renderCurrentView()}});
+}
+function openWnEditor(id,items){
+  const existing=id?items.find(w=>w.id===id):null;
+  const html=`<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-30" id="wnEditor"><div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-md mx-4"><h3 class="font-bold mb-4">${existing?'Werknemer bewerken':'Nieuwe werknemer'}</h3>
+  <label class="block text-sm font-medium mb-1">Naam</label><input id="wn_naam" value="${esc(existing?.naam||'')}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">
+  <label class="block text-sm font-medium mb-1">Personeelsnummer</label><input id="wn_persnr" value="${esc(existing?.persNr||'')}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">
+  <label class="block text-sm font-medium mb-1">Functie</label><input id="wn_functie" value="${esc(existing?.functie||'')}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">
+  <label class="block text-sm font-medium mb-1">E-mail</label><input id="wn_email" type="email" value="${esc(existing?.email||'')}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">
+  <label class="block text-sm font-medium mb-1">Telefoon</label><input id="wn_telefoon" value="${esc(existing?.telefoon||'')}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">
+  <label class="flex items-center gap-2 mb-4"><input type="checkbox" id="wn_actief" ${existing?.actief!==false?'checked':''}> Actief</label>
+  <div class="flex gap-2"><button id="wnSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button><button id="wnCancel" class="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  $('wnSave').onclick=()=>{const data={naam:$('wn_naam').value,persNr:$('wn_persnr').value,functie:$('wn_functie').value,email:$('wn_email').value,telefoon:$('wn_telefoon').value,actief:$('wn_actief').checked};if(!data.naam){toast('Naam is verplicht','error');return}if(existing)DB.update('werknemers',id,data);else DB.insert('werknemers',data);toast('Werknemer opgeslagen','success');document.getElementById('wnEditor').remove();renderCurrentView()};
+  $('wnCancel').onclick=()=>document.getElementById('wnEditor').remove();
+}
+
+// === BEHEER: EXPORTS ===
+function renderExports(){
+  const dagstaten=DB.list('dagstaten');
+  const werknemers=DB.list('werknemers');
+  const klanten=DB.list('klanten');
+  const diensten=DB.list('diensten');
+  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">📤 Exporteren</h2>
+  <div class="space-y-3">
+  <button id="btnExportCSV" class="w-full px-4 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 font-medium min-h-[48px]">📄 Exporteren voor loonadministratie (CSV)</button>
+  <button id="btnExportJSON" class="w-full px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium min-h-[48px]">💾 JSON backup exporteren</button>
+  <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-6 text-center">
+  <p class="text-sm text-gray-500 mb-2">JSON backup importeren</p>
+  <label class="inline-block px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl cursor-pointer min-h-[48px] flex items-center gap-2"><span>📁 Kies bestand</span><input type="file" id="importJSON" accept=".json" class="hidden"></label>
+  </div>
+  </div></div>`;
+  $('btnExportCSV').onclick=()=>exportCSV(dagstaten,werknemers,klanten,diensten);
+  $('btnExportJSON').onclick=()=>exportJSON();
+  $('importJSON').onchange=e=>importJSON(e);
+}
+function exportCSV(dagen,werknemers,klanten,diensten){
+  const wMap={},kMap={},dMap={};
+  werknemers.forEach(w=>wMap[w.id]=w);klanten.forEach(k=>kMap[k.id]=k);diensten.forEach(d=>dMap[d.id]=d);
+  const headers=['Medewerker','Personeelsnr','Datum','Starttijd','Eindtijd','Pauze (min)','Netto uren dag','Klant','Adres klant','Dienst','Kenteken/Materieel','Omschrijving','Aantal','Eenheid','Wegen monsteren','Status'];
+  const rows=[];
+  dagen.forEach(d=>{const w=wMap[d.medewerkerId]||{};d.klussen.forEach(k=>{const kl=kMap[k.klantId]||{},dv=dMap[k.dienstId]||{};rows.push([w.naam||'',w.persNr||'',d.datum,d.startTime,d.endTime,d.pauzeMin,d.nettoUren,kl.naam||'',esc(klantAdres(kl)),dv.naam||'',esc(k.kenteken||''),esc(k.omschrijving||''),k.aantal,k.eenheid||'',k.wegenMonsteren?'Ja':'Nee',d.status].join(';'))});});
+  const bom='\uFEFF';
+  const csv=bom+headers.join(';')+'\n'+rows.join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='urenadministratie_'+today()+'.csv';a.click();URL.revokeObjectURL(a.href);
+  toast('CSV geëxporteerd ✅','success');
+}
+function exportJSON(){const data={werknemers:DB.list('werknemers'),klanten:DB.list('klanten'),diensten:DB.list('diensten'),dagstaten:DB.list('dagstaten')};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='uren_backup_'+today()+'.json';a.click();URL.revokeObjectURL(a.href);toast('JSON backup geëxporteerd ✅','success')}
+function importJSON(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();reader.onload=ev=>{try{const data=JSON.parse(ev.target.result);if(data.werknemers)data.werknemers.forEach(w=>{const ex=DB.get('werknemers',w.id);ex?DB.update('werknemers',w.id,w):DB.insert('werknemers',w)});if(data.klanten)data.klanten.forEach(k=>{const ex=DB.get('klanten',k.id);ex?DB.update('klanten',k.id,k):DB.insert('klanten',k)});if(data.diensten)data.diensten.forEach(d=>{const ex=DB.get('diensten',d.id);ex?DB.update('diensten',d.id,d):DB.insert('diensten',d)});if(data.dagstaten)data.dagstaten.forEach(d=>{const ex=DB.get('dagstaten',d.id);ex?DB.update('dagstaten',d.id,d):DB.insert('dagstaten',d)});toast('Backup geïmporteerd ✅','success');setTimeout(()=>renderCurrentView(),500)}catch(err){toast('Ongeldig JSON-bestand','error')}};reader.readAsText(file);e.target.value='';
+}
+
+// ============================================================================
+// === AUTH, ROLLEN EN SYNCHRONISATIE =========================================
+// ============================================================================
+// local    : werkt zonder server, met demo-accounts (om te testen).
+// supabase : login via Supabase Auth. De data wordt bij het inloggen in een
+//            lokale CACHE gezet, zodat de rest van de app synchroon kan blijven
+//            werken. Wegschrijven gebeurt op de achtergrond naar Supabase.
+//
+// Accounts worden door de beheerder aangemaakt. Dat kan niet rechtstreeks
+// vanuit de browser (daarvoor is de service_role-sleutel nodig, die nooit in
+// de browser mag staan), dus loopt dat via /api/admin-users op Vercel.
+const EMAIL_DOMEIN = 'urenapp.local';   // 'jan' -> 'jan@urenapp.local'
+let SESSIE = null;        // {id,naam,rol,werknemer_id,gebruikersnaam}
+let AUTH_TOKEN = null, AUTH_REFRESH = null, AUTH_VERLOOPT = 0;
+const CACHE = {};
+const TABELLEN = ['werknemers', 'klanten', 'diensten', 'dagstaten'];
+
+const isBeheer = () => !!SESSIE && SESSIE.rol === 'beheer';
+const isMedewerker = () => !!SESSIE && SESSIE.rol === 'medewerker';
+const naarEmail = g => { g = String(g || '').trim().toLowerCase(); return g.includes('@') ? g : g + '@' + EMAIL_DOMEIN };
+// Alleen voor de demo-modus; echte wachtwoorden worden door Supabase beheerd.
+function hashWachtwoord(p){ let h = 5381; const s = String(p) + '|urenapp'; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return 'demo-' + h.toString(16) }
+
+// ---- demo-accounts (local modus) ----
+function accounts(){ return JSON.parse(localStorage.getItem('uren_accounts') || '[]') }
+function bewaarAccounts(a){ localStorage.setItem('uren_accounts', JSON.stringify(a)) }
+function seedAccounts(){
+  if (localStorage.getItem('uren_accounts')) return;
+  bewaarAccounts([
+    { id:'acc1', gebruikersnaam:'beheer', naam:'Beheerder', rol:'beheer', werknemer_id:'', actief:true, wachtwoordHash:hashWachtwoord('welkom123') },
+    { id:'acc2', gebruikersnaam:'jan', naam:'Jan de Boer', rol:'medewerker', werknemer_id:'w1', actief:true, wachtwoordHash:hashWachtwoord('welkom123') },
+    { id:'acc3', gebruikersnaam:'piet', naam:'Piet Visser', rol:'medewerker', werknemer_id:'w2', actief:true, wachtwoordHash:hashWachtwoord('welkom123') }
+  ]);
+}
+
+// ---- sleutelconversie ----
+// De database gebruikt snake_case kolommen (medewerker_id), de app werkt met
+// camelCase (medewerkerId). Deze twee omzettertjes overbruggen dat verschil,
+// ook binnen de klussen die als JSON in de dagstaat zitten.
+const naarSnake = s => String(s).replace(/[A-Z]/g, c => '_' + c.toLowerCase());
+const naarCamel = s => String(s).replace(/_([a-z0-9])/g, (m, c) => c.toUpperCase());
+function sleutelsOm(o, fn){
+  if (Array.isArray(o)) return o.map(x => sleutelsOm(x, fn));
+  if (o && typeof o === 'object') { const u = {}; Object.keys(o).forEach(k => { u[fn(k)] = sleutelsOm(o[k], fn) }); return u }
+  return o;
+}
+
+// ---- Supabase REST ----
+async function sbREST(pad, opties){
+  opties = opties || {};
+  const h = Object.assign({ 'apikey': CONFIG.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, opties.headers || {});
+  h['Authorization'] = 'Bearer ' + (AUTH_TOKEN || CONFIG.SUPABASE_ANON_KEY);
+  if (opties.prefer) h['Prefer'] = opties.prefer;
+  const r = await fetch(CONFIG.SUPABASE_URL + pad, { method: opties.method || 'GET', headers: h, body: opties.body ? JSON.stringify(sleutelsOm(opties.body, naarSnake)) : undefined });
+  const tekst = await r.text();
+  let data = null;
+  try { data = tekst ? JSON.parse(tekst) : null } catch (e) { data = null }
+  if (!r.ok) throw new Error((data && (data.message || data.error_description || data.msg || data.hint)) || ('Fout ' + r.status));
+  return opties.raw ? data : sleutelsOm(data, naarCamel);
+}
+async function sbLogin(gebruiker, wachtwoord){
+  const r = await fetch(CONFIG.SUPABASE_URL + '/auth/v1/token?grant_type=password', {
+    method: 'POST',
+    headers: { 'apikey': CONFIG.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: naarEmail(gebruiker), password: wachtwoord })
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error_description || data.msg || data.error || 'Inloggen mislukt');
+  AUTH_TOKEN = data.access_token; AUTH_REFRESH = data.refresh_token;
+  AUTH_VERLOOPT = Date.now() + ((data.expires_in || 3600) * 1000) - 60000;
+  localStorage.setItem('uren_auth', JSON.stringify({ r: AUTH_REFRESH, v: AUTH_VERLOOPT }));
+  return data.user;
+}
+async function sbVernieuw(){
+  const bewaard = JSON.parse(localStorage.getItem('uren_auth') || 'null');
+  if (!bewaard || !bewaard.r) return false;
+  const r = await fetch(CONFIG.SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
+    method: 'POST',
+    headers: { 'apikey': CONFIG.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: bewaard.r })
+  });
+  if (!r.ok) { localStorage.removeItem('uren_auth'); return false }
+  const data = await r.json();
+  AUTH_TOKEN = data.access_token; AUTH_REFRESH = data.refresh_token;
+  AUTH_VERLOOPT = Date.now() + ((data.expires_in || 3600) * 1000) - 60000;
+  localStorage.setItem('uren_auth', JSON.stringify({ r: AUTH_REFRESH, v: AUTH_VERLOOPT }));
+  return true;
+}
+// Profiel (rol + koppeling aan een werknemer) ophalen bij de ingelogde gebruiker
+async function sbProfiel(userId){
+  const rijen = await sbREST('/rest/v1/profiles?id=eq.' + encodeURIComponent(userId) + '&select=*', { raw: true });
+  return (rijen && rijen[0]) || null;
+}
+async function sbUitloggen(){
+  try { await fetch(CONFIG.SUPABASE_URL + '/auth/v1/logout', { method: 'POST', headers: { 'apikey': CONFIG.SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + AUTH_TOKEN } }) } catch (e) {}
+  localStorage.removeItem('uren_auth');
+  AUTH_TOKEN = null; AUTH_REFRESH = null;
+}
+
+// ---- synchronisatielaag: synchrone cache bovenop Supabase ----
+const CACHE_DB = {
+  list(t){ return CACHE[t] || [] },
+  get(t, id){ return this.list(t).find(r => r.id === id) },
+  insert(t, o){ if (!o.id) o.id = uid(); (CACHE[t] = CACHE[t] || []).push(o); verstuur('insert', t, o); return o },
+  update(t, id, o){ const a = CACHE[t] || []; const i = a.findIndex(x => x.id === id); if (i >= 0) a[i] = Object.assign({}, o, { id }); verstuur('update', t, id, o); return a[i] },
+  remove(t, id){ CACHE[t] = (CACHE[t] || []).filter(x => x.id !== id); verstuur('remove', t, id); return CACHE[t] }
+};
+async function verstuur(actie, tabel, a, b){
+  if (CONFIG.MODE !== 'supabase' || !AUTH_TOKEN) return;
+  try {
+    if (actie === 'insert') await sbREST('/rest/v1/' + tabel, { method: 'POST', prefer: 'return=minimal', body: a });
+    else if (actie === 'update') await sbREST('/rest/v1/' + tabel + '?id=eq.' + encodeURIComponent(a), { method: 'PATCH', prefer: 'return=minimal', body: b });
+    else if (actie === 'remove') await sbREST('/rest/v1/' + tabel + '?id=eq.' + encodeURIComponent(a), { method: 'DELETE', prefer: 'return=minimal' });
+  } catch (e) { toast('Niet opgeslagen in de database: ' + e.message, 'error') }
+}
+async function laadAlles(){
+  for (const t of TABELLEN) {
+    const rijen = await sbREST('/rest/v1/' + t + '?select=*');
+    CACHE[t] = Array.isArray(rijen) ? rijen : [];
+  }
+}
+
+// ---- inlogscherm ----
+function toonLogin(){
+  const scherm = document.getElementById('loginScreen');
+  scherm.innerHTML = `
+  <div class="min-h-screen flex items-center justify-center px-4 bg-gradient-to-b from-emerald-50 to-white dark:from-gray-900 dark:to-gray-800">
+    <div class="w-full max-w-sm">
+      <div class="text-center mb-6">
+        <div class="text-4xl mb-2">⏱</div>
+        <h1 class="text-2xl font-bold text-emerald-700 dark:text-emerald-400">UrenApp</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Transport &amp; Loonbedrijf</p>
+      </div>
+      <form id="loginForm" class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-100 dark:border-gray-700">
+        <label for="lgGebruiker" class="block text-sm font-medium mb-1">Gebruikersnaam</label>
+        <input id="lgGebruiker" autocomplete="username" autocapitalize="none" class="w-full border rounded-xl px-3 py-3 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600 text-base" placeholder="bijv. jan">
+        <label for="lgWachtwoord" class="block text-sm font-medium mb-1">Wachtwoord</label>
+        <input id="lgWachtwoord" type="password" autocomplete="current-password" class="w-full border rounded-xl px-3 py-3 mb-4 bg-white dark:bg-gray-700 dark:border-gray-600 text-base" placeholder="••••••••">
+        <button id="lgKnop" type="submit" class="w-full bg-emerald-600 text-white py-3 rounded-xl font-semibold hover:bg-emerald-700 min-h-[52px]">Inloggen</button>
+        <p id="lgFout" class="text-sm text-red-600 dark:text-red-400 mt-3 min-h-[20px]"></p>
+      </form>
+      <p class="text-xs text-gray-500 dark:text-gray-400 text-center mt-4" id="lgHint"></p>
+    </div>
+  </div>`;
+  const hint = document.getElementById('lgHint');
+  if (hint) hint.textContent = CONFIG.MODE === 'local'
+    ? 'Demo-modus. Inloggen met "beheer" of "jan" — wachtwoord welkom123.'
+    : 'Vraag je gebruikersnaam en wachtwoord aan de beheerder.';
+  document.getElementById('loginForm').onsubmit = async e => {
+    e.preventDefault();
+    const fout = document.getElementById('lgFout');
+    const knop = document.getElementById('lgKnop');
+    fout.textContent = '';
+    knop.disabled = true; knop.textContent = 'Bezig…';
+    try {
+      await inloggen(document.getElementById('lgGebruiker').value, document.getElementById('lgWachtwoord').value);
+    } catch (err) {
+      fout.textContent = err.message || 'Inloggen mislukt';
+      knop.disabled = false; knop.textContent = 'Inloggen';
+    }
+  };
+  const g = document.getElementById('lgGebruiker');
+  if (g) g.focus();
+}
+function verbergLogin(){ const s = document.getElementById('loginScreen'); if (s) s.innerHTML = '' }
+
+async function inloggen(gebruiker, wachtwoord){
+  if (!gebruiker || !wachtwoord) throw new Error('Vul je gebruikersnaam en wachtwoord in');
+  if (CONFIG.MODE === 'local') {
+    const acc = accounts().find(a => a.gebruikersnaam.toLowerCase() === String(gebruiker).trim().toLowerCase());
+    if (!acc || acc.wachtwoordHash !== hashWachtwoord(wachtwoord)) throw new Error('Onbekende gebruikersnaam of verkeerd wachtwoord');
+    if (acc.actief === false) throw new Error('Dit account is gedeactiveerd');
+    SESSIE = { id: acc.id, naam: acc.naam, rol: acc.rol, werknemer_id: acc.werknemer_id || '', gebruikersnaam: acc.gebruikersnaam };
+  } else {
+    const user = await sbLogin(gebruiker, wachtwoord);
+    const profiel = await sbProfiel(user.id);
+    if (!profiel) throw new Error('Dit account heeft nog geen profiel. Vraag de beheerder om toegang.');
+    if (profiel.actief === false) throw new Error('Dit account is gedeactiveerd');
+    SESSIE = { id: user.id, naam: profiel.naam || gebruikersnaam, rol: profiel.rol || 'medewerker', werknemer_id: profiel.werknemer_id || '', gebruikersnaam: gebruikersnaam };
+    toast('Gegevens laden…', 'info');
+    await laadAlles();
+  }
+  localStorage.setItem('uren_sessie', JSON.stringify(SESSIE));
+  verbergLogin();
+  startApp();
+}
+async function uitloggen(){
+  if (CONFIG.MODE === 'supabase') await sbUitloggen();
+  SESSIE = null;
+  localStorage.removeItem('uren_sessie');
+  location.reload();
+}
+
+// ---- bestaande sessie hervatten (supabase) ----
+async function hervatSessie(){
+  const bewaard=JSON.parse(localStorage.getItem('uren_auth')||'null');
+  if(!bewaard||!bewaard.r){ toonLogin(); return }
+  try{
+    if(!AUTH_TOKEN){ const ok=await sbVernieuw(); if(!ok){ toonLogin(); return } }
+    const u=await sbREST('/auth/v1/user');
+    if(!u||!u.id){ toonLogin(); return }
+    const profiel=await sbProfiel(u.id);
+    if(!profiel||profiel.actief===false){ toonLogin(); return }
+    SESSIE={id:u.id,naam:profiel.naam||u.email,rol:profiel.rol||'medewerker',werknemer_id:profiel.werknemer_id||'',gebruikersnaam:u.email};
+    await laadAlles();
+    verbergLogin();
+    startApp();
+  }catch(e){ toonLogin() }
+}
+
+// ---- rol toepassen op de interface ----
+function pasRolToe(){
+  const mw = isMedewerker();
+  const mt = $('modeToggle');
+  if (mt) { if (mw) mt.classList.add('hidden'); else mt.classList.remove('hidden') }
+  if (mw) currentMode = 'medewerker';
+  const chip = $('userChip');
+  if (chip && SESSIE) chip.textContent = SESSIE.naam + ' · ' + (isBeheer() ? 'beheer' : 'medewerker');
+  const accTab = document.querySelector('.tab-btn[data-tab="accounts"]');
+  if (accTab) accTab.style.display = isBeheer() ? '' : 'none';
+  if (mw && SESSIE) {
+    const im = $('inMedew');
+    if (im) { im.value = SESSIE.werknemer_id; im.disabled = true }
+    const mu = $('muWerknemer');
+    if (mu) { mu.value = SESSIE.werknemer_id; mu.disabled = true; mu.dispatchEvent(new Event('change')) }
+  }
+}
+
+// ---- accounts (beheer) ----
+async function apiAccounts(payload){
+  const r = await fetch('/api/admin-users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + AUTH_TOKEN },
+    body: JSON.stringify(payload)
+  });
+  let d = null;
+  try { d = await r.json() } catch (e) { d = null }
+  if (!r.ok) throw new Error((d && (d.fout || d.message)) || 'Actie mislukt (' + r.status + ')');
+  return d;
+}
+function renderAccounts(){
+  if (!isBeheer()) { $('main').innerHTML = '<p class="p-6 text-center text-gray-500">Alleen voor beheerders.</p>'; return }
+  const werknemers = DB.list('werknemers');
+  $('main').innerHTML = `<div class="max-w-4xl mx-auto">
+  <h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">👤 Accounts</h2>
+  <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Maak per medewerker een account met een gebruikersnaam en wachtwoord. Een medewerker ziet dan alleen zijn eigen uren.</p>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700 mb-4">
+    <h3 class="font-semibold mb-3">Nieuw account</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div><label class="block text-xs text-gray-500 mb-1" for="naGebruiker">Gebruikersnaam</label><input id="naGebruiker" autocapitalize="none" class="${SEL_S} w-full bg-white dark:bg-gray-700" placeholder="bijv. jan"></div>
+      <div><label class="block text-xs text-gray-500 mb-1" for="naNaam">Naam</label><input id="naNaam" class="${SEL_S} w-full bg-white dark:bg-gray-700" placeholder="Jan de Boer"></div>
+      <div><label class="block text-xs text-gray-500 mb-1" for="naWachtwoord">Wachtwoord</label><input id="naWachtwoord" type="text" class="${SEL_S} w-full bg-white dark:bg-gray-700" placeholder="min. 6 tekens"></div>
+      <div><label class="block text-xs text-gray-500 mb-1" for="naRol">Rol</label><select id="naRol" class="${SEL_S} w-full bg-white dark:bg-gray-700"><option value="medewerker">Medewerker</option><option value="beheer">Beheerder</option></select></div>
+      <div class="md:col-span-2"><label class="block text-xs text-gray-500 mb-1" for="naWerknemer">Koppelen aan werknemer (voor medewerkers)</label>
+        <select id="naWerknemer" class="${SEL_S} w-full bg-white dark:bg-gray-700"><option value="">— geen —</option>${werknemers.map(w => `<option value="${w.id}">${esc(w.naam)}</option>`).join('')}</select></div>
+    </div>
+    <button id="naKnop" class="mt-3 w-full md:w-auto px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">Account aanmaken</button>
+  </div>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700">
+    <div class="scroll-x"><table class="w-full text-sm min-w-[640px]">
+      <thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-3 py-2 text-left">Gebruikersnaam</th><th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2 text-left">Rol</th><th class="px-3 py-2 text-left">Werknemer</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th></tr></thead>
+      <tbody id="accLijst"><tr><td colspan="6" class="px-3 py-6 text-center text-gray-400">Laden…</td></tr></tbody>
+    </table></div>
+  </div></div>`;
+  $('naKnop').onclick = async () => {
+    const gebruiker = $('naGebruiker').value.trim();
+    const naam = $('naNaam').value.trim();
+    const wachtwoord = $('naWachtwoord').value;
+    const rol = $('naRol').value;
+    const werknemer_id = $('naWerknemer').value;
+    if (!gebruiker || !naam || !wachtwoord) { toast('Vul gebruikersnaam, naam en wachtwoord in', 'error'); return }
+    if (wachtwoord.length < 6) { toast('Kies een wachtwoord van minstens 6 tekens', 'error'); return }
+    if (rol === 'medewerker' && !werknemer_id) { toast('Kies aan welke werknemer dit account gekoppeld is', 'error'); return }
+    const knop = $('naKnop'); knop.disabled = true; knop.textContent = 'Bezig…';
+    try {
+      await accountAanmaken({ gebruikersnaam: gebruiker, naam, wachtwoord, rol, werknemer_id });
+      toast('Account voor ' + naam + ' aangemaakt ✅', 'success');
+      renderAccounts();
+    } catch (e) {
+      toast(e.message, 'error');
+      knop.disabled = false; knop.textContent = 'Account aanmaken';
+    }
+  };
+  vulAccountLijst();
+}
+async function accountAanmaken(d){
+  if (CONFIG.MODE === 'local') {
+    const a = accounts();
+    if (a.some(x => x.gebruikersnaam.toLowerCase() === d.gebruikersnaam.toLowerCase())) throw new Error('Die gebruikersnaam bestaat al');
+    a.push({ id: uid(), gebruikersnaam: d.gebruikersnaam, naam: d.naam, rol: d.rol, werknemer_id: d.werknemer_id, actief: true, wachtwoordHash: hashWachtwoord(d.wachtwoord) });
+    bewaarAccounts(a);
+  } else {
+    await apiAccounts(Object.assign({ actie: 'create' }, d));
+  }
+}
+async function vulAccountLijst(){
+  const body = $('accLijst'); if (!body) return;
+  let rijen = [];
+  try {
+    if (CONFIG.MODE === 'local') {
+      rijen = accounts().map(a => ({ id: a.id, gebruikersnaam: a.gebruikersnaam, naam: a.naam, rol: a.rol, werknemer_id: a.werknemer_id, actief: a.actief !== false }));
+    } else {
+      const d = await apiAccounts({ actie: 'list' });
+      rijen = (d && d.accounts) || [];
+    }
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="6" class="px-3 py-6 text-center text-red-600 dark:text-red-400">Kon accounts niet laden: ${esc(e.message)}</td></tr>`;
+    return;
+  }
+  if (!rijen.length) { body.innerHTML = '<tr><td colspan="6" class="px-3 py-6 text-center text-gray-400">Nog geen accounts</td></tr>'; return }
+  const wMap = {}; DB.list('werknemers').forEach(w => wMap[w.id] = w.naam);
+  body.innerHTML = rijen.map(a => `<tr class="border-t border-gray-100 dark:border-gray-700">
+    <td class="px-3 py-2 font-medium">${esc(a.gebruikersnaam)}</td>
+    <td class="px-3 py-2">${esc(a.naam)}</td>
+    <td class="px-3 py-2">${a.rol === 'beheer' ? '<span class="badge bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">Beheerder</span>' : 'Medewerker'}</td>
+    <td class="px-3 py-2">${a.werknemer_id && wMap[a.werknemer_id] ? esc(wMap[a.werknemer_id]) : '—'}</td>
+    <td class="px-3 py-2 text-center">${a.actief !== false ? '✅' : '❌'}</td>
+    <td class="px-3 py-2 whitespace-nowrap">
+      <button data-acc-reset="${a.id}" class="text-xs underline text-blue-600 dark:text-blue-400 min-h-[48px]">nieuw wachtwoord</button>
+      <button data-acc-toggle="${a.id}" data-actief="${a.actief !== false ? '1' : '0'}" class="text-xs underline text-gray-600 dark:text-gray-300 min-h-[48px] ml-2">${a.actief !== false ? 'deactiveren' : 'activeren'}</button>
+    </td></tr>`).join('');
+  body.querySelectorAll('[data-acc-reset]').forEach(b => b.onclick = async () => {
+    const nieuw = prompt('Nieuw wachtwoord (min. 6 tekens):');
+    if (!nieuw) return;
+    if (nieuw.length < 6) { toast('Minstens 6 tekens', 'error'); return }
+    try {
+      if (CONFIG.MODE === 'local') {
+        const a = accounts(); const i = a.findIndex(x => x.id === b.dataset.accReset);
+        if (i >= 0) { a[i].wachtwoordHash = hashWachtwoord(nieuw); bewaarAccounts(a) }
+      } else { await apiAccounts({ actie: 'reset', id: b.dataset.accReset, wachtwoord: nieuw }) }
+      toast('Nieuw wachtwoord ingesteld ✅', 'success');
+    } catch (e) { toast(e.message, 'error') }
+  });
+  body.querySelectorAll('[data-acc-toggle]').forEach(b => b.onclick = async () => {
+    const actief = b.dataset.actief !== '1';
+    try {
+      if (CONFIG.MODE === 'local') {
+        const a = accounts(); const i = a.findIndex(x => x.id === b.dataset.accToggle);
+        if (i >= 0) { a[i].actief = actief; bewaarAccounts(a) }
+      } else { await apiAccounts({ actie: 'toggle', id: b.dataset.accToggle, actief }) }
+      toast(actief ? 'Account geactiveerd' : 'Account gedeactiveerd', 'success');
+      renderAccounts();
+    } catch (e) { toast(e.message, 'error') }
+  });
+}
+
+// === NAVIGATION ===
+let currentView='invoer', currentBeheerTab='dashboard', currentMode='medewerker';
+function renderCurrentView(){
+  const main=$('main');
+  // Oude handlers van het invoerformulier opruimen: anders reageren ze ook op
+  // andere schermen (en crashen ze op velden die daar niet bestaan).
+  main.oninput=null;main.onchange=null;main.onclick=null;
+  if(currentMode==='medewerker'){
+    if(currentView==='invoer')renderInvoer();
+    else if(currentView==='mijnuren')renderMijnUren();
+  } else {
+    switch(currentBeheerTab){
+      case 'dashboard':renderDashboard();break;
+      case 'klussen':renderKlussenBeheer();break;
+      case 'klanten':renderKlanten();break;
+      case 'diensten':renderDiensten();break;
+      case 'werknemers':renderWerknemers();break;
+      case 'export':renderExports();break;
+      case 'accounts':renderAccounts();break;
+      default:renderDashboard();
+    }
+  }
+  naRender();
+}
+function renderBottomNav(){
+  $('bottomNav').style.display=currentMode==='medewerker'?'flex':'none';
+  $('beheerNav').style.display=currentMode==='beheer'?'flex':'none';
+}
+// Na elke render de rolregels toepassen (medewerker = alleen eigen uren)
+function naRender(){ try{pasRolToe()}catch(e){} }
+function switchView(view){currentView=view;renderCurrentView()}
+function switchTab(tab){
+  if(tab==='accounts'&&!isBeheer()){toast('Alleen voor beheerders','error');return}
+  // Een beheertabblad aanklikken betekent ook echt naar de beheermodus.
+  currentMode='beheer';
+  const mt=$('modeToggle');if(mt)mt.value='beheer';
+  currentBeheerTab=tab;
+  renderBottomNav();
+  renderCurrentView();
+  document.querySelectorAll('.tab-btn').forEach(b=>{b.classList.toggle('border-emerald-600',b.dataset.tab===tab);b.classList.toggle('text-emerald-700',b.dataset.tab===tab);b.classList.toggle('border-transparent',b.dataset.tab!==tab)});
+}
+
+// === PWA ===
+function initPWA(){
+  try{
+    const manifest={name:'Urenregistratie Transport & Loon',short_name:'UrenApp',start_url:'.',display:'standalone',theme_color:'#059669',background_color:'#ffffff',icons:[{src:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="#059669"/><circle cx="50" cy="52" r="22" fill="none" stroke="white" stroke-width="5"/><line x1="50" y1="52" x2="50" y2="38" stroke="white" stroke-width="5"/><line x1="50" y1="52" x2="62" y2="57" stroke="white" stroke-width="5"/></svg>')}],type:'image/svg+xml'};
+    const blob=new Blob([JSON.stringify(manifest)],{type:'application/json'});
+    const link=document.createElement('link');link.rel='manifest';link.href=URL.createObjectURL(blob);document.head.appendChild(link);
+    // Service worker
+    const swCode=`const CACHE='uren-v1';self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.add('/')))});self.addEventListener('fetch',e=>{e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)))})`;
+    const swBlob=new Blob([swCode],{type:'application/javascript'});
+    navigator.serviceWorker?.register(URL.createObjectURL(swBlob)).catch(()=>{});
+  }catch(e){console.log('PWA registration skipped:',e.message)}
+}
+
+// === INIT ===
+function bindChrome(){
+  $('modeToggle').onchange=e=>{currentMode=e.target.value;renderBottomNav();renderCurrentView()};
+  document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{switchView(b.dataset.view);document.querySelectorAll('[data-view]').forEach(x=>{x.classList.toggle('text-emerald-700',x.dataset.view===currentView);x.classList.toggle('text-gray-500',x.dataset.view!==currentView)})});
+  document.querySelectorAll('.tab-btn').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+  const uit=$('logoutBtn');
+  if(uit)uit.onclick=()=>{ if(confirm('Weet je zeker dat je wilt uitloggen?')) uitloggen() };
+}
+function startApp(){
+  // Beheerder begint in het dashboard, medewerker in de invoer.
+  currentMode=isBeheer()?'beheer':'medewerker';
+  const mt=$('modeToggle');if(mt)mt.value=currentMode;
+  renderBottomNav();
+  naRender();
+  renderCurrentView();
+}
+function init(){
+  if(CONFIG.MODE==='local'){
+    seedData();migrateKlanten();migrateDagstaten();migrateFacturatie();migrateIds();seedAccounts();
+  }
+  initDarkMode();
+  bindChrome();
+  initPWA();
+  if(CONFIG.MODE==='supabase'){
+    hervatSessie();
+  } else {
+    const bewaard=localStorage.getItem('uren_sessie');
+    if(bewaard){ try{SESSIE=JSON.parse(bewaard)}catch(e){SESSIE=null} }
+    if(SESSIE){ verbergLogin(); startApp() } else { toonLogin() }
+  }
+}
+init();
+</script>
+<!--
+=== SQL SCHEMA voor Supabase ===
+
+CREATE TABLE werknemers (
+  id TEXT PRIMARY KEY,
+  naam TEXT NOT NULL,
+  pers_nr TEXT,
+  functie TEXT,
+  email TEXT,
+  telefoon TEXT,
+  actief BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE klanten (
+  id TEXT PRIMARY KEY,
+  naam TEXT NOT NULL,
+  adres TEXT,
+  postcode TEXT,
+  plaats TEXT,
+  contactpersoon TEXT,
+  email TEXT,
+  telefoon TEXT,
+  actief BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Indexen voor de klantzoekfunctie (naam en plaats)
+CREATE INDEX IF NOT EXISTS idx_klanten_naam   ON klanten (lower(naam));
+CREATE INDEX IF NOT EXISTS idx_klanten_plaats ON klanten (lower(plaats));
+
+CREATE TABLE diensten (
+  id TEXT PRIMARY KEY,
+  naam TEXT NOT NULL,
+  omschrijving TEXT,
+  uurtarief NUMERIC DEFAULT 35,
+  eenheid TEXT DEFAULT 'uur',
+  actief BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE dagstaten (
+  id TEXT PRIMARY KEY,
+  medewerker_id TEXT REFERENCES werknemers(id),
+  medewerker_naam TEXT,
+  datum DATE NOT NULL,
+  start_time TEXT,
+  end_time TEXT,
+  pauze_min INTEGER DEFAULT 0,
+  netto_uren NUMERIC,
+  status TEXT DEFAULT 'in_afwachting' CHECK (status IN ('in_afwachting','goedgekeurd','verwerkt')),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE klus_regels (
+  id TEXT PRIMARY KEY,
+  dagstaat_id TEXT REFERENCES dagstaten(id) ON DELETE CASCADE,
+  klant_id TEXT REFERENCES klanten(id),
+  dienst_id TEXT REFERENCES diensten(id),
+  kenteken TEXT,
+  omschrijving TEXT,
+  aantal NUMERIC,
+  eenheid TEXT DEFAULT 'uur',
+  -- facturatie-afvinking (los van de status van de dagstaat)
+  gefactureerd BOOLEAN DEFAULT false,
+  factuurdatum DATE,
+  -- per klus bijhouden of er gewogen en/of bemonsterd is
+  wegen_monsteren BOOLEAN DEFAULT false
+);
+
+-- Snel filteren op wat nog gefactureerd moet worden
+CREATE INDEX IF NOT EXISTS idx_klus_regels_facturatie ON klus_regels (gefactureerd);
+
+-- Voorbeeld RLS beleid: medewerkers kunnen alleen hun eigen dagstaten lezen
+CREATE POLICY "Medewerker kan eigen dagstaten lezen" ON dagstaten
+  FOR SELECT USING (medewerker_id = auth.uid()::text);
+
+-- Beheerders kunnen alles bewerken
+CREATE POLICY "Beheerder volledige toegang" ON dagstaten
+  FOR ALL USING (true);
+
+-- Seed INSERTs
+-- Klanten (met adres)
+INSERT INTO klanten VALUES ('k1','Loonbedrijf Van Dijk','Havenweg 12','1043 AB','Amsterdam','Piet van Dijk','pvandijk@vandijk.nl','020-1111111',true,now());
+INSERT INTO klanten VALUES ('k2','Melkveebedrijf De Vries','Zuiderdijk 84','1509 GH','Zaandam','Jan de Vries','jdevries@devries.nl','075-2222222',true,now());
+INSERT INTO klanten VALUES ('k3','Gemeente Waadhoeke','Harlingerstraatweg 113','8801 PX','Franeker','Mevr. de Groot','gemeente@waadhoeke.nl','0519-3333333',true,now());
+INSERT INTO klanten VALUES ('k4','Aannemersbedrijf Postma','Friesestraat 47','8911 BZ','Leeuwarden','Dirk Postma','dpostma@postma.nl','058-4444444',true,now());
+INSERT INTO klanten VALUES ('k5','Akkerbouw Havinga','Oude Nijeveenseweg 8','8441 PL','Heerenveen','Hannie Havinga','havinga@havinga.nl','0513-5555555',true,now());
+INSERT INTO klanten VALUES ('k6','Zuivelboerderij Nicolai','Hemdijk 25','8601 XX','Sneek','Piet Nicolai','nicolai@zuivel.nl','0515-6666666',true,now());
+INSERT INTO werknemers VALUES ('w1','Jan de Boer','LB-001','Chauffeur','jan@loonbedrijf.nl','06-12345678',true,now());
+INSERT INTO werknemers VALUES ('w2','Piet Visser','LB-002','Loonwerker','piet@loonbedrijf.nl','06-87654321',true,now());
+INSERT INTO werknemers VALUES ('w3','Mohammed El Amrani','LB-003','Chauffeur','mohamed@loonbedrijf.nl','06-11122233',true,now());
+INSERT INTO werknemers VALUES ('w4','Lisa Jansen','LB-004','Loonadmin','lisa@loonbedrijf.nl','06-44455566',true,now());
+-->
+</script></body></html>
+
+
+
+
+
+
+
+
+
+
+
