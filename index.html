@@ -66,7 +66,7 @@ input,select,textarea{min-height:48px;font-size:16px}
 // Zijn URL en key ingevuld, dan gebruikt de app automatisch Supabase. Anders
 // draait hij in demo-modus (alleen op localhost; op een echte website wordt
 // de demo geblokkeerd).
-const CONFIG={SUPABASE_URL:'',SUPABASE_ANON_KEY:'',EMAIL_DOMEIN:'urenapp.local'};
+const CONFIG={SUPABASE_URL:'https://wyadokfyktrweosdchlj.supabase.co',SUPABASE_ANON_KEY:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5YWRva2Z5a3Ryd2Vvc2RjaGxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzODY5MjQsImV4cCI6MjEwNzk2MjkyNH0.xTsp2w1H_IeiQ9Pf6Q__ptxTSubuuLjHZ6btOwIQUGA',EMAIL_DOMEIN:'urenapp.local'};
 CONFIG.SUPABASE_URL=CONFIG.SUPABASE_URL.trim().replace(/\/+$/,'');
 CONFIG.MODE=(CONFIG.SUPABASE_URL&&CONFIG.SUPABASE_ANON_KEY)?'supabase':'local';
 
@@ -1245,7 +1245,7 @@ async function laadAlles(){
   for (const t of TABELLEN) {
     let alles = [], van = 0;
     for (;;) {
-      const rijen = await sbREST('/rest/v1/' + t + '?select=*&order=created_at.asc,id.asc&limit=1000&offset=' + van);
+      const rijen = await sbREST('/rest/v1/' + t + '?select=*&order=id.asc&limit=1000&offset=' + van);
       if (!Array.isArray(rijen)) break;
       alles = alles.concat(rijen);
       if (rijen.length < 1000) break;
