@@ -55,6 +55,7 @@ input,select,textarea{min-height:48px;font-size:16px}
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="klanten">Klanten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="diensten">Diensten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="werknemers">Werknemers</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="uren">Uren</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="export">Export</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="accounts">Accounts</button>
 </nav>
@@ -862,13 +863,13 @@ function exportKlussenCSV(rows){
 // === BEHEER: CRUD VIEWS ===
 function renderKlanten(){
   const items=DB.list('klanten');
-  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Klanten</h2>
+  $("main").innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Klanten</h2>
   <div class="flex flex-wrap gap-2 mb-4">
     <button id="btnAddKlant" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuwe klant</button>
     <button id="btnImportKlant" class="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 min-h-[48px] font-medium">Klanten importeren (CSV)</button>
   </div>
   <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x">
-  <table class="w-full text-sm min-w-[600px]"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
+  <table class="w-full text-xs md:text-[13px] min-w-[600px] md:min-w-0"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
   <th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2 text-left">Adres</th><th class="px-3 py-2 text-left">Plaats</th><th class="px-3 py-2 text-left">Contact</th><th class="px-3 py-2 text-left">Email</th><th class="px-3 py-2 text-left">Telefoon</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th>
   </tr></thead><tbody>${items.map(k=>`<tr class="border-t border-gray-100 dark:border-gray-700">
   <td class="px-3 py-2">${esc(k.naam)}</td><td class="px-3 py-2">${esc(k.adres)}${k.postcode?'<br><span class="text-xs text-gray-500">'+esc(k.postcode)+'</span>':''}</td><td class="px-3 py-2">${esc(k.plaats)}</td><td class="px-3 py-2">${esc(k.contact)}</td><td class="px-3 py-2">${esc(k.email)}</td><td class="px-3 py-2">${esc(k.telefoon)}</td>
@@ -1023,7 +1024,7 @@ function openKlantEditor(id,items){
 
 function renderDiensten(){
   const items=DB.list('diensten');
-  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Diensten</h2>
+  $("main").innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Diensten</h2>
   <button id="btnAddDienst" class="mb-4 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuwe dienst</button>
   <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x">
   <table class="w-full text-sm min-w-[600px]"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
@@ -1056,7 +1057,7 @@ function openDienstEditor(id,items){
 
 function renderWerknemers(){
   const items=DB.list('werknemers');
-  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Werknemers</h2>
+  $("main").innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Werknemers</h2>
   <button id="btnAddWn" class="mb-4 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuwe werknemer</button>
   <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x">
   <table class="w-full text-sm min-w-[600px]"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
@@ -1089,12 +1090,67 @@ function openWnEditor(id,items){
 }
 
 // === BEHEER: EXPORTS ===
+
+// === UREN PER MEDEWERKER (maand of eigen periode) ===
+const URENOV={van:'',tot:'',status:'alle',open:{}};
+function renderUrenOverzicht(){
+  if(!URENOV.van){const n=new Date();const p=x=>String(x).padStart(2,'0');URENOV.van=n.getFullYear()+'-'+p(n.getMonth()+1)+'-01';URENOV.tot=today();}
+  const werknemers=DB.list('werknemers');
+  const wNaam={};werknemers.forEach(w=>wNaam[w.id]=w.naam);
+  const dagen=DB.list('dagstaten').filter(d=>d.datum>=URENOV.van&&d.datum<=URENOV.tot&&(URENOV.status==='alle'||d.status===URENOV.status));
+  const groep={};
+  dagen.forEach(d=>{const id=d.medewerkerId||'?';(groep[id]=groep[id]||[]).push(d)});
+  const rijen=Object.keys(groep).map(id=>{const l=groep[id].sort((a,b)=>a.datum<b.datum?-1:1);return{id,naam:wNaam[id]||(l[0].medewerkerNaam)||'Onbekend',dagen:l,uren:l.reduce((s,d)=>s+(Number(d.nettoUren)||0),0)}}).sort((a,b)=>a.naam.localeCompare(b.naam));
+  const totaal=rijen.reduce((s,r)=>s+r.uren,0);
+  const f=n=>(Math.round(n*100)/100).toLocaleString('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const maandNamen=['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
+  const statusNaam={in_afwachting:'In afwachting',goedgekeurd:'Goedgekeurd',verwerkt:'Verwerkt'};
+  $('main').innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Uren per medewerker</h2>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-100 dark:border-gray-700 p-4 mb-4">
+    <div class="flex flex-wrap gap-3 items-end">
+      <div><label class="block text-xs font-medium mb-1" for="uoMaand">Snel kiezen: maand</label>
+        <input type="month" id="uoMaand" class="border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600" value="${URENOV.van.slice(0,7)}"></div>
+      <div><label class="block text-xs font-medium mb-1" for="uoVan">Van</label><input type="date" id="uoVan" class="border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600" value="${URENOV.van}"></div>
+      <div><label class="block text-xs font-medium mb-1" for="uoTot">Tot en met</label><input type="date" id="uoTot" class="border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600" value="${URENOV.tot}"></div>
+      <div><label class="block text-xs font-medium mb-1" for="uoStatus">Status</label>
+        <select id="uoStatus" class="border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600">
+          <option value="alle">Alle</option><option value="in_afwachting">In afwachting</option><option value="goedgekeurd">Goedgekeurd</option><option value="verwerkt">Verwerkt</option></select></div>
+      <button id="uoCsv" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">Download CSV</button>
+    </div>
+  </div>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x">
+  <table class="w-full text-sm"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
+    <th class="px-3 py-2 text-left">Medewerker</th><th class="px-3 py-2 text-right">Dagen</th><th class="px-3 py-2 text-right">Uren</th><th class="px-3 py-2"></th></tr></thead><tbody>
+  ${rijen.length?rijen.map(r=>`<tr class="border-t border-gray-100 dark:border-gray-700">
+    <td class="px-3 py-2 font-medium">${esc(r.naam)}</td><td class="px-3 py-2 text-right">${r.dagen.length}</td><td class="px-3 py-2 text-right font-semibold">${f(r.uren)}</td>
+    <td class="px-3 py-2 text-right"><button data-uo="${esc(r.id)}" class="text-blue-600 hover:text-blue-800 text-xs min-h-[40px]">${URENOV.open[r.id]?'Verberg dagen':'Toon dagen'}</button></td></tr>
+    ${URENOV.open[r.id]?`<tr><td colspan="4" class="px-3 pb-3 bg-gray-50 dark:bg-gray-900"><table class="w-full text-xs"><thead><tr class="text-left text-gray-500"><th class="py-1">Datum</th><th>Start</th><th>Eind</th><th>Pauze</th><th class="text-right">Uren</th><th class="text-right">Status</th></tr></thead><tbody>
+      ${r.dagen.map(d=>`<tr class="border-t border-gray-200 dark:border-gray-700"><td class="py-1">${esc(d.datum)}</td><td>${esc(d.startTime||'')}</td><td>${esc(d.endTime||'')}</td><td>${esc(String(d.pauzeMin||0))} min</td><td class="text-right">${f(Number(d.nettoUren)||0)}</td><td class="text-right">${esc(statusNaam[d.status]||d.status||'')}</td></tr>`).join('')}
+      </tbody></table></td></tr>`:''}`).join(''):'<tr><td colspan="4" class="px-3 py-6 text-center text-gray-500">Geen uren in deze periode.</td></tr>'}
+  </tbody>${rijen.length?`<tfoot class="bg-gray-50 dark:bg-gray-700 font-semibold"><tr><td class="px-3 py-2">Totaal</td><td class="px-3 py-2 text-right">${dagen.length}</td><td class="px-3 py-2 text-right">${f(totaal)}</td><td></td></tr></tfoot>`:''}
+  </table></div></div>`;
+  $('uoStatus').value=URENOV.status;
+  const her=()=>renderUrenOverzicht();
+  $('uoVan').onchange=e=>{URENOV.van=e.target.value||URENOV.van;her()};
+  $('uoTot').onchange=e=>{URENOV.tot=e.target.value||URENOV.tot;her()};
+  $('uoStatus').onchange=e=>{URENOV.status=e.target.value;her()};
+  $('uoMaand').onchange=e=>{const v=e.target.value;if(!v)return;const [j,m]=v.split('-').map(Number);const laatste=new Date(j,m,0).getDate();URENOV.van=v+'-01';URENOV.tot=v+'-'+String(laatste).padStart(2,'0');her()};
+  document.querySelectorAll('[data-uo]').forEach(b=>b.onclick=()=>{const id=b.dataset.uo;URENOV.open[id]=!URENOV.open[id];her()});
+  $('uoCsv').onclick=()=>{
+    const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
+    const regels=[['Medewerker','Datum','Start','Eind','Pauze (min)','Netto uren','Status']];
+    rijen.forEach(r=>r.dagen.forEach(d=>regels.push([r.naam,d.datum,d.startTime||'',d.endTime||'',d.pauzeMin||0,String(Number(d.nettoUren)||0).replace('.',','),statusNaam[d.status]||d.status||''])));
+    rijen.forEach(r=>regels.push([r.naam+' (totaal)','','','','',String(Math.round(r.uren*100)/100).replace('.',','),'']));
+    const csv='﻿'+regels.map(r=>r.map(q).join(';')).join('\n');
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='uren_per_medewerker_'+URENOV.van+'_tot_'+URENOV.tot+'.csv';a.click();URL.revokeObjectURL(a.href);
+  };
+}
 function renderExports(){
   const dagstaten=DB.list('dagstaten');
   const werknemers=DB.list('werknemers');
   const klanten=DB.list('klanten');
   const diensten=DB.list('diensten');
-  $("main").innerHTML=`<div class="max-w-4xl mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Exporteren</h2>
+  $("main").innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Exporteren</h2>
   <div class="space-y-3">
   <button id="btnExportCSV" class="w-full px-4 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 font-medium min-h-[48px]">Exporteren voor loonadministratie (CSV)</button>
   <button id="btnExportJSON" class="w-full px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium min-h-[48px]">JSON backup exporteren</button>
@@ -1507,6 +1563,7 @@ function renderCurrentView(){
   // Oude handlers van het invoerformulier opruimen: anders reageren ze ook op
   // andere schermen (en crashen ze op velden die daar niet bestaan).
   main.oninput=null;main.onchange=null;main.onclick=null;
+  main.classList.toggle('max-w-4xl',currentMode==='medewerker');main.classList.toggle('max-w-[1800px]',currentMode!=='medewerker');
   if(currentMode==='medewerker'){
     if(currentView==='invoer')renderInvoer();
     else if(currentView==='mijnuren')renderMijnUren();
@@ -1517,6 +1574,7 @@ function renderCurrentView(){
       case 'klanten':renderKlanten();break;
       case 'diensten':renderDiensten();break;
       case 'werknemers':renderWerknemers();break;
+      case 'uren':renderUrenOverzicht();break;
       case 'export':renderExports();break;
       case 'accounts':renderAccounts();break;
       default:renderDashboard();
