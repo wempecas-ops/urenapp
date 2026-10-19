@@ -54,6 +54,7 @@ input,select,textarea{min-height:48px;font-size:16px}
 <nav id="beheerNav" class="hidden bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 overflow-x-auto whitespace-nowrap">
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="dashboard">Dashboard</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="klussen">Klussen</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="orders">Orders</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="klanten">Klanten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="diensten">Diensten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="materieel">Materieel</button>
@@ -1235,6 +1236,110 @@ function openMaterieelBulk(){
   };
 }
 
+// === ORDERS (verzamelorders / tickets, alleen beheer) ===
+// Los van de klussen die medewerkers invoeren: een eigen overzicht voor klussen
+// die meerdere dagen duren, met status, notities, foto's en regels met aantal x prijs.
+const ORDER_STATUS=['Nieuw','Gepland','Bezig','Klaar','Gefactureerd'];
+const ORDER_KLEUR={Nieuw:'bg-gray-200 text-gray-800',Gepland:'bg-blue-100 text-blue-800',Bezig:'bg-amber-100 text-amber-900',Klaar:'bg-emerald-100 text-emerald-800',Gefactureerd:'bg-purple-100 text-purple-800'};
+const orderFilter={status:'open',q:''};
+const eurO=n=>'€ '+(Number(n)||0).toFixed(2).replace('.',',');
+const getal=v=>{const n=parseFloat(String(v==null?'':v).replace(',','.'));return isNaN(n)?0:n};
+const orderTotaal=o=>(o.regels||[]).reduce((s,r)=>s+getal(r.aantal)*getal(r.prijs),0);
+const nieuwOrdernr=()=>{let m=0;DB.list('orders').forEach(o=>{const r=/^O(\d+)$/.exec(o.ordernr||'');if(r)m=Math.max(m,parseInt(r[1],10))});return 'O'+String(m+1).padStart(4,'0')};
+const datumNL=d=>d?String(d).split('-').reverse().join('-'):'';
+function renderOrders(){
+  const alle=DB.list('orders').slice().sort((a,b)=>(b.ordernr||'').localeCompare(a.ordernr||''));
+  const f=orderFilter,q=f.q.trim().toLowerCase();
+  const lijst=alle.filter(o=>{
+    if(f.status==='open'&&o.status==='Gefactureerd')return false;
+    if(f.status!=='open'&&f.status!=='alles'&&o.status!==f.status)return false;
+    if(q){const kl=DB.get('klanten',o.klantId);const hooi=[o.ordernr,o.titel,o.omschrijving,o.notities,kl&&kl.naam].join(' ').toLowerCase();if(!hooi.includes(q))return false}
+    return true;
+  });
+  const tel=s=>alle.filter(o=>o.status===s).length;
+  const chips=[['open','Lopend ('+alle.filter(o=>o.status!=='Gefactureerd').length+')'],...ORDER_STATUS.map(s=>[s,s+' ('+tel(s)+')']),['alles','Alles ('+alle.length+')']];
+  $('main').innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">Orders</h2>
+  <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Je eigen tickets voor werk dat meerdere dagen duurt. Medewerkers zien dit niet en het staat los van de klussen.</p>
+  <div class="flex flex-wrap gap-2 mb-3"><button id="btnNieuwOrder" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuwe order</button>
+  <input id="orderZoek" value="${esc(f.q)}" placeholder="Zoeken op klant, nummer of tekst" class="flex-1 min-w-[180px] border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div>
+  <div class="flex flex-wrap gap-2 mb-4">${chips.map(([k,t])=>`<button data-ofs="${k}" class="px-3 py-2 rounded-full text-sm min-h-[40px] border ${f.status===k?'bg-black text-white border-black dark:bg-white dark:text-black':'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600'}">${esc(t)}</button>`).join('')}</div>
+  <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">${lijst.length?lijst.map(o=>{const kl=DB.get('klanten',o.klantId);const tot=orderTotaal(o);
+    return `<button data-order="${o.id}" class="text-left bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700 hover:border-gray-400">
+    <div class="flex items-center justify-between gap-2 mb-1"><span class="text-xs font-mono text-gray-500">${esc(o.ordernr||'')}</span><span class="px-2 py-0.5 rounded-full text-xs font-medium ${ORDER_KLEUR[o.status]||ORDER_KLEUR.Nieuw}">${esc(o.status||'Nieuw')}</span></div>
+    <div class="font-semibold text-gray-800 dark:text-gray-100">${esc(o.titel||'(zonder titel)')}</div>
+    <div class="text-sm text-gray-600 dark:text-gray-300">${kl?esc(kl.naam):'<span class="text-gray-400">Geen klant</span>'}</div>
+    ${o.startdatum||o.einddatum?`<div class="text-xs text-gray-500 mt-1">${esc(datumNL(o.startdatum))}${o.einddatum?' t/m '+esc(datumNL(o.einddatum)):''}</div>`:''}
+    <div class="flex items-center justify-between mt-2 text-xs text-gray-500"><span>${(o.regels||[]).length} regel(s)${(o.fotos||[]).length?' · '+(o.fotos||[]).length+' foto\'s':''}</span><span class="font-semibold text-gray-800 dark:text-gray-100 text-sm">${tot?eurO(tot):''}</span></div></button>`}).join(''):'<p class="text-gray-400 py-8 md:col-span-2 xl:col-span-3 text-center">Geen orders gevonden.</p>'}</div></div>`;
+  $('btnNieuwOrder').onclick=()=>openOrderEditor(null);
+  $('orderZoek').oninput=e=>{orderFilter.q=e.target.value;const p=e.target.selectionStart;renderOrders();const z=$('orderZoek');z.focus();try{z.setSelectionRange(p,p)}catch(x){}};
+  document.querySelectorAll('[data-ofs]').forEach(b=>b.onclick=()=>{orderFilter.status=b.dataset.ofs;renderOrders()});
+  document.querySelectorAll('[data-order]').forEach(b=>b.onclick=()=>openOrderEditor(b.dataset.order));
+}
+function openOrderEditor(id){
+  const ex=id?DB.get('orders',id):null;
+  const oe={id:ex?ex.id:uid(),regels:(ex&&ex.regels?ex.regels.map(r=>({...r})):[]),fotos:(ex&&ex.fotos?ex.fotos.slice():[])};
+  if(!oe.regels.length)oe.regels.push({omschrijving:'',aantal:'',eenheid:'uur',prijs:''});
+  const klanten=DB.list('klanten').slice().sort((a,b)=>(a.naam||'').localeCompare(b.naam||''));
+  const m=document.createElement('div');m.id='orderEditor';m.className='fixed inset-0 bg-black/50 z-30 overflow-auto p-3';
+  m.innerHTML=`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 w-full max-w-2xl mx-auto my-4">
+  <div class="flex items-center justify-between mb-3"><h3 class="font-bold text-lg">${ex?'Order '+esc(ex.ordernr||''):'Nieuwe order'}</h3><button id="oeX" class="px-3 min-h-[44px] text-gray-500" aria-label="Sluiten">✕</button></div>
+  <label class="block text-sm font-medium mb-1" for="oe_titel">Titel</label><input id="oe_titel" value="${esc(ex?ex.titel||'':'')}" placeholder="Bijv. Mest uitrijden Veldweg" class="w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600">
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+    <div><label class="block text-sm font-medium mb-1" for="oe_klant">Klant</label><select id="oe_klant" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"><option value="">— kies klant —</option>${klanten.map(k=>`<option value="${k.id}" ${ex&&ex.klantId===k.id?'selected':''}>${esc(k.naam)}${k.klantcode?' ('+esc(k.klantcode)+')':''}</option>`).join('')}</select></div>
+    <div><label class="block text-sm font-medium mb-1" for="oe_status">Status</label><select id="oe_status" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600">${ORDER_STATUS.map(s=>`<option ${((ex&&ex.status)||'Nieuw')===s?'selected':''}>${s}</option>`).join('')}</select></div>
+    <div><label class="block text-sm font-medium mb-1" for="oe_van">Startdatum</label><input type="date" id="oe_van" value="${esc(ex?ex.startdatum||'':'')}" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div>
+    <div><label class="block text-sm font-medium mb-1" for="oe_tot">Einddatum</label><input type="date" id="oe_tot" value="${esc(ex?ex.einddatum||'':'')}" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div>
+  </div>
+  <label class="block text-sm font-medium mb-1" for="oe_oms">Omschrijving</label><textarea id="oe_oms" rows="2" class="w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600" style="min-height:0">${esc(ex?ex.omschrijving||'':'')}</textarea>
+  <div class="text-sm font-medium mb-1">Regels (aantal × prijs)</div><div id="oe_regels" class="space-y-2 mb-2"></div>
+  <div class="flex items-center justify-between mb-3"><button type="button" id="oeAddRegel" class="px-3 py-2 rounded-xl bg-gray-200 dark:bg-gray-700 text-sm min-h-[44px]">+ Regel</button><div class="text-sm">Totaal <span id="oe_totaal" class="font-bold text-base"></span> <span class="text-xs text-gray-500">excl. btw</span></div></div>
+  <label class="block text-sm font-medium mb-1" for="oe_notes">Notities (alleen voor jou)</label><textarea id="oe_notes" rows="4" class="w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600" style="min-height:0">${esc(ex?ex.notities||'':'')}</textarea>
+  <div class="text-sm font-medium mb-1">Foto's</div><div id="oe_fotos" class="flex flex-wrap gap-2 mb-2"></div>
+  <label class="inline-block px-3 py-2 rounded-xl bg-gray-200 dark:bg-gray-700 text-sm min-h-[44px] cursor-pointer mb-4">+ Foto toevoegen<input type="file" id="oe_fotoIn" accept="image/*" class="hidden"></label>
+  <div class="flex gap-2"><button id="oeSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button>${ex?'<button id="oeDel" class="px-4 bg-red-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Verwijderen</button>':''}<button id="oeCancel" class="px-4 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div></div>`;
+  document.body.appendChild(m);
+  const leesRegels=()=>{oe.regels=[...m.querySelectorAll('[data-reg]')].map(r=>({omschrijving:r.querySelector('.r_oms').value.trim(),aantal:r.querySelector('.r_aan').value.trim(),eenheid:r.querySelector('.r_een').value,prijs:r.querySelector('.r_prijs').value.trim()}))};
+  const toonTotaal=()=>{leesRegels();$('oe_totaal').textContent=eurO(orderTotaal(oe))};
+  const tekenRegels=()=>{
+    $('oe_regels').innerHTML=oe.regels.map((r,i)=>`<div data-reg="${i}" class="grid grid-cols-12 gap-2 items-center">
+      <input class="r_oms col-span-12 sm:col-span-5 border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600" placeholder="Omschrijving" value="${esc(r.omschrijving||'')}">
+      <input class="r_aan col-span-3 sm:col-span-2 border rounded-xl px-2 py-2 bg-white dark:bg-gray-700 dark:border-gray-600" inputmode="decimal" placeholder="Aantal" value="${esc(r.aantal==null?'':r.aantal)}">
+      <select class="r_een col-span-4 sm:col-span-2 border rounded-xl px-2 py-2 bg-white dark:bg-gray-700 dark:border-gray-600">${['uur','dag','ton','m³','ha','stuk','rit'].map(e=>`<option ${(r.eenheid||'uur')===e?'selected':''}>${e}</option>`).join('')}</select>
+      <input class="r_prijs col-span-4 sm:col-span-2 border rounded-xl px-2 py-2 bg-white dark:bg-gray-700 dark:border-gray-600" inputmode="decimal" placeholder="€ per" value="${esc(r.prijs==null?'':r.prijs)}">
+      <button type="button" data-rdel="${i}" class="col-span-1 text-red-500 min-h-[44px]" aria-label="Regel verwijderen">✕</button></div>`).join('');
+    m.querySelectorAll('[data-reg] input,[data-reg] select').forEach(el=>el.oninput=toonTotaal);
+    m.querySelectorAll('[data-rdel]').forEach(b=>b.onclick=()=>{leesRegels();oe.regels.splice(+b.dataset.rdel,1);if(!oe.regels.length)oe.regels.push({omschrijving:'',aantal:'',eenheid:'uur',prijs:''});tekenRegels()});
+    toonTotaal();
+  };
+  const tekenFotos=()=>{
+    $('oe_fotos').innerHTML=oe.fotos.length?`<button type="button" data-fotos="${esc(oe.fotos.join('|'))}" class="px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 text-sm min-h-[44px]">Bekijk (${oe.fotos.length})</button>`+oe.fotos.map((p,i)=>`<span class="inline-flex items-center gap-1 text-xs border border-gray-200 dark:border-gray-600 rounded-full pl-3 pr-1 py-1">Foto ${i+1}<button type="button" data-rfoto="${i}" class="px-2 min-h-[32px] text-red-500" aria-label="Foto verwijderen">x</button></span>`).join(''):'<span class="text-xs text-gray-400">Nog geen foto\'s</span>';
+    m.querySelectorAll('[data-rfoto]').forEach(b=>b.onclick=()=>{oe.fotos.splice(+b.dataset.rfoto,1);tekenFotos()});
+  };
+  tekenRegels();tekenFotos();
+  const sluit=()=>m.remove();
+  $('oeX').onclick=sluit;$('oeCancel').onclick=sluit;
+  $('oeAddRegel').onclick=()=>{leesRegels();oe.regels.push({omschrijving:'',aantal:'',eenheid:'uur',prijs:''});tekenRegels()};
+  $('oe_fotoIn').onchange=async e=>{
+    const f=e.target.files&&e.target.files[0];if(!f)return;
+    try{toast('Foto uploaden…');const pad=await fotoUpload(f,'order',oe.id);oe.fotos.push(pad);tekenFotos();toast('Foto toegevoegd','success')}
+    catch(err){toast(err.message,'error')}
+    e.target.value='';
+  };
+  $('oeSave').onclick=()=>{
+    leesRegels();
+    const titel=$('oe_titel').value.trim();
+    if(!titel){toast('Geef de order een titel','error');return}
+    const van=$('oe_van').value,tot=$('oe_tot').value;
+    if(van&&tot&&tot<van){toast('De einddatum ligt voor de startdatum','error');return}
+    const regels=oe.regels.filter(r=>r.omschrijving||r.aantal||r.prijs).map(r=>({omschrijving:r.omschrijving,aantal:getal(r.aantal),eenheid:r.eenheid,prijs:getal(r.prijs)}));
+    const data={ordernr:ex?ex.ordernr:nieuwOrdernr(),titel,klantId:$('oe_klant').value||null,status:$('oe_status').value,startdatum:van||null,einddatum:tot||null,omschrijving:$('oe_oms').value.trim(),notities:$('oe_notes').value.trim(),regels,fotos:oe.fotos};
+    if(ex)DB.update('orders',ex.id,data);
+    else DB.insert('orders',{id:oe.id,...data});
+    sluit();toast('Order opgeslagen','success');renderCurrentView();
+  };
+  if($('oeDel'))$('oeDel').onclick=()=>{if(confirm('Deze order definitief verwijderen? (Foto\'s blijven in de opslag staan.)')){DB.remove('orders',ex.id);sluit();toast('Order verwijderd','success');renderCurrentView()}};
+}
+
 function renderDiensten(){
   const items=DB.list('diensten');
   $("main").innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Diensten</h2>
@@ -1691,6 +1796,13 @@ async function laadAlles(){
     const m = await sbREST('/rest/v1/materieel?select=*&order=kenteken.asc&limit=1000');
     CACHE.materieel = Array.isArray(m) ? m : [];
   } catch (e) { CACHE.materieel = CACHE.materieel || [] }
+  // Orders (verzamelorders): alleen beheer; mag ontbreken zolang de tabel nog niet is aangemaakt.
+  if (isBeheer()) {
+    try {
+      const o = await sbREST('/rest/v1/orders?select=*&order=ordernr.asc&limit=1000');
+      CACHE.orders = Array.isArray(o) ? o : [];
+    } catch (e) { CACHE.orders = CACHE.orders || [] }
+  }
   // Tarieven staan in een aparte tabel die alleen de beheerder mag lezen.
   if (isBeheer()) {
     try {
@@ -1991,6 +2103,7 @@ function renderCurrentView(){
     switch(currentBeheerTab){
       case 'dashboard':renderDashboard();break;
       case 'klussen':renderKlussenBeheer();break;
+      case 'orders':renderOrders();break;
       case 'klanten':renderKlanten();break;
       case 'diensten':renderDiensten();break;
       case 'materieel':renderMaterieel();break;
@@ -2012,7 +2125,7 @@ function renderBottomNav(){
 function naRender(){ try{pasRolToe()}catch(e){} }
 function switchView(view){currentView=view;renderCurrentView()}
 function switchTab(tab){
-  if(tab==='accounts'&&!isBeheer()){toast('Alleen voor beheerders','error');return}
+  if((tab==='accounts'||tab==='orders')&&!isBeheer()){toast('Alleen voor beheerders','error');return}
   // Een beheertabblad aanklikken betekent ook echt naar de beheermodus.
   currentMode='beheer';
   const mt=$('modeToggle');if(mt)mt.value='beheer';
