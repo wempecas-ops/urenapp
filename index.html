@@ -58,8 +58,10 @@ input,select,textarea{min-height:48px;font-size:16px}
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="klanten">Klanten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="diensten">Diensten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="materieel">Materieel</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="keuringen">Keuringen</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="werknemers">Werknemers</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="planning">Planning</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="planarchief">Planning-archief</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="uren">Uren</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="export">Export</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="accounts">Accounts</button>
@@ -657,6 +659,7 @@ function renderDashboard(){
   const kaart=(titel,waarde,kleur,extra)=>`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">${titel}</div><div class="text-2xl font-bold ${kleur}">${waarde}</div>${extra?`<div class="text-xs text-gray-500 mt-0.5">${extra}</div>`:''}</div>`;
   $("main").innerHTML=`
   <div class="max-w-full mx-auto">
+  ${keuringBanner()}
     <h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">Dashboard</h2>
     <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">De tellers en de tabel gaan allebei over de gekozen selectie hieronder.</p>
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
@@ -1410,17 +1413,38 @@ function openWnEditor(id,items){
 // === BEHEER: EXPORTS ===
 
 
-// === PLANNING: invullen en als 1 bericht naar WhatsApp ===
+// === PLANNING: invullen en per medewerker (of als 1 bericht) naar WhatsApp ===
 let PLAN=(()=>{try{const s=JSON.parse(localStorage.getItem('wop_planning')||'null');if(s&&Array.isArray(s.regels))return s}catch(e){}return null})()||{datum:'',regels:[],notitie:'',groep:'klus'};
+// Oudere planningen hadden 1 laad- en 1 loslocatie (laad/los); nu mogen het er meer zijn (laden/lossen).
+const planNorm=r=>{if(!Array.isArray(r.laden))r.laden=[r.laad||''];if(!Array.isArray(r.lossen))r.lossen=[r.los||''];if(!r.laden.length)r.laden=[''];if(!r.lossen.length)r.lossen=[''];delete r.laad;delete r.los;return r};
+PLAN.regels.forEach(planNorm);
+const nieuwPlanRegel=()=>({id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),tijd:'',klant:'',laadnr:'',laden:[''],lossen:[''],omschr:'',wie:[]});
 function planBewaar(){try{localStorage.setItem('wop_planning',JSON.stringify(PLAN))}catch(e){}}
-function planTekst(){
+const planIngevuld=r=>(r.klant||'').trim()||(r.omschr||'').trim()||(r.laadnr||'').trim()||(r.laden||[]).some(x=>(x||'').trim())||(r.lossen||[]).some(x=>(x||'').trim());
+const datumLang=iso=>{if(!iso)return '';const d=new Date(iso+'T12:00:00');return isNaN(d)?'':d.toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long'})};
+// Telefoonnummer -> internationaal formaat voor wa.me (06-12345678 -> 31612345678). Leeg = onbruikbaar.
+function waNummer(t){
+  const s=String(t||'').trim();if(!s)return '';
+  let d=s.replace(/\D/g,'');
+  if(/^\+/.test(s)){}
+  else if(/^00/.test(s))d=d.slice(2);
+  else if(d.startsWith('0'))d='31'+d.slice(1);
+  else if(!(d.startsWith('31')&&d.length===11))return '';
+  if(d.startsWith('31'))return d.length===11?d:'';
+  return d.length>=8&&d.length<=15?d:'';
+}
+const locRegels=(arr,label,pre)=>{const v=(arr||[]).map(x=>(x||'').trim()).filter(Boolean);return v.map((x,i)=>(pre||'')+label+(v.length>1?' '+(i+1):'')+': '+x)};
+function planContext(){
   const wn={};DB.list('werknemers').forEach(w=>wn[w.id]=w.naam);
   const kl=DB.list('klanten');
   const klantVan=t=>{t=(t||'').trim();if(!t)return null;const l=t.toLowerCase();return kl.find(k=>(k.naam+(k.plaats?' ('+k.plaats+')':'')).toLowerCase()===l)||kl.find(k=>(k.naam||'').toLowerCase()===l)||null};
-  let dat='';
-  if(PLAN.datum){const d=new Date(PLAN.datum+'T12:00:00');dat=d.toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long'})}
-  const regels=PLAN.regels.filter(r=>(r.klant||'').trim()||(r.omschr||'').trim()||(r.laadnr||'').trim()||(r.laad||'').trim()||(r.los||'').trim()).slice().sort((a,b)=>(a.tijd||'99:99')<(b.tijd||'99:99')?-1:1);
   const plek=r=>{const k=klantVan(r.klant);if(!k)return (r.klant||'').trim();return k.naam+(klantAdres(k)?' - '+klantAdres(k):'')};
+  const regels=PLAN.regels.filter(planIngevuld).slice().sort((a,b)=>(a.tijd||'99:99')<(b.tijd||'99:99')?-1:1);
+  return {wn,plek,regels};
+}
+function planTekst(){
+  const {wn,plek,regels}=planContext();
+  const dat=datumLang(PLAN.datum);
   const uit=[];
   uit.push('*Planning'+(dat?' '+dat:'')+'*');
   if(PLAN.notitie.trim()){uit.push('');uit.push(PLAN.notitie.trim())}
@@ -1429,8 +1453,8 @@ function planTekst(){
       uit.push('');
       uit.push('*'+(r.tijd?r.tijd+' - ':'')+(plek(r)||'Klus')+'*');
       if((r.laadnr||'').trim())uit.push('Laadnummer: '+r.laadnr.trim());
-      if((r.laad||'').trim())uit.push('Laden: '+r.laad.trim());
-      if((r.los||'').trim())uit.push('Lossen: '+r.los.trim());
+      locRegels(r.laden,'Laden').forEach(x=>uit.push(x));
+      locRegels(r.lossen,'Lossen').forEach(x=>uit.push(x));
       if((r.omschr||'').trim())uit.push(r.omschr.trim());
       const namen=(r.wie||[]).map(id=>wn[id]).filter(Boolean);
       if(namen.length)uit.push('Wie: '+namen.join(', '));
@@ -1440,17 +1464,43 @@ function planTekst(){
     regels.forEach(r=>{(r.wie||[]).forEach(id=>{(per[id]=per[id]||[]).push(r)})});
     Object.keys(per).sort((a,b)=>(wn[a]||'').localeCompare(wn[b]||'')).forEach(id=>{
       uit.push('');uit.push('*'+(wn[id]||'?')+'*');
-      per[id].forEach(r=>{const ex=[(r.laad||'').trim()?'  Laden: '+r.laad.trim():'',(r.los||'').trim()?'  Lossen: '+r.los.trim():''].filter(Boolean);uit.push('- '+(r.tijd?r.tijd+' ':'')+(plek(r)||'Klus')+((r.laadnr||'').trim()?' (laadnr '+r.laadnr.trim()+')':'')+((r.omschr||'').trim()?': '+r.omschr.trim():''));ex.forEach(x=>uit.push(x))});
+      per[id].forEach(r=>{uit.push('- '+(r.tijd?r.tijd+' ':'')+(plek(r)||'Klus')+((r.laadnr||'').trim()?' (laadnr '+r.laadnr.trim()+')':'')+((r.omschr||'').trim()?': '+r.omschr.trim():''));locRegels(r.laden,'Laden','  ').concat(locRegels(r.lossen,'Lossen','  ')).forEach(x=>uit.push(x))});
     });
     const zonder=regels.filter(r=>!(r.wie||[]).length);
     if(zonder.length){uit.push('');uit.push('*Nog niemand ingedeeld*');zonder.forEach(r=>uit.push('- '+(r.tijd?r.tijd+' ':'')+(plek(r)||'Klus')+((r.laadnr||'').trim()?' (laadnr '+r.laadnr.trim()+')':'')))}
   }
   return uit.join('\n');
 }
+// Persoonlijk bericht: alleen de klussen van 1 medewerker.
+function planTekstVoor(wid){
+  const {wn,plek,regels}=planContext();
+  const dat=datumLang(PLAN.datum);
+  const uit=['*Planning'+(dat?' '+dat:'')+'*'];
+  if(PLAN.notitie.trim()){uit.push('');uit.push(PLAN.notitie.trim())}
+  regels.filter(r=>(r.wie||[]).includes(wid)).forEach(r=>{
+    uit.push('');
+    uit.push('*'+(r.tijd?r.tijd+' - ':'')+(plek(r)||'Klus')+'*');
+    if((r.laadnr||'').trim())uit.push('Laadnummer: '+r.laadnr.trim());
+    locRegels(r.laden,'Laden').forEach(x=>uit.push(x));
+    locRegels(r.lossen,'Lossen').forEach(x=>uit.push(x));
+    if((r.omschr||'').trim())uit.push(r.omschr.trim());
+    const anderen=(r.wie||[]).filter(id=>id!==wid).map(id=>wn[id]).filter(Boolean);
+    if(anderen.length)uit.push('Samen met: '+anderen.join(', '));
+  });
+  return uit.join('\n');
+}
+// Elke keer dat een planning naar WhatsApp wordt geopend, bewaren we hem in het archief.
+function planLog(wid,naam,tekst,datum,soort){
+  try{DB.insert('planningen',{datum:datum||null,medewerkerId:wid||null,medewerkerNaam:naam||'',tekst,soort:soort||'versturen',verstuurdOp:new Date().toISOString(),verstuurdDoor:SESSIE?SESSIE.naam:''})}catch(e){console.error(e)}
+}
+function waOpen(nr,tekst){window.open('https://wa.me/'+(nr||'')+'?text='+encodeURIComponent(tekst),'_blank','noopener')}
+const tijdKort=iso=>{const d=new Date(iso);if(isNaN(d))return '';const vandaag=new Date().toDateString()===d.toDateString();return (vandaag?'vandaag':d.toLocaleDateString('nl-NL',{day:'numeric',month:'short'}))+' '+d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})};
 function renderPlanning(){
   if(!PLAN.datum){const m=new Date();m.setDate(m.getDate()+1);PLAN.datum=m.getFullYear()+'-'+String(m.getMonth()+1).padStart(2,'0')+'-'+String(m.getDate()).padStart(2,'0')}
+  PLAN.regels.forEach(planNorm);
   const wn=DB.list('werknemers').filter(w=>w.actief!==false).sort((a,b)=>(a.naam||'').localeCompare(b.naam||''));
   const kl=DB.list('klanten').filter(k=>k.actief!==false);
+  const locBlok=(r,veld,label,knop)=>`<div>${r[veld].map((v,i)=>`<div class="flex gap-1 mb-1"><input data-f="${veld}" data-i="${i}" value="${esc(v)}" placeholder="${label}${r[veld].length>1?' '+(i+1):''} (Google Maps-link)" class="flex-1 min-w-0 border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600" aria-label="${label} ${i+1}">${r[veld].length>1?`<button data-rmloc="${veld}|${i}" class="text-red-500 px-2 min-h-[48px]" aria-label="Adres verwijderen">✕</button>`:''}</div>`).join('')}<button data-addloc="${veld}" class="text-sm text-blue-600 hover:text-blue-800 min-h-[40px]">+ ${knop}</button></div>`;
   const regelHtml=r=>`<div class="border border-gray-200 dark:border-gray-700 rounded-xl p-3 mb-3 bg-white dark:bg-gray-800" data-r="${r.id}">
     <div class="flex flex-wrap gap-2 mb-2">
       <input type="time" data-f="tijd" value="${esc(r.tijd||'')}" class="border rounded-lg px-2 dark:bg-gray-700 dark:border-gray-600" aria-label="Tijd">
@@ -1458,10 +1508,7 @@ function renderPlanning(){
       <button data-dup="${r.id}" class="text-sm px-2 min-h-[48px] text-blue-600 hover:text-blue-800">Kopieer klus</button><button data-del="${r.id}" class="text-red-500 hover:text-red-700 text-sm px-2 min-h-[48px]">Verwijder</button>
     </div>
     <input data-f="laadnr" value="${esc(r.laadnr||'')}" placeholder="Laadnummer" class="w-full border rounded-lg px-3 mb-2 dark:bg-gray-700 dark:border-gray-600" aria-label="Laadnummer">
-    <div class="grid sm:grid-cols-2 gap-2 mb-2">
-      <input data-f="laad" value="${esc(r.laad||'')}" placeholder="Laadlocatie (Google Maps-link)" class="border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600" aria-label="Laadlocatie">
-      <input data-f="los" value="${esc(r.los||'')}" placeholder="Loslocatie (Google Maps-link)" class="border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600" aria-label="Loslocatie">
-    </div>
+    <div class="grid sm:grid-cols-2 gap-2 mb-2">${locBlok(r,'laden','Laadlocatie','Laadadres toevoegen')}${locBlok(r,'lossen','Loslocatie','Losadres toevoegen')}</div>
     <input data-f="omschr" value="${esc(r.omschr||'')}" placeholder="Werkzaamheden / opmerking (bijv. mest laden, kenteken)" class="w-full border rounded-lg px-3 mb-2 dark:bg-gray-700 dark:border-gray-600" aria-label="Werkzaamheden">
     <div class="flex flex-wrap gap-2">${wn.map(w=>`<label class="flex items-center gap-1 text-sm border border-gray-200 dark:border-gray-600 rounded-full px-3 py-1 cursor-pointer"><input type="checkbox" data-wie="${esc(w.id)}" ${(r.wie||[]).includes(w.id)?'checked':''} style="min-height:auto"> ${esc(w.naam)}</label>`).join('')||'<span class="text-sm text-gray-500">Nog geen werknemers aangemaakt.</span>'}</div>
   </div>`;
@@ -1471,7 +1518,7 @@ function renderPlanning(){
    <div>
     <div class="flex flex-wrap gap-3 items-end mb-3">
       <div><label class="block text-xs font-medium mb-1" for="plDatum">Datum</label><input type="date" id="plDatum" value="${esc(PLAN.datum)}" class="border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600"></div>
-      <div><label class="block text-xs font-medium mb-1" for="plGroep">Bericht ordenen per</label><select id="plGroep" class="border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600"><option value="klus">Klus</option><option value="medewerker">Medewerker</option></select></div>
+      <div><label class="block text-xs font-medium mb-1" for="plGroep">Algemeen bericht ordenen per</label><select id="plGroep" class="border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600"><option value="klus">Klus</option><option value="medewerker">Medewerker</option></select></div>
     </div>
     <label class="block text-xs font-medium mb-1" for="plNotitie">Algemene opmerking bovenaan (optioneel)</label>
     <textarea id="plNotitie" rows="2" class="w-full border rounded-lg px-3 py-2 mb-3 dark:bg-gray-700 dark:border-gray-600" style="min-height:0" placeholder="Bijv. Verzamelen om 06:45 op het bedrijf">${esc(PLAN.notitie)}</textarea>
@@ -1479,15 +1526,51 @@ function renderPlanning(){
     <div class="flex gap-2 flex-wrap"><button id="plNieuw" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Klus toevoegen</button><button id="plWis" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">Alles wissen</button></div>
    </div>
    <div>
-    <label class="block text-xs font-medium mb-1" for="plTekst">Bericht voor WhatsApp (je kunt hem hier nog aanpassen)</label>
-    <textarea id="plTekst" rows="16" class="w-full border rounded-xl px-3 py-2 mb-3 font-mono text-sm dark:bg-gray-700 dark:border-gray-600" style="min-height:0"></textarea>
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-100 dark:border-gray-700 p-4 mb-4">
+      <h3 class="font-bold mb-1">Persoonlijk bericht per medewerker</h3>
+      <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Elke medewerker krijgt alleen zijn eigen klussen. Eén tik opent WhatsApp op het juiste nummer; jij drukt daar nog op verzenden.</p>
+      <div id="plPer"></div>
+    </div>
+    <label class="block text-xs font-medium mb-1" for="plTekst">Algemeen bericht (bijv. voor een groep)</label>
+    <textarea id="plTekst" rows="12" class="w-full border rounded-xl px-3 py-2 mb-3 font-mono text-sm dark:bg-gray-700 dark:border-gray-600" style="min-height:0"></textarea>
     <div class="flex gap-2 flex-wrap"><button id="plKopieer" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">Kopieer bericht</button><button id="plWa" class="px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 min-h-[48px] font-medium">Open in WhatsApp</button></div>
-    <p class="text-xs text-gray-500 mt-2">In WhatsApp kies je zelf de groep of de personen. Wijzigt je planning, dan wordt dit bericht vanzelf opnieuw opgebouwd (handmatige aanpassingen in dit vak gaan dan verloren).</p>
+    <p class="text-xs text-gray-500 mt-2">Bij het algemene bericht kies je in WhatsApp zelf de groep of de personen. Wijzigt je planning, dan worden de berichten vanzelf opnieuw opgebouwd (handmatige aanpassingen gaan dan verloren).</p>
    </div>
   </div></div>`;
   $('plGroep').value=PLAN.groep;
-  const ververs=()=>{planBewaar();$('plTekst').value=planTekst()};
+  const tekenPer=()=>{
+    const {regels}=planContext();
+    const ids=[...new Set(regels.flatMap(r=>r.wie||[]))];
+    const lijst=ids.map(id=>wn.find(w=>w.id===id)).filter(Boolean);
+    const arch=DB.list('planningen');
+    const zonder=regels.filter(r=>!(r.wie||[]).length).length;
+    $('plPer').innerHTML=lijst.length?lijst.map(w=>{
+      const nr=waNummer(w.telefoon);
+      const eerder=arch.filter(p=>p.medewerkerId===w.id&&p.datum===PLAN.datum).sort((a,b)=>String(b.verstuurdOp).localeCompare(String(a.verstuurdOp)))[0];
+      const n=regels.filter(r=>(r.wie||[]).includes(w.id)).length;
+      return `<div class="border border-gray-200 dark:border-gray-700 rounded-xl p-3 mb-2">
+        <div class="flex flex-wrap items-center gap-2 justify-between">
+          <div><div class="font-medium">${esc(w.naam)} <span class="text-xs text-gray-500">· ${n} klus${n===1?'':'sen'}</span></div>
+          ${nr?'':'<div class="text-xs text-red-600">Telefoonnummer ontbreekt of klopt niet (pas aan bij Werknemers)</div>'}
+          ${eerder?`<div class="text-xs text-emerald-700 dark:text-emerald-400">✓ Geopend in WhatsApp ${esc(tijdKort(eerder.verstuurdOp))}</div>`:''}</div>
+          <button data-pwa="${esc(w.id)}" ${nr?'':'disabled'} class="px-4 py-2 rounded-xl font-medium min-h-[48px] ${nr?'bg-green-600 text-white hover:bg-green-700':'bg-gray-200 text-gray-400 cursor-not-allowed'}">${eerder?'Opnieuw sturen':'Stuur via WhatsApp'}</button>
+        </div>
+        <details class="mt-2"><summary class="text-sm cursor-pointer text-blue-600">Bekijk of pas het bericht aan</summary>
+        <textarea data-ptekst="${esc(w.id)}" rows="8" class="w-full border rounded-xl px-3 py-2 mt-2 font-mono text-sm dark:bg-gray-700 dark:border-gray-600" style="min-height:0">${esc(planTekstVoor(w.id))}</textarea></details></div>`}).join('')
+      +(zonder?`<p class="text-xs text-amber-700">${zonder} klus${zonder===1?'':'sen'} nog zonder medewerker.</p>`:'')
+      :'<p class="text-sm text-gray-500">Kies bij een klus de medewerker(s); dan verschijnt hier per persoon een knop.</p>';
+  };
+  const ververs=()=>{planBewaar();$('plTekst').value=planTekst();tekenPer()};
   ververs();
+  $('plPer').onclick=e=>{
+    const b=e.target.closest('[data-pwa]');if(!b||b.disabled)return;
+    const w=wn.find(x=>x.id===b.dataset.pwa);if(!w)return;
+    const ta=$('plPer').querySelector('[data-ptekst="'+w.id+'"]');
+    const tekst=ta?ta.value:planTekstVoor(w.id);
+    waOpen(waNummer(w.telefoon),tekst);
+    planLog(w.id,w.naam,tekst,PLAN.datum,'versturen');
+    setTimeout(tekenPer,300);
+  };
   $('plDatum').onchange=e=>{PLAN.datum=e.target.value;ververs()};
   $('plGroep').onchange=e=>{PLAN.groep=e.target.value;ververs()};
   $('plNotitie').oninput=e=>{PLAN.notitie=e.target.value;ververs()};
@@ -1495,16 +1578,187 @@ function renderPlanning(){
   const box=$('plRegels');
   const locKey='wop_locaties';
   const locLees=()=>{try{return JSON.parse(localStorage.getItem(locKey)||'{}')}catch(e){return {}}};
-  const locBewaar=r=>{const k=(r.klant||'').trim().toLowerCase();if(!k)return;const m=locLees();m[k]={laad:r.laad||'',los:r.los||''};try{localStorage.setItem(locKey,JSON.stringify(m))}catch(e){}};
-  box.oninput=e=>{const f=e.target.dataset.f;if(!f)return;const r=r$(e.target);if(r){r[f]=e.target.value;if(f==='laad'||f==='los')locBewaar(r);ververs()}};
-
-  box.onchange=e=>{if(e.target.dataset.f==='klant'){const r=r$(e.target);const m=locLees()[(e.target.value||'').trim().toLowerCase()];
-      if(r&&m&&!r.laad&&!r.los&&(m.laad||m.los)){r.laad=m.laad;r.los=m.los;planBewaar();renderPlanning();toast('Laad- en loslocatie van de vorige keer ingevuld','success');return}}if(e.target.dataset.wie===undefined)return;const r=r$(e.target);if(!r)return;r.wie=r.wie||[];const id=e.target.dataset.wie;r.wie=e.target.checked?[...new Set([...r.wie,id])]:r.wie.filter(x=>x!==id);ververs()};
-  box.onclick=e=>{const dp=e.target.dataset.dup;if(dp){const src=PLAN.regels.find(r=>r.id===dp);if(src){const i=PLAN.regels.indexOf(src);PLAN.regels.splice(i+1,0,{...src,id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),wie:[...(src.wie||[])]});planBewaar();renderPlanning()}return}const d=e.target.dataset.del;if(!d)return;PLAN.regels=PLAN.regels.filter(r=>r.id!==d);planBewaar();renderPlanning()};
-  $('plNieuw').onclick=()=>{PLAN.regels.push({id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),tijd:'',klant:'',laadnr:'',laad:'',los:'',omschr:'',wie:[]});planBewaar();renderPlanning()};
+  const locBewaar=r=>{const k=(r.klant||'').trim().toLowerCase();if(!k)return;const m=locLees();m[k]={laden:r.laden.filter(x=>(x||'').trim()),lossen:r.lossen.filter(x=>(x||'').trim())};try{localStorage.setItem(locKey,JSON.stringify(m))}catch(e){}};
+  box.oninput=e=>{const f=e.target.dataset.f;if(!f)return;const r=r$(e.target);if(!r)return;
+    if(f==='laden'||f==='lossen'){r[f][+e.target.dataset.i]=e.target.value;locBewaar(r)}else r[f]=e.target.value;
+    ververs()};
+  box.onchange=e=>{
+    if(e.target.dataset.f==='klant'){
+      const r=r$(e.target);const m=locLees()[(e.target.value||'').trim().toLowerCase()];
+      if(r&&m){const oudL=m.laden||(m.laad?[m.laad]:[]),oudO=m.lossen||(m.los?[m.los]:[]);
+        if(!r.laden.some(x=>(x||'').trim())&&!r.lossen.some(x=>(x||'').trim())&&(oudL.length||oudO.length)){r.laden=oudL.length?[...oudL]:[''];r.lossen=oudO.length?[...oudO]:[''];planBewaar();renderPlanning();toast('Laad- en loslocaties van de vorige keer ingevuld','success');return}}
+    }
+    if(e.target.dataset.wie===undefined)return;
+    const r=r$(e.target);if(!r)return;r.wie=r.wie||[];const id=e.target.dataset.wie;
+    r.wie=e.target.checked?[...new Set([...r.wie,id])]:r.wie.filter(x=>x!==id);ververs()};
+  box.onclick=e=>{
+    const t=e.target;
+    if(t.dataset.addloc){const r=r$(t);if(r){r[t.dataset.addloc].push('');planBewaar();renderPlanning()}return}
+    if(t.dataset.rmloc){const [v,i]=t.dataset.rmloc.split('|');const r=r$(t);if(r){r[v].splice(+i,1);if(!r[v].length)r[v]=[''];planBewaar();renderPlanning()}return}
+    if(t.dataset.dup){const src=PLAN.regels.find(r=>r.id===t.dataset.dup);if(src){const i=PLAN.regels.indexOf(src);PLAN.regels.splice(i+1,0,{...src,id:nieuwPlanRegel().id,wie:[...(src.wie||[])],laden:[...src.laden],lossen:[...src.lossen]});planBewaar();renderPlanning()}return}
+    if(t.dataset.del){PLAN.regels=PLAN.regels.filter(r=>r.id!==t.dataset.del);planBewaar();renderPlanning()}
+  };
+  $('plNieuw').onclick=()=>{PLAN.regels.push(nieuwPlanRegel());planBewaar();renderPlanning()};
   $('plWis').onclick=()=>{if(!PLAN.regels.length&&!PLAN.notitie||confirm('Alle klussen uit de planning wissen?')){PLAN.regels=[];PLAN.notitie='';planBewaar();renderPlanning()}};
   $('plKopieer').onclick=async()=>{const t=$('plTekst').value;try{await navigator.clipboard.writeText(t);toast('Bericht gekopieerd','success')}catch(e){$('plTekst').select();document.execCommand('copy');toast('Bericht gekopieerd','success')}};
-  $('plWa').onclick=()=>{window.open('https://wa.me/?text='+encodeURIComponent($('plTekst').value),'_blank','noopener')};
+  $('plWa').onclick=()=>{const t=$('plTekst').value;waOpen('',t);planLog(null,'Algemeen bericht',t,PLAN.datum,'algemeen')};
+}
+
+// === PLANNING-ARCHIEF ===
+const ARCH={mw:'',van:'',tot:'',q:'',max:50};
+function renderPlanArchief(){
+  const wn=DB.list('werknemers').slice().sort((a,b)=>(a.naam||'').localeCompare(b.naam||''));
+  const alle=DB.list('planningen').slice().sort((a,b)=>String(b.verstuurdOp).localeCompare(String(a.verstuurdOp)));
+  const q=ARCH.q.trim().toLowerCase();
+  const lijst=alle.filter(p=>{
+    if(ARCH.mw==='__alg'){if(p.medewerkerId)return false}else if(ARCH.mw&&p.medewerkerId!==ARCH.mw)return false;
+    if(ARCH.van&&(p.datum||'')<ARCH.van)return false;
+    if(ARCH.tot&&(p.datum||'')>ARCH.tot)return false;
+    if(q&&!((p.tekst||'')+' '+(p.medewerkerNaam||'')).toLowerCase().includes(q))return false;
+    return true;
+  });
+  const toon=lijst.slice(0,ARCH.max);
+  $('main').innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">Planning-archief</h2>
+  <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Elke keer dat je een planning in WhatsApp opent, wordt hij hier bewaard. Het archief laat zien dat je de knop hebt gebruikt; of je in WhatsApp echt op verzenden hebt gedrukt, kan ik niet zien.</p>
+  <div class="flex flex-wrap gap-3 items-end mb-4">
+    <div><label class="block text-xs font-medium mb-1" for="arMw">Medewerker</label><select id="arMw" class="border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600"><option value="">Iedereen</option><option value="__alg">Algemene berichten</option>${wn.map(w=>`<option value="${esc(w.id)}">${esc(w.naam)}</option>`).join('')}</select></div>
+    <div><label class="block text-xs font-medium mb-1" for="arVan">Planning van</label><input type="date" id="arVan" value="${esc(ARCH.van)}" class="border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600"></div>
+    <div><label class="block text-xs font-medium mb-1" for="arTot">tot en met</label><input type="date" id="arTot" value="${esc(ARCH.tot)}" class="border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600"></div>
+    <div class="flex-1 min-w-[180px]"><label class="block text-xs font-medium mb-1" for="arQ">Zoeken in tekst</label><input id="arQ" value="${esc(ARCH.q)}" placeholder="Klant, laadnummer, ..." class="w-full border rounded-lg px-3 dark:bg-gray-700 dark:border-gray-600"></div>
+  </div>
+  <div class="space-y-3">${toon.length?toon.map(p=>`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-100 dark:border-gray-700 p-4">
+    <div class="flex flex-wrap items-start justify-between gap-2">
+      <div><div class="font-semibold text-gray-800 dark:text-gray-100">${esc(p.medewerkerNaam||'Algemeen bericht')}${p.soort==='opnieuw'?' <span class="text-xs font-normal text-gray-500">(opnieuw gestuurd)</span>':''}${p.soort==='kopie'?' <span class="text-xs font-normal text-gray-500">(kopie van andere planning)</span>':''}</div>
+      <div class="text-xs text-gray-500">Planning voor ${esc(datumLang(p.datum)||'—')} · geopend ${esc(tijdKort(p.verstuurdOp))}${p.verstuurdDoor?' door '+esc(p.verstuurdDoor):''}</div></div>
+      <div class="flex flex-wrap gap-1">
+        <button data-ar-again="${p.id}" class="px-3 py-2 rounded-xl bg-green-600 text-white text-sm min-h-[44px]">Opnieuw sturen</button>
+        <button data-ar-copy="${p.id}" class="px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 text-sm min-h-[44px]">Kopieer / naar andere medewerker</button>
+        <button data-ar-del="${p.id}" class="px-2 text-red-500 text-sm min-h-[44px]">Verwijder</button></div></div>
+    <details class="mt-2"><summary class="text-sm cursor-pointer text-blue-600">Bekijk bericht</summary><pre class="whitespace-pre-wrap text-sm mt-2 font-mono bg-gray-50 dark:bg-gray-900 rounded-xl p-3">${esc(p.tekst||'')}</pre></details></div>`).join(''):'<p class="text-gray-400 py-8 text-center">Nog niets in het archief.</p>'}</div>
+  ${lijst.length>toon.length?`<button id="arMeer" class="mt-4 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">Toon meer (${lijst.length-toon.length} verborgen)</button>`:''}</div>`;
+  $('arMw').value=ARCH.mw;
+  $('arMw').onchange=e=>{ARCH.mw=e.target.value;ARCH.max=50;renderPlanArchief()};
+  $('arVan').onchange=e=>{ARCH.van=e.target.value;renderPlanArchief()};
+  $('arTot').onchange=e=>{ARCH.tot=e.target.value;renderPlanArchief()};
+  $('arQ').oninput=e=>{ARCH.q=e.target.value;const p=e.target.selectionStart;renderPlanArchief();const z=$('arQ');z.focus();try{z.setSelectionRange(p,p)}catch(x){}};
+  if($('arMeer'))$('arMeer').onclick=()=>{ARCH.max+=50;renderPlanArchief()};
+  document.querySelectorAll('[data-ar-again]').forEach(b=>b.onclick=()=>{
+    const p=DB.get('planningen',b.dataset.arAgain);if(!p)return;
+    const w=p.medewerkerId?DB.get('werknemers',p.medewerkerId):null;
+    const nr=w?waNummer(w.telefoon):'';
+    if(w&&!nr){toast('Telefoonnummer van '+w.naam+' ontbreekt of klopt niet','error');return}
+    waOpen(nr,p.tekst);planLog(p.medewerkerId,p.medewerkerNaam,p.tekst,p.datum,'opnieuw');setTimeout(renderPlanArchief,300);
+  });
+  document.querySelectorAll('[data-ar-copy]').forEach(b=>b.onclick=()=>openPlanKopie(b.dataset.arCopy));
+  document.querySelectorAll('[data-ar-del]').forEach(b=>b.onclick=()=>{if(confirm('Deze regel uit het archief verwijderen?')){DB.remove('planningen',b.dataset.arDel);renderPlanArchief()}});
+}
+function openPlanKopie(id){
+  const p=DB.get('planningen',id);if(!p)return;
+  const wn=DB.list('werknemers').filter(w=>w.actief!==false).sort((a,b)=>(a.naam||'').localeCompare(b.naam||''));
+  const m=document.createElement('div');m.id='planKopie';m.className='fixed inset-0 bg-black/50 z-30 overflow-auto p-3';
+  m.innerHTML=`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 w-full max-w-lg mx-auto my-4">
+    <h3 class="font-bold mb-1">Planning kopiëren</h3>
+    <p class="text-xs text-gray-500 mb-3">Planning voor ${esc(datumLang(p.datum)||'—')}. Kies wie hem krijgt en pas de tekst zo nodig aan.</p>
+    <label class="block text-sm font-medium mb-1" for="pkMw">Sturen naar</label>
+    <select id="pkMw" class="w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600"><option value="">— kies medewerker —</option>${wn.map(w=>`<option value="${esc(w.id)}">${esc(w.naam)}</option>`).join('')}</select>
+    <label class="block text-sm font-medium mb-1" for="pkTekst">Bericht</label>
+    <textarea id="pkTekst" rows="10" class="w-full border rounded-xl px-3 py-2 mb-3 font-mono text-sm bg-white dark:bg-gray-700 dark:border-gray-600" style="min-height:0">${esc(p.tekst||'')}</textarea>
+    <div class="flex flex-wrap gap-2"><button id="pkWa" class="flex-1 bg-green-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Open in WhatsApp</button><button id="pkKop" class="px-4 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">Kopieer tekst</button><button id="pkX" class="px-4 bg-gray-200 dark:bg-gray-700 rounded-xl min-h-[48px]">Sluiten</button></div></div>`;
+  document.body.appendChild(m);
+  $('pkX').onclick=()=>m.remove();
+  $('pkKop').onclick=async()=>{const t=$('pkTekst').value;try{await navigator.clipboard.writeText(t);toast('Bericht gekopieerd','success')}catch(e){$('pkTekst').select();document.execCommand('copy');toast('Bericht gekopieerd','success')}};
+  $('pkWa').onclick=()=>{
+    const w=wn.find(x=>x.id===$('pkMw').value);
+    if(!w){toast('Kies eerst een medewerker','error');return}
+    const nr=waNummer(w.telefoon);
+    if(!nr){toast('Telefoonnummer van '+w.naam+' ontbreekt of klopt niet','error');return}
+    const t=$('pkTekst').value;waOpen(nr,t);planLog(w.id,w.naam,t,p.datum,'kopie');m.remove();renderCurrentView();
+  };
+}
+
+// === KEURINGEN & VERVALDATA (voertuigen en chauffeurs, alleen beheer) ===
+const KEUR_SOORTEN={voertuig:['APK','Verzekering','Tachograaf-keuring','Onderhoudsbeurt','Overig'],chauffeur:['Rijbewijs','Code 95','Chauffeurskaart','VCA','Overig']};
+const KEUR={toon:'open'};
+const dagenTot=iso=>{if(!iso)return null;const a=new Date(iso+'T12:00:00'),b=new Date();b.setHours(12,0,0,0);return Math.round((a-b)/86400000)};
+function keurLabel(v){
+  if(v.type==='voertuig'){const m=DB.get('materieel',v.refId);return m?m.kenteken+(m.omschrijving?' · '+m.omschrijving:''):'(voertuig verwijderd)'}
+  const w=DB.get('werknemers',v.refId);return w?w.naam:'(medewerker verwijderd)';
+}
+function keurStatus(dagen){
+  if(dagen==null)return {t:'Geen datum',c:'bg-gray-100 text-gray-700'};
+  if(dagen<0)return {t:'Verlopen ('+(-dagen)+' d)',c:'bg-red-100 text-red-800'};
+  if(dagen<=30)return {t:'Nog '+dagen+' dagen',c:'bg-orange-100 text-orange-800'};
+  if(dagen<=60)return {t:'Nog '+dagen+' dagen',c:'bg-amber-100 text-amber-900'};
+  return {t:'Nog '+dagen+' dagen',c:'bg-emerald-100 text-emerald-800'};
+}
+function keuringBanner(){
+  if(!isBeheer())return '';
+  const kort=DB.list('vervaldata').filter(v=>{const d=dagenTot(v.vervaldatum);return d!=null&&d<=30}).sort((a,b)=>(a.vervaldatum||'').localeCompare(b.vervaldatum||''));
+  if(!kort.length)return '';
+  return `<div class="mb-4 rounded-2xl border border-orange-300 bg-orange-50 dark:bg-orange-950 dark:border-orange-800 p-4"><div class="flex items-center justify-between gap-2 mb-1"><div class="font-semibold text-orange-900 dark:text-orange-200">Binnenkort verlopen (${kort.length})</div><button data-gotab="keuringen" class="text-sm underline text-orange-900 dark:text-orange-200 min-h-[40px]">Alles bekijken</button></div>
+  <ul class="text-sm text-orange-900 dark:text-orange-200 space-y-0.5">${kort.slice(0,5).map(v=>`<li>${esc(keurLabel(v))} – ${esc(v.soort==='Overig'&&v.omschrijving?v.omschrijving:v.soort)}: ${esc(keurStatus(dagenTot(v.vervaldatum)).t)}</li>`).join('')}${kort.length>5?`<li>… en ${kort.length-5} meer</li>`:''}</ul></div>`;
+}
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('[data-gotab]');if(b)switchTab(b.dataset.gotab)});
+function renderKeuringen(){
+  const alle=DB.list('vervaldata').slice().sort((a,b)=>(a.vervaldatum||'9999').localeCompare(b.vervaldatum||'9999'));
+  const teller={v:0,k:0,z:0};
+  alle.forEach(v=>{const d=dagenTot(v.vervaldatum);if(d==null)return;if(d<0)teller.v++;else if(d<=30)teller.k++;else if(d<=60)teller.z++});
+  const lijst=KEUR.toon==='alles'?alle:alle.filter(v=>{const d=dagenTot(v.vervaldatum);return d==null||d<=90});
+  $('main').innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">Keuringen &amp; vervaldata</h2>
+  <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">APK, verzekering, tachograaf, rijbewijs, code 95 en meer, per voertuig of chauffeur. Wat binnen 30 dagen verloopt zie je ook op het dashboard.</p>
+  <div class="grid grid-cols-3 gap-3 mb-4">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Verlopen</div><div class="text-2xl font-bold text-red-600">${teller.v}</div></div>
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Binnen 30 dagen</div><div class="text-2xl font-bold text-orange-600">${teller.k}</div></div>
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Binnen 60 dagen</div><div class="text-2xl font-bold text-amber-600">${teller.z}</div></div></div>
+  <div class="flex flex-wrap gap-2 mb-4"><button id="kNieuw" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuw</button>
+    <button id="kToon" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">${KEUR.toon==='alles'?'Alleen wat binnen 90 dagen verloopt':'Toon alles ('+alle.length+')'}</button></div>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x"><table class="w-full text-sm"><thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-3 py-2 text-left">Wat</th><th class="px-3 py-2 text-left">Soort</th><th class="px-3 py-2 text-left">Vervalt op</th><th class="px-3 py-2 text-left">Status</th><th class="px-3 py-2 text-left">Opmerking</th><th class="px-3 py-2">Acties</th></tr></thead><tbody>
+  ${lijst.length?lijst.map(v=>{const s=keurStatus(dagenTot(v.vervaldatum));return `<tr class="border-t border-gray-100 dark:border-gray-700"><td class="px-3 py-2 font-medium whitespace-nowrap">${esc(keurLabel(v))}</td><td class="px-3 py-2">${esc(v.soort==='Overig'&&v.omschrijving?v.omschrijving:v.soort||'')}</td><td class="px-3 py-2 whitespace-nowrap">${esc(datumNL(v.vervaldatum))}</td><td class="px-3 py-2 whitespace-nowrap"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${s.c}">${esc(s.t)}</span></td><td class="px-3 py-2">${esc(v.opmerking||'')}</td>
+  <td class="px-3 py-2 whitespace-nowrap"><button data-k-verleng="${v.id}" class="text-emerald-700 hover:text-emerald-900 text-xs mr-2 min-h-[48px]">Verlengd</button><button data-k-edit="${v.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">Wijzig</button><button data-k-del="${v.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]">Verwijder</button></td></tr>`}).join(''):'<tr><td colspan="6" class="px-3 py-8 text-center text-gray-400">Niets dat binnenkort verloopt. Voeg vervaldata toe met "+ Nieuw".</td></tr>'}</tbody></table></div></div>`;
+  $('kNieuw').onclick=()=>openKeuringEditor(null);
+  $('kToon').onclick=()=>{KEUR.toon=KEUR.toon==='alles'?'open':'alles';renderKeuringen()};
+  document.querySelectorAll('[data-k-edit]').forEach(b=>b.onclick=()=>openKeuringEditor(b.dataset.kEdit));
+  document.querySelectorAll('[data-k-del]').forEach(b=>b.onclick=()=>{if(confirm('Deze vervaldatum verwijderen?')){DB.remove('vervaldata',b.dataset.kDel);renderKeuringen()}});
+  document.querySelectorAll('[data-k-verleng]').forEach(b=>b.onclick=()=>openKeuringEditor(b.dataset.kVerleng,true));
+}
+function openKeuringEditor(id,verleng){
+  const ex=id?DB.get('vervaldata',id):null;
+  const mat=DB.list('materieel').filter(m=>m.actief!==false).sort((a,b)=>(a.kenteken||'').localeCompare(b.kenteken||''));
+  const wn=DB.list('werknemers').filter(w=>w.actief!==false).sort((a,b)=>(a.naam||'').localeCompare(b.naam||''));
+  const type0=ex?ex.type:'voertuig';
+  const m=document.createElement('div');m.id='keurEditor';m.className='fixed inset-0 bg-black/50 z-30 overflow-auto p-3';
+  m.innerHTML=`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 w-full max-w-md mx-auto my-4">
+   <h3 class="font-bold mb-3">${verleng?'Verlengd: nieuwe vervaldatum':ex?'Vervaldatum wijzigen':'Nieuwe vervaldatum'}</h3>
+   <div ${verleng?'class="hidden"':''}>
+    <label class="block text-sm font-medium mb-1" for="ke_type">Voor</label>
+    <select id="ke_type" class="w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600"><option value="voertuig" ${type0==='voertuig'?'selected':''}>Voertuig</option><option value="chauffeur" ${type0==='chauffeur'?'selected':''}>Chauffeur / medewerker</option></select>
+    <label class="block text-sm font-medium mb-1" for="ke_ref">Welke</label><select id="ke_ref" class="w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600"></select>
+    <label class="block text-sm font-medium mb-1" for="ke_soort">Soort</label><select id="ke_soort" class="w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600"></select>
+    <div id="ke_omsw" class="hidden"><label class="block text-sm font-medium mb-1" for="ke_oms">Omschrijving (bij Overig)</label><input id="ke_oms" value="${esc(ex?ex.omschrijving||'':'')}" class="w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600"></div>
+   </div>
+   <label class="block text-sm font-medium mb-1" for="ke_dat">Vervalt op</label><input type="date" id="ke_dat" value="${verleng?'':esc(ex?ex.vervaldatum||'':'')}" class="w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600">
+   <label class="block text-sm font-medium mb-1" for="ke_opm">Opmerking (optioneel)</label><input id="ke_opm" value="${esc(ex?ex.opmerking||'':'')}" class="w-full border rounded-xl px-3 py-2 mb-4 bg-white dark:bg-gray-700 dark:border-gray-600">
+   <div class="flex gap-2"><button id="keSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button><button id="keX" class="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div></div>`;
+  document.body.appendChild(m);
+  const vul=()=>{
+    const t=$('ke_type').value;
+    const keuze=t==='voertuig'?mat.map(x=>[x.id,x.kenteken+(x.omschrijving?' · '+x.omschrijving:'')]):wn.map(x=>[x.id,x.naam]);
+    $('ke_ref').innerHTML='<option value="">— kies —</option>'+keuze.map(([i,n])=>`<option value="${esc(i)}" ${ex&&ex.type===t&&ex.refId===i?'selected':''}>${esc(n)}</option>`).join('');
+    $('ke_soort').innerHTML=(KEUR_SOORTEN[t]||[]).map(s=>`<option ${ex&&ex.type===t&&ex.soort===s?'selected':''}>${s}</option>`).join('');
+    $('ke_omsw').classList.toggle('hidden',$('ke_soort').value!=='Overig');
+  };
+  vul();
+  $('ke_type').onchange=vul;
+  $('ke_soort').onchange=()=>$('ke_omsw').classList.toggle('hidden',$('ke_soort').value!=='Overig');
+  $('keX').onclick=()=>m.remove();
+  $('keSave').onclick=()=>{
+    const t=$('ke_type').value,ref=$('ke_ref').value,soort=$('ke_soort').value,dat=$('ke_dat').value;
+    if(!ref){toast('Kies een voertuig of medewerker','error');return}
+    if(!dat){toast('Vul een vervaldatum in','error');return}
+    const data={type:t,refId:ref,soort,omschrijving:soort==='Overig'?$('ke_oms').value.trim():'',vervaldatum:dat,opmerking:$('ke_opm').value.trim()};
+    if(ex)DB.update('vervaldata',ex.id,data);else DB.insert('vervaldata',data);
+    m.remove();toast('Opgeslagen','success');renderCurrentView();
+  };
 }
 
 // === UREN PER MEDEWERKER (maand of eigen periode) ===
@@ -1802,6 +2056,15 @@ async function laadAlles(){
       const o = await sbREST('/rest/v1/orders?select=*&order=ordernr.asc&limit=1000');
       CACHE.orders = Array.isArray(o) ? o : [];
     } catch (e) { CACHE.orders = CACHE.orders || [] }
+  }
+  // Planning-archief en vervaldata: alleen beheer; mogen ontbreken zolang de tabellen niet zijn aangemaakt.
+  if (isBeheer()) {
+    for (const t of ['planningen', 'vervaldata']) {
+      try {
+        const o = await sbREST('/rest/v1/' + t + '?select=*&limit=1000');
+        CACHE[t] = Array.isArray(o) ? o : [];
+      } catch (e) { CACHE[t] = CACHE[t] || [] }
+    }
   }
   // Tarieven staan in een aparte tabel die alleen de beheerder mag lezen.
   if (isBeheer()) {
@@ -2109,6 +2372,8 @@ function renderCurrentView(){
       case 'materieel':renderMaterieel();break;
       case 'werknemers':renderWerknemers();break;
       case 'planning':renderPlanning();break;
+      case 'planarchief':renderPlanArchief();break;
+      case 'keuringen':renderKeuringen();break;
       case 'uren':renderUrenOverzicht();break;
       case 'export':renderExports();break;
       case 'accounts':renderAccounts();break;
@@ -2125,7 +2390,7 @@ function renderBottomNav(){
 function naRender(){ try{pasRolToe()}catch(e){} }
 function switchView(view){currentView=view;renderCurrentView()}
 function switchTab(tab){
-  if((tab==='accounts'||tab==='orders')&&!isBeheer()){toast('Alleen voor beheerders','error');return}
+  if((tab==='accounts'||tab==='orders'||tab==='planarchief'||tab==='keuringen')&&!isBeheer()){toast('Alleen voor beheerders','error');return}
   // Een beheertabblad aanklikken betekent ook echt naar de beheermodus.
   currentMode='beheer';
   const mt=$('modeToggle');if(mt)mt.value='beheer';
