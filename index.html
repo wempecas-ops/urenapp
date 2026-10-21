@@ -34,6 +34,23 @@ input,select,textarea{min-height:48px;font-size:16px}
 .dark .logo-img{filter:invert(1)}
 .dark .bg-emerald-600{background-color:#fff;color:#000}
 .dark .hover\:bg-emerald-700:hover{background-color:#e5e5e5}
+/* Thema "roze" (zonder dark-klasse): zelfde pagina's, roze accenten */
+.roze body{background-color:#fdf2f8}
+.roze header{background-color:#fce7f3}
+.roze .bg-gray-50{background-color:#fdf2f8}
+.roze .bg-gray-100{background-color:#fce7f3}
+.roze .bg-gray-200{background-color:#fbcfe8}
+.roze .border-gray-100,.roze .border-gray-200,.roze .border-gray-300{border-color:#fbcfe8}
+.roze .divide-gray-100>*+*,.roze .divide-gray-200>*+*{border-color:#fbcfe8}
+.roze .bg-emerald-600,.roze .bg-black{background-color:#db2777;color:#fff}
+.roze .hover\:bg-emerald-700:hover,.roze .hover\:bg-gray-800:hover{background-color:#be185d}
+.roze .bg-gray-700{background-color:#be185d}
+.roze .bg-emerald-100,.roze .bg-emerald-50{background-color:#fce7f3}
+.roze .text-emerald-700,.roze .text-emerald-800,.roze .text-emerald-400{color:#be185d}
+.roze .border-emerald-600{border-color:#db2777}
+.roze .hover\:text-emerald-600:hover{color:#db2777}
+.roze .hover\:bg-gray-100:hover{background-color:#fce7f3}
+.roze input:focus,.roze select:focus,.roze textarea:focus{outline-color:#ec4899;border-color:#ec4899}
 </style>
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen flex flex-col">
@@ -271,14 +288,24 @@ function toast(msg,type='info'){
 }
 
 // === DARK MODE ===
+// Thema's: licht -> donker -> roze -> licht (per toestel onthouden)
+const THEMAS=['licht','donker','roze'];
+function zetThema(t){
+  const h=document.documentElement;
+  h.classList.toggle('dark',t==='donker');h.classList.toggle('roze',t==='roze');
+  try{localStorage.setItem('uren_thema',t);localStorage.setItem('uren_dark',t==='donker'?'1':'0')}catch(e){}
+  const volgende=THEMAS[(THEMAS.indexOf(t)+1)%THEMAS.length];
+  const knop=$('darkToggle');if(knop){knop.textContent=volgende.charAt(0).toUpperCase()+volgende.slice(1);knop.setAttribute('aria-label','Wissel naar thema '+volgende)}
+  const mc=document.querySelector('meta[name="theme-color"]');if(mc)mc.setAttribute('content',t==='roze'?'#db2777':t==='donker'?'#111827':'#000000');
+}
 function initDarkMode(){
-  const dark=localStorage.getItem('uren_dark')==='1';
-  if(dark)document.documentElement.classList.add('dark');
-  $('darkToggle').textContent=dark?'Licht':'Donker';
+  let t='licht';
+  try{t=localStorage.getItem('uren_thema')||(localStorage.getItem('uren_dark')==='1'?'donker':'licht')}catch(e){}
+  if(!THEMAS.includes(t))t='licht';
+  zetThema(t);
   $('darkToggle').onclick=()=>{
-    const isDark=document.documentElement.classList.toggle('dark');
-    localStorage.setItem('uren_dark',isDark?'1':'0');
-    $('darkToggle').textContent=isDark?'Licht':'Donker';
+    const nu=document.documentElement.classList.contains('dark')?'donker':document.documentElement.classList.contains('roze')?'roze':'licht';
+    zetThema(THEMAS[(THEMAS.indexOf(nu)+1)%THEMAS.length]);
     renderCurrentView();
   };
 }
