@@ -684,7 +684,7 @@ function renderDashboard(){
       ${filterActief?'<button id="btnDashReset" class="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 rounded-lg min-h-[48px] font-medium">Filters wissen</button>':''}
     </div>
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700">
-      <div class="scroll-x"><table class="w-full text-sm min-w-[900px]">
+      <div class="scroll-x"><table class="w-full text-sm min-w-[1100px]">
         <thead class="bg-gray-50 dark:bg-gray-700"><tr>
           <th class="px-2 py-2"></th><th class="px-3 py-2 text-left">Medewerker</th><th class="px-3 py-2 text-left">Datum</th><th class="px-3 py-2">Start</th><th class="px-3 py-2">Eind</th>
           <th class="px-3 py-2">Pauze</th><th class="px-3 py-2">Netto</th><th class="px-3 py-2">Klussen</th><th class="px-3 py-2">Status</th><th class="px-3 py-2">Acties</th>
@@ -801,6 +801,33 @@ function zetMono(paren,waarde){
   });
 }
 // Klussen definitief verwijderen. Is het de laatste klus van een werkdag, dan gaat de hele werkdag weg.
+// Opmerking van de beheerder bij een klus. Staat in een eigen tabel die medewerkers niet kunnen lezen.
+function klusNotitieCel(klusId){
+  const n=DB.get('klus_notities',klusId);
+  const tekst=n&&(n.tekst||'').trim();
+  return (tekst?`<div class="text-xs bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg px-2 py-1 whitespace-pre-wrap">${esc(tekst)}</div>`:'')
+   +`<button data-notitie="${klusId}" class="text-xs font-medium underline mt-1 min-h-[32px] ${tekst?'text-gray-500':'text-blue-700 dark:text-blue-400'}">${tekst?'wijzig':'+ opmerking'}</button>`;
+}
+function openKlusNotitie(klusId){
+  const n=DB.get('klus_notities',klusId);
+  const m=document.createElement('div');m.id='klusNotitie';m.className='fixed inset-0 bg-black/50 z-30 overflow-auto p-3';
+  m.innerHTML=`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 w-full max-w-md mx-auto my-4">
+    <h3 class="font-bold mb-1">Opmerking bij klus</h3>
+    <p class="text-xs text-gray-500 mb-3">Alleen zichtbaar voor beheer, niet voor medewerkers.</p>
+    <textarea id="knTekst" rows="5" class="w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600" style="min-height:0" placeholder="Bijv. klant belt zelf over korting, factuur wachten op weegbon">${esc(n?n.tekst||'':'')}</textarea>
+    <div class="flex gap-2"><button id="knSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button>${n?'<button id="knDel" class="px-4 bg-red-600 text-white rounded-xl min-h-[48px]">Wissen</button>':''}<button id="knX" class="px-4 bg-gray-200 dark:bg-gray-700 rounded-xl min-h-[48px]">Annuleren</button></div></div>`;
+  document.body.appendChild(m);
+  $('knTekst').focus();
+  $('knX').onclick=()=>m.remove();
+  if($('knDel'))$('knDel').onclick=()=>{DB.remove('klus_notities',klusId);m.remove();renderKlussenBeheer()};
+  $('knSave').onclick=()=>{
+    const tekst=$('knTekst').value.trim();
+    if(!tekst){if(n)DB.remove('klus_notities',klusId);m.remove();renderKlussenBeheer();return}
+    const data={tekst,bijgewerktOp:new Date().toISOString(),bijgewerktDoor:SESSIE?SESSIE.naam:''};
+    if(n)DB.update('klus_notities',klusId,data);else DB.insert('klus_notities',{id:klusId,...data});
+    m.remove();toast('Opmerking opgeslagen','success');renderKlussenBeheer();
+  };
+}
 function verwijderKlussen(paren){
   const perDag={};
   paren.forEach(p=>{(perDag[p.dagId]=perDag[p.dagId]||[]).push(p.klusId)});
@@ -808,6 +835,7 @@ function verwijderKlussen(paren){
   Object.keys(perDag).forEach(dagId=>{
     const d=DB.get('dagstaten',dagId);if(!d)return;
     const ids=perDag[dagId];
+    ids.forEach(kid=>{if(DB.get('klus_notities',kid))DB.remove('klus_notities',kid)});
     const rest=(d.klussen||[]).filter(k=>!ids.includes(k.id));
     klussen+=(d.klussen||[]).length-rest.length;
     if(!rest.length){DB.remove('dagstaten',dagId);dagen++}
@@ -903,6 +931,7 @@ function renderKlussenBeheer(){
         <th class="px-3 py-2 text-left">Kenteken/Materieel</th><th class="px-3 py-2 text-left">Omschrijving</th>
         <th class="px-3 py-2 text-right">Aantal</th><th class="px-3 py-2 text-right">Indicatief</th>
         <th class="px-3 py-2">Wegen monsteren</th>
+        <th class="px-3 py-2 text-left">Opmerking beheer</th>
         <th class="px-3 py-2">Facturatie</th><th class="px-3 py-2">Dagstaat</th>
       </tr></thead>
       <tbody>${rows.length?rows.map(k=>`<tr class="border-t border-gray-100 dark:border-gray-700 align-top">
@@ -916,9 +945,10 @@ function renderKlussenBeheer(){
         <td class="px-3 py-2 text-right whitespace-nowrap">${k.aantal} ${esc(k.eenheid||'uur')}${k.startTijd&&k.eindTijd?'<div class="text-xs text-gray-500">'+esc(k.startTijd)+'-'+esc(k.eindTijd)+'</div>':''}</td>
         <td class="px-3 py-2 text-right whitespace-nowrap">${klusBedrag(k)?euro(klusBedrag(k)):'—'}</td>
         <td class="px-3 py-2 text-center">${k.wegenMonsteren?'<span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium text-xs">Ja</span>':'<span class="text-xs text-gray-400">Nee</span>'}<div class="mt-1"><button data-mono="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.wegenMonsteren?'text-gray-500':'text-blue-700 dark:text-blue-400'}">${k.wegenMonsteren?'uitzetten':'aanvinken'}</button></div></td>
+        <td class="px-3 py-2 min-w-[160px] max-w-[240px]">${klusNotitieCel(k.id)}</td>
         <td class="px-3 py-2 text-center">${statusBadge(k)}<div class="mt-1"><button data-toggle="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.gefactureerd?'text-gray-500':'text-emerald-700 dark:text-emerald-400'}">${k.gefactureerd?'terugdraaien':'afvinken'}</button></div>${k.factuurdatum?`<div class="text-[11px] text-gray-500 mt-0.5">${k.factuurdatum}</div>`:''}</td>
         <td class="px-3 py-2 text-xs text-gray-500">${k.dagStatus==='goedgekeurd'?'Goedgekeurd':k.dagStatus==='verwerkt'?'Verwerkt':'In afwachting'}<div><button data-del-klus="${k.id}" data-dag="${k.dagId}" class="text-xs text-red-500 hover:text-red-700 underline min-h-[40px]">Verwijder</button></div></td>
-      </tr>`).join(''):'<tr><td colspan="12" class="px-3 py-8 text-center text-gray-400">Geen klussen in deze selectie</td></tr>'}</tbody>
+      </tr>`).join(''):'<tr><td colspan="13" class="px-3 py-8 text-center text-gray-400">Geen klussen in deze selectie</td></tr>'}</tbody>
     </table></div>
   </div>
 
@@ -956,6 +986,7 @@ function renderKlussenBeheer(){
     rows.forEach(k=>{if(!k.gefactureerd)klusSelectie[e.target.checked?'add':'delete'](k.id)});
     renderKlussenBeheer();
   };
+  document.querySelectorAll('[data-notitie]').forEach(b=>b.onclick=()=>openKlusNotitie(b.dataset.notitie));
   document.querySelectorAll('[data-mono]').forEach(b=>b.onclick=()=>{
     const rij=alle.find(r=>r.id===b.dataset.mono);
     zetMono([{dagId:b.dataset.dag,klusId:b.dataset.mono}],!(rij&&rij.wegenMonsteren));
@@ -1006,11 +1037,11 @@ function renderKlussenBeheer(){
 
 // Facturatielijst als CSV (puntkomma + UTF-8 BOM, opent goed in Nederlandse Excel)
 function exportKlussenCSV(rows){
-  const headers=['Datum','Medewerker','Klantcode','Klant','Adres klant','Dienst','Kenteken/Materieel','Omschrijving','Aantal','Eenheid','Uurtarief','Indicatief bedrag','Wegen monsteren','Facturatiestatus','Factuurdatum','Dagstaatstatus'];
+  const headers=['Datum','Medewerker','Klantcode','Klant','Adres klant','Dienst','Kenteken/Materieel','Omschrijving','Aantal','Eenheid','Uurtarief','Indicatief bedrag','Wegen monsteren','Facturatiestatus','Factuurdatum','Dagstaatstatus','Opmerking beheer'];
   const lijnen=rows.map(k=>{
     const tarief=k.dienst&&k.dienst.tarief?Number(k.dienst.tarief):0;
     const bud=klusBedrag(k);
-    return [k.datum,k.medewerkerNaam||'',k.klant?esc(k.klant.klantcode||''):'',k.klant?esc(k.klant.naam):'',esc(k.klant?klantAdres(k.klant):''),k.dienst?esc(k.dienst.naam):'',esc(k.kenteken||''),esc(k.omschrijving||''),k.aantal,k.eenheid||'uur',tarief?tarief.toFixed(2):'',bud?bud.toFixed(2):'',k.wegenMonsteren?'Ja':'Nee',k.gefactureerd?'Gefactureerd':'Te factureren',k.factuurdatum||'',k.dagStatus||''].join(';');
+    return [k.datum,k.medewerkerNaam||'',k.klant?esc(k.klant.klantcode||''):'',k.klant?esc(k.klant.naam):'',esc(k.klant?klantAdres(k.klant):''),k.dienst?esc(k.dienst.naam):'',esc(k.kenteken||''),esc(k.omschrijving||''),k.aantal,k.eenheid||'uur',tarief?tarief.toFixed(2):'',bud?bud.toFixed(2):'',k.wegenMonsteren?'Ja':'Nee',k.gefactureerd?'Gefactureerd':'Te factureren',k.factuurdatum||'',k.dagStatus||'',esc(((DB.get('klus_notities',k.id)||{}).tekst||'').replace(/\s+/g,' '))].join(';');
   });
   const csv='\uFEFF'+headers.join(';')+'\n'+lijnen.join('\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
@@ -2059,7 +2090,7 @@ async function laadAlles(){
   }
   // Planning-archief en vervaldata: alleen beheer; mogen ontbreken zolang de tabellen niet zijn aangemaakt.
   if (isBeheer()) {
-    for (const t of ['planningen', 'vervaldata']) {
+    for (const t of ['planningen', 'vervaldata', 'klus_notities']) {
       try {
         const o = await sbREST('/rest/v1/' + t + '?select=*&limit=1000');
         CACHE[t] = Array.isArray(o) ? o : [];
