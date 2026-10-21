@@ -1051,22 +1051,28 @@ function exportKlussenCSV(rows){
 }
 
 // === BEHEER: CRUD VIEWS ===
+const KLQ={q:''};
 function renderKlanten(){
   const items=DB.list('klanten');
+  const q=KLQ.q.trim().toLowerCase();
+  const zichtbaar=q?items.filter(k=>[k.klantcode,k.naam,k.adres,k.postcode,k.plaats,k.contact,k.email,k.telefoon].join(' ').toLowerCase().includes(q)):items;
   $("main").innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Klanten</h2>
   <div class="flex flex-wrap gap-2 mb-4">
     <button id="btnAddKlant" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuwe klant</button>
     <button id="btnImportKlant" class="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 min-h-[48px] font-medium">Klanten importeren (CSV)</button>
+    <input id="klantZoek" type="search" value="${esc(KLQ.q)}" placeholder="Zoek op naam, code, plaats, contact…" aria-label="Klanten zoeken" class="flex-1 min-w-[220px] border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600">
   </div>
+  ${q?`<p class="text-xs text-gray-500 mb-2">${zichtbaar.length} van ${items.length} klanten</p>`:''}
   <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x">
   <table class="w-full text-xs md:text-[13px] min-w-[600px] md:min-w-0"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
   <th class="px-3 py-2 text-left">Code</th><th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2 text-left">Adres</th><th class="px-3 py-2 text-left">Plaats</th><th class="px-3 py-2 text-left">Contact</th><th class="px-3 py-2 text-left">Email</th><th class="px-3 py-2 text-left">Telefoon</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th>
-  </tr></thead><tbody>${items.map(k=>`<tr class="border-t border-gray-100 dark:border-gray-700">
+  </tr></thead><tbody>${zichtbaar.length?'':'<tr><td colspan="9" class="px-3 py-8 text-center text-gray-400">Geen klanten gevonden</td></tr>'}${zichtbaar.map(k=>`<tr class="border-t border-gray-100 dark:border-gray-700">
   <td class="px-3 py-2 whitespace-nowrap text-gray-500">${esc(k.klantcode)}</td><td class="px-3 py-2">${esc(k.naam)}</td><td class="px-3 py-2">${esc(k.adres)}${k.postcode?'<br><span class="text-xs text-gray-500">'+esc(k.postcode)+'</span>':''}</td><td class="px-3 py-2">${esc(k.plaats)}</td><td class="px-3 py-2">${esc(k.contact)}</td><td class="px-3 py-2">${esc(k.email)}</td><td class="px-3 py-2">${esc(k.telefoon)}</td>
   <td class="px-3 py-2 text-center">${k.actief!==false?'<span class="text-emerald-700 dark:text-emerald-400 font-medium">Ja</span>':'<span class="text-gray-400">Nee</span>'}</td>
   <td class="px-3 py-2"><button data-edit-klant="${k.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">Wijzig</button><button data-del-klant="${k.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">Verwijder</button></td></tr>`).join('')}
   </tbody></table></div></div>`;
   bindKlantenCRUD(items);
+  $('klantZoek').oninput=e=>{KLQ.q=e.target.value;const p=e.target.selectionStart;renderKlanten();const z=$('klantZoek');z.focus();try{z.setSelectionRange(p,p)}catch(x){}};
 }
 function bindKlantenCRUD(items){
   $('btnAddKlant').onclick=()=>openKlantEditor(null,items);
