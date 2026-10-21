@@ -285,8 +285,8 @@ function initDarkMode(){
 
 // === NAVIGATIE-HULPJES + WIJZIGEN VAN EEN EERDER INGEVULDE DAG ===
 function zetNav(view){document.querySelectorAll('[data-view]').forEach(x=>{x.classList.toggle('text-emerald-700',x.dataset.view===view);x.classList.toggle('text-gray-500',x.dataset.view!==view)})}
-function gaNaarInvoer(){currentView='invoer';zetNav('invoer');renderCurrentView()}
-function gaNaarMijnUren(){currentView='mijnuren';zetNav('mijnuren');renderCurrentView()}
+function gaNaarInvoer(){currentView='invoer';zetNav('invoer');navPush();renderCurrentView()}
+function gaNaarMijnUren(){currentView='mijnuren';zetNav('mijnuren');navPush();renderCurrentView()}
 // Laadt een bestaande dagstaat in het invoerformulier. Opslaan doet dan een update
 // in plaats van een nieuwe dagstaat. Verwerkte dagen zijn vergrendeld.
 function wijzigDagstaat(id){
@@ -2425,16 +2425,37 @@ function renderBottomNav(){
 }
 // Na elke render de rolregels toepassen (medewerker = alleen eigen uren)
 function naRender(){ try{pasRolToe()}catch(e){} }
-function switchView(view){currentView=view;renderCurrentView()}
+// Terugknop van de browser: elke pagina (tabblad) krijgt een eigen plek in de browsergeschiedenis.
+const BEHEER_TABS=['dashboard','klussen','orders','klanten','diensten','materieel','keuringen','werknemers','planning','planarchief','uren','export','accounts'];
+const BEHEER_ALLEEN=['accounts','orders','planarchief','keuringen'];
+function navStaat(){return {m:currentMode,v:currentView,t:currentBeheerTab}}
+function navPush(vervang){
+  try{
+    const st=navStaat(),h='#/'+(st.m==='beheer'?'beheer/'+st.t:'medewerker/'+st.v),o=history.state;
+    if(vervang||!o){history.replaceState(st,'',h);return}
+    if(o.m===st.m&&o.v===st.v&&o.t===st.t)return;
+    history.pushState(st,'',h);
+  }catch(e){}
+}
+function zetTabMarkering(){document.querySelectorAll('.tab-btn').forEach(b=>{const a=b.dataset.tab===currentBeheerTab;b.classList.toggle('border-emerald-600',a);b.classList.toggle('text-emerald-700',a);b.classList.toggle('border-transparent',!a)})}
+window.addEventListener('popstate',e=>{
+  const st=e.state;if(!st||!SESSIE)return;
+  if(st.m==='beheer'&&(!isBeheer()||(BEHEER_ALLEEN.includes(st.t)&&!isBeheer())))return;
+  currentMode=st.m==='beheer'?'beheer':'medewerker';currentView=st.v||'invoer';currentBeheerTab=st.t||'dashboard';
+  const mt=$('modeToggle');if(mt)mt.value=currentMode;
+  renderBottomNav();renderCurrentView();zetNav(currentView);zetTabMarkering();
+});
+function switchView(view){currentView=view;navPush();renderCurrentView()}
 function switchTab(tab){
   if((tab==='accounts'||tab==='orders'||tab==='planarchief'||tab==='keuringen')&&!isBeheer()){toast('Alleen voor beheerders','error');return}
   // Een beheertabblad aanklikken betekent ook echt naar de beheermodus.
   currentMode='beheer';
   const mt=$('modeToggle');if(mt)mt.value='beheer';
   currentBeheerTab=tab;
+  navPush();
   renderBottomNav();
   renderCurrentView();
-  document.querySelectorAll('.tab-btn').forEach(b=>{b.classList.toggle('border-emerald-600',b.dataset.tab===tab);b.classList.toggle('text-emerald-700',b.dataset.tab===tab);b.classList.toggle('border-transparent',b.dataset.tab!==tab)});
+  zetTabMarkering();
 }
 
 // === PWA ===
@@ -2452,7 +2473,7 @@ function initPWA(){
 
 // === INIT ===
 function bindChrome(){
-  $('modeToggle').onchange=e=>{currentMode=e.target.value;renderBottomNav();renderCurrentView()};
+  $('modeToggle').onchange=e=>{currentMode=e.target.value;navPush();renderBottomNav();renderCurrentView();zetTabMarkering()};
   document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{switchView(b.dataset.view);document.querySelectorAll('[data-view]').forEach(x=>{x.classList.toggle('text-emerald-700',x.dataset.view===currentView);x.classList.toggle('text-gray-500',x.dataset.view!==currentView)})});
   document.querySelectorAll('.tab-btn').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
   const uit=$('logoutBtn');
@@ -2461,10 +2482,18 @@ function bindChrome(){
 function startApp(){
   // Beheerder begint in het dashboard, medewerker in de invoer.
   currentMode=isBeheer()?'beheer':'medewerker';
+  // Na een verversing terug naar de pagina waar je was (staat in het adres, bijv. #/beheer/klussen).
+  const mh=/^#\/(beheer|medewerker)\/([\w-]+)/.exec(location.hash||'');
+  if(mh){
+    if(mh[1]==='beheer'&&isBeheer()&&BEHEER_TABS.includes(mh[2])){currentMode='beheer';currentBeheerTab=mh[2]}
+    else if(mh[1]==='medewerker'&&['invoer','mijnuren'].includes(mh[2])){currentMode='medewerker';currentView=mh[2]}
+  }
   const mt=$('modeToggle');if(mt)mt.value=currentMode;
   renderBottomNav();
   naRender();
   renderCurrentView();
+  zetNav(currentView);zetTabMarkering();
+  navPush(true);
 }
 function toonSetupNodig(){
   const s=$('loginScreen');s.classList.remove('hidden');s.style.display='block';
