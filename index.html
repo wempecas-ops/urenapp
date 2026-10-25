@@ -145,6 +145,14 @@ function kwartierSelect(id,waarde,cls){
   const opties=(w&&!KWARTIEREN.includes(w))?[w,...KWARTIEREN].sort():KWARTIEREN;
   return `<select id="${id}" class="${cls}"><option value=""${w?'':' selected'}>--:--</option>${opties.map(t=>`<option value="${t}"${t===w?' selected':''}>${t}</option>`).join('')}</select>`;
 }
+// Datum met de dag erbij, bijv. "wo 2026-10-21" (weekend valt extra op).
+const DAGEN_KORT=['zo','ma','di','wo','do','vr','za'],DAGEN_LANG=['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
+function datumMetDag(iso){
+  if(!iso)return '';
+  const d=new Date(iso+'T12:00:00');if(isNaN(d))return esc(iso);
+  const n=d.getDay(),weekend=n===0||n===6;
+  return `<span class="${weekend?'font-bold text-amber-700 dark:text-amber-400':'font-medium'}" title="${DAGEN_LANG[n]}">${DAGEN_KORT[n]}</span> ${esc(iso)}`;
+}
 const nieuweKlantcode=()=>{let m=0;DB.list('klanten').forEach(k=>{const r=/^K(\d+)$/.exec(k.klantcode||'');if(r)m=Math.max(m,parseInt(r[1],10))});return 'K'+String(m+1).padStart(4,'0')};
 const klantAdres=k=>k?[k.adres,[k.postcode,k.plaats].filter(Boolean).join(' ')].filter(Boolean).join(', '):'';
 
@@ -658,7 +666,7 @@ function renderDagKaart(d){
   const totalKlussen=d.klussen.length;
   const badgeClass=d.status==='in_afwachting'?'badge-afwachting':d.status==='goedgekeurd'?'badge-goedgekeurd':'badge-verwerkt';
   const statusLabel=d.status==='in_afwachting'?'In afwachting':d.status==='goedgekeurd'?'Goedgekeurd':'Verwerkt';
-  return`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="flex justify-between items-center"><div><span class="font-semibold">${esc(d.medewerkerNaam)}</span> <span class="text-gray-400 text-sm">${d.datum}</span></div><span class="badge ${badgeClass}">${statusLabel}</span></div>
+  return`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="flex justify-between items-center"><div><span class="font-semibold">${esc(d.medewerkerNaam)}</span> <span class="text-gray-400 text-sm">${datumMetDag(d.datum)}</span></div><span class="badge ${badgeClass}">${statusLabel}</span></div>
   <div class="mt-2 text-sm text-gray-600 dark:text-gray-300">${d.startTime} – ${d.endTime} · pauze ${d.pauzeMin}m · <strong>${fmtNum(d.nettoUren)}u netto</strong> · ${totalKlussen} klus${totalKlussen!==1?'sen':''}</div>
   <div class="flex items-center gap-4 mt-1"><button class="muToggle text-xs text-emerald-600 dark:text-emerald-400 font-medium min-h-[44px]" data-dag-id="${d.id}">Bekijk details</button>${isMedewerker()?(d.status==='verwerkt'?'<span class="text-xs text-gray-400">Verwerkt, niet meer te wijzigen</span>':`<button class="muEdit text-xs text-blue-600 dark:text-blue-400 font-medium min-h-[44px]" data-wijzig-id="${d.id}">Wijzigen</button>`):''}</div>
   <div id="muDet_${d.id}" class="hidden mt-3 space-y-2 border-t border-gray-100 dark:border-gray-700 pt-3">${d.klussen.map(k=>{const kd=DB.get('klanten',k.klantId);const dd=DB.get('diensten',k.dienstId);return`<div class="text-sm bg-gray-50 dark:bg-gray-700 rounded-lg p-2"><div class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekend'}</div>${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500 dark:text-gray-400">${esc(klantAdres(kd))}</div>`:''}<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">${dd?esc(dd.naam):'Onbekend'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')} · ${k.startTijd&&k.eindTijd?esc(k.startTijd)+'-'+esc(k.eindTijd)+' · ':''}${k.aantal} ${esc(k.eenheid||'uur')}</div>${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">Wegen monsteren</span></div>':''}${fotoKnop(k)?'<div class="mt-1">'+fotoKnop(k)+'</div>':''}</div>`}).join('')}</div></div>`;
@@ -683,7 +691,7 @@ function renderDashRows(dagen){
       </div>`}).join(''):'<div class="text-sm text-gray-400">Geen klussen bij deze dagstaat</div>';
     return`<tr class="border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
     <td class="px-2 py-2 text-center"><button data-uitklap="${d.id}" class="text-gray-400 hover:text-emerald-600 px-1 min-h-[48px]" aria-label="Toon klussen" aria-expanded="false">Toon</button></td>
-    <td class="px-3 py-2">${esc(d.medewerkerNaam)}</td><td class="px-3 py-2">${d.datum}</td><td class="px-3 py-2 text-center">${d.startTime}</td><td class="px-3 py-2 text-center">${d.endTime}</td>
+    <td class="px-3 py-2">${esc(d.medewerkerNaam)}</td><td class="px-3 py-2 whitespace-nowrap">${datumMetDag(d.datum)}</td><td class="px-3 py-2 text-center">${d.startTime}</td><td class="px-3 py-2 text-center">${d.endTime}</td>
     <td class="px-3 py-2 text-center">${d.pauzeMin}m</td><td class="px-3 py-2 text-center font-semibold">${fmtNum(d.nettoUren)}u</td>
     <td class="px-3 py-2 text-center whitespace-nowrap">${klussen.length}${mono?` <span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-xs font-medium">Monsteren: ${mono}</span>`:''}</td>
     <td class="px-3 py-2 text-center"><span class="badge ${badgeClass}">${label}</span></td>
@@ -993,7 +1001,7 @@ function renderKlussenBeheer(){
       </tr></thead>
       <tbody>${rows.length?rows.map(k=>`<tr class="border-t border-gray-100 dark:border-gray-700 align-top">
         <td class="px-3 py-2 text-center"><input type="checkbox" data-chk="${k.id}" data-dag="${k.dagId}" ${klusSelectie.has(k.id)?'checked':''} aria-label="Selecteer klus"></td>
-        <td class="px-3 py-2 whitespace-nowrap">${k.datum}</td>
+        <td class="px-3 py-2 whitespace-nowrap">${datumMetDag(k.datum)}</td>
         <td class="px-3 py-2">${esc(k.medewerkerNaam||'')}</td>
         <td class="px-3 py-2"><div class="font-medium">${k.klant?esc(k.klant.naam):'<span class="text-amber-600">Onbekend</span>'}</div>${k.klant&&klantAdres(k.klant)?`<div class="text-xs text-gray-500">${esc(klantAdres(k.klant))}</div>`:''}</td>
         <td class="px-3 py-2">${k.dienst?esc(k.dienst.naam):'—'}</td>
@@ -1889,7 +1897,7 @@ function renderUrenOverzicht(){
     <td class="px-3 py-2 font-medium">${esc(r.naam)}</td><td class="px-3 py-2 text-right">${r.dagen.length}</td><td class="px-3 py-2 text-right font-semibold">${f(r.uren)}</td>
     <td class="px-3 py-2 text-right"><button data-uo="${esc(r.id)}" class="text-blue-600 hover:text-blue-800 text-xs min-h-[40px]">${URENOV.open[r.id]?'Verberg dagen':'Toon dagen'}</button></td></tr>
     ${URENOV.open[r.id]?`<tr><td colspan="4" class="px-3 pb-3 bg-gray-50 dark:bg-gray-900"><table class="w-full text-xs"><thead><tr class="text-left text-gray-500"><th class="py-1">Datum</th><th>Start</th><th>Eind</th><th>Pauze</th><th class="text-right">Uren</th><th class="text-right">Status</th></tr></thead><tbody>
-      ${r.dagen.map(d=>`<tr class="border-t border-gray-200 dark:border-gray-700"><td class="py-1">${esc(d.datum)}</td><td>${esc(d.startTime||'')}</td><td>${esc(d.endTime||'')}</td><td>${esc(String(d.pauzeMin||0))} min</td><td class="text-right">${f(Number(d.nettoUren)||0)}</td><td class="text-right">${esc(statusNaam[d.status]||d.status||'')}</td></tr>`).join('')}
+      ${r.dagen.map(d=>`<tr class="border-t border-gray-200 dark:border-gray-700"><td class="py-1 whitespace-nowrap">${datumMetDag(d.datum)}</td><td>${esc(d.startTime||'')}</td><td>${esc(d.endTime||'')}</td><td>${esc(String(d.pauzeMin||0))} min</td><td class="text-right">${f(Number(d.nettoUren)||0)}</td><td class="text-right">${esc(statusNaam[d.status]||d.status||'')}</td></tr>`).join('')}
       </tbody></table></td></tr>`:''}`).join(''):'<tr><td colspan="4" class="px-3 py-6 text-center text-gray-500">Geen uren in deze periode.</td></tr>'}
   </tbody>${rijen.length?`<tfoot class="bg-gray-50 dark:bg-gray-700 font-semibold"><tr><td class="px-3 py-2">Totaal</td><td class="px-3 py-2 text-right">${dagen.length}</td><td class="px-3 py-2 text-right">${f(totaal)}</td><td></td></tr></tfoot>`:''}
   </table></div></div>`;
