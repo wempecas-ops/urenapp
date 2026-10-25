@@ -1742,18 +1742,11 @@ function renderPlanning(){
   $('plNotitie').oninput=e=>{PLAN.notitie=e.target.value;ververs()};
   const r$=el=>PLAN.regels.find(r=>r.id===el.closest('[data-r]').dataset.r);
   const box=$('plRegels');
-  const locKey='wop_locaties';
-  const locLees=()=>{try{return JSON.parse(localStorage.getItem(locKey)||'{}')}catch(e){return {}}};
-  const locBewaar=r=>{const k=(r.klant||'').trim().toLowerCase();if(!k)return;const m=locLees();m[k]={laden:r.laden.filter(x=>(x||'').trim()),lossen:r.lossen.filter(x=>(x||'').trim())};try{localStorage.setItem(locKey,JSON.stringify(m))}catch(e){}};
+  try{localStorage.removeItem('wop_locaties')}catch(e){}  // oude onthouden locaties per klant: niet meer gebruikt
   box.oninput=e=>{const f=e.target.dataset.f;if(!f)return;const r=r$(e.target);if(!r)return;
-    if(f==='laden'||f==='lossen'){r[f][+e.target.dataset.i]=e.target.value;locBewaar(r)}else r[f]=e.target.value;
+    if(f==='laden'||f==='lossen')r[f][+e.target.dataset.i]=e.target.value;else r[f]=e.target.value;
     ververs()};
   box.onchange=e=>{
-    if(e.target.dataset.f==='klant'){
-      const r=r$(e.target);const m=locLees()[(e.target.value||'').trim().toLowerCase()];
-      if(r&&m){const oudL=m.laden||(m.laad?[m.laad]:[]),oudO=m.lossen||(m.los?[m.los]:[]);
-        if(!r.laden.some(x=>(x||'').trim())&&!r.lossen.some(x=>(x||'').trim())&&(oudL.length||oudO.length)){r.laden=oudL.length?[...oudL]:[''];r.lossen=oudO.length?[...oudO]:[''];planBewaar();renderPlanning();toast('Laad- en loslocaties van de vorige keer ingevuld','success');return}}
-    }
     if(e.target.dataset.wie===undefined)return;
     const r=r$(e.target);if(!r)return;r.wie=r.wie||[];const id=e.target.dataset.wie;
     r.wie=e.target.checked?[...new Set([...r.wie,id])]:r.wie.filter(x=>x!==id);ververs()};
