@@ -866,6 +866,69 @@ function zetMono(paren,waarde){
   });
 }
 // Klussen definitief verwijderen. Is het de laatste klus van een werkdag, dan gaat de hele werkdag weg.
+// Beheerder wijzigt achteraf een klus (klant, dienst, kenteken, tijden, aantal, omschrijving, datum).
+// De datum hoort bij de werkdag: wijzigen verplaatst dus de hele werkdag van die medewerker.
+function openKlusWijzigen(dagId,klusId){
+  const dag=DB.get('dagstaten',dagId);if(!dag)return;
+  const klus=(dag.klussen||[]).find(k=>k.id===klusId);if(!klus)return;
+  const klanten=DB.list('klanten').slice().sort((a,b)=>(a.naam||'').localeCompare(b.naam||''));
+  const diensten=DB.list('diensten');
+  const label=k=>k.naam+(k.plaats?' ('+k.plaats+')':'');
+  const huidig=DB.get('klanten',klus.klantId);
+  const cls='w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600';
+  const aantalKlus=(dag.klussen||[]).length;
+  const eenheden=[['uur','uur'],['m3','m³'],['ha','ha'],['ritten','ritten'],['km','km'],['stukken','stuks']];
+  const m=document.createElement('div');m.id='klusWijzig';m.className='fixed inset-0 bg-black/50 z-30 overflow-auto p-3';
+  m.innerHTML=`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 w-full max-w-lg mx-auto my-4">
+   <h3 class="font-bold mb-1">Klus wijzigen</h3>
+   <p class="text-xs text-gray-500 mb-3">${esc(dag.medewerkerNaam||'')} · werkdag ${datumMetDag(dag.datum)}</p>
+   <label class="block text-sm font-medium mb-1" for="kw_datum">Datum</label><input type="date" id="kw_datum" value="${esc(dag.datum)}" class="${cls} mb-1">
+   <p class="text-[11px] text-gray-500 mb-3">${aantalKlus>1?'Deze werkdag heeft '+aantalKlus+' klussen; een andere datum geldt voor de hele werkdag.':'De datum geldt voor de hele werkdag van deze medewerker.'}</p>
+   <label class="block text-sm font-medium mb-1" for="kw_klant">Klant</label>
+   <input id="kw_klant" list="kw_klanten" value="${esc(huidig?label(huidig):'')}" placeholder="Zoek op naam" class="${cls} mb-3" autocomplete="off">
+   <datalist id="kw_klanten">${klanten.map(k=>`<option value="${esc(label(k))}"></option>`).join('')}</datalist>
+   <div class="grid grid-cols-2 gap-3 mb-3">
+    <div><label class="block text-sm font-medium mb-1" for="kw_dienst">Dienst</label><select id="kw_dienst" class="${cls}">${diensten.map(d=>`<option value="${d.id}" ${d.id===klus.dienstId?'selected':''}>${esc(d.naam)}</option>`).join('')}</select></div>
+    <div><label class="block text-sm font-medium mb-1" for="kw_ket">Kenteken/Materieel</label><input id="kw_ket" value="${esc(klus.kenteken||'')}" list="kw_kets" class="${cls}"><datalist id="kw_kets">${DB.list('materieel').filter(x=>x.actief!==false).map(x=>`<option value="${esc(x.kenteken)}"></option>`).join('')}</datalist></div>
+    <div><label class="block text-sm font-medium mb-1" for="kw_beg">Start klus</label>${kwartierSelect('kw_beg',klus.startTijd,cls)}</div>
+    <div><label class="block text-sm font-medium mb-1" for="kw_eind">Eind klus</label>${kwartierSelect('kw_eind',klus.eindTijd,cls)}</div>
+    <div><label class="block text-sm font-medium mb-1" for="kw_aantal">Aantal</label><input id="kw_aantal" type="number" min="0.01" step="0.01" value="${esc(klus.aantal==null?'':klus.aantal)}" class="${cls}"></div>
+    <div><label class="block text-sm font-medium mb-1" for="kw_een">Eenheid</label><select id="kw_een" class="${cls}">${eenheden.map(([v,l])=>`<option value="${v}" ${(klus.eenheid||'uur')===v?'selected':''}>${l}</option>`).join('')}</select></div>
+   </div>
+   <div id="kw_hint" class="text-[11px] text-gray-500 -mt-2 mb-3"></div>
+   <label class="block text-sm font-medium mb-1" for="kw_oms">Omschrijving</label><textarea id="kw_oms" rows="3" class="${cls} mb-3" style="min-height:0">${esc(klus.omschrijving||'')}</textarea>
+   <label class="flex items-center gap-3 mb-4 min-h-[44px]"><input type="checkbox" id="kw_wm" ${klus.wegenMonsteren?'checked':''} class="w-6 h-6 accent-blue-600"> <span class="text-sm font-medium">Wegen monsteren</span></label>
+   ${dag.status==='verwerkt'||klus.gefactureerd?`<p class="text-xs text-amber-700 mb-3">Let op: ${dag.status==='verwerkt'?'deze werkdag is al verwerkt':''}${dag.status==='verwerkt'&&klus.gefactureerd?' en ':''}${klus.gefactureerd?'deze klus is al gefactureerd':''}. Je wijzigingen worden niet in je boekhouding doorgevoerd.</p>`:''}
+   <div class="flex gap-2"><button id="kwSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button><button id="kwX" class="px-4 bg-gray-200 dark:bg-gray-700 rounded-xl min-h-[48px]">Annuleren</button></div></div>`;
+  document.body.appendChild(m);
+  const naarMin=t=>{const [u,mi]=String(t).split(':').map(Number);return u*60+mi};
+  const rekenen=()=>{
+    const a=$('kw_beg').value,b=$('kw_eind').value,h=$('kw_hint');
+    if(!a||!b){h.textContent='';return}
+    let mm=naarMin(b)-naarMin(a);if(mm<0)mm+=1440;
+    if(mm===0){h.textContent='Start en eind zijn gelijk.';return}
+    const uren=Math.round(mm/60*100)/100;
+    $('kw_aantal').value=uren;$('kw_een').value='uur';
+    h.textContent='Berekend uit de tijden: '+uren+' uur';
+  };
+  $('kw_beg').onchange=rekenen;$('kw_eind').onchange=rekenen;
+  $('kwX').onclick=()=>m.remove();
+  $('kwSave').onclick=()=>{
+    const datum=$('kw_datum').value;
+    if(!datum){toast('Kies een datum','error');return}
+    const tekst=$('kw_klant').value.trim().toLowerCase();
+    const klant=klanten.find(k=>label(k).toLowerCase()===tekst)||klanten.find(k=>(k.naam||'').toLowerCase()===tekst);
+    if(!klant){toast('Kies een klant uit de lijst','error');return}
+    const aantal=parseFloat(String($('kw_aantal').value).replace(',','.'));
+    if(!(aantal>0)){toast('Vul een aantal in (groter dan 0)','error');return}
+    if(datum!==dag.datum&&DB.list('dagstaten').some(d=>d.id!==dag.id&&d.medewerkerId===dag.medewerkerId&&d.datum===datum)){
+      toast((dag.medewerkerNaam||'Deze medewerker')+' heeft op die datum al een werkdag. Verwijder of verplaats die eerst.','error');return}
+    if((dag.status==='verwerkt'||klus.gefactureerd)&&!confirm('Deze '+(klus.gefactureerd?'klus is al gefactureerd':'werkdag is al verwerkt')+'. Toch wijzigen?'))return;
+    const nieuw={klantId:klant.id,dienstId:$('kw_dienst').value,kenteken:$('kw_ket').value.trim(),startTijd:$('kw_beg').value||'',eindTijd:$('kw_eind').value||'',aantal,eenheid:$('kw_een').value,omschrijving:$('kw_oms').value.trim(),wegenMonsteren:$('kw_wm').checked};
+    DB.update('dagstaten',dag.id,{...dag,datum,klussen:(dag.klussen||[]).map(k=>k.id===klusId?{...k,...nieuw}:k)});
+    m.remove();toast('Klus gewijzigd','success');renderKlussenBeheer();
+  };
+}
 // Opmerking van de beheerder bij een klus. Staat in een eigen tabel die medewerkers niet kunnen lezen.
 function klusNotitieCel(klusId){
   const n=DB.get('klus_notities',klusId);
@@ -1012,7 +1075,7 @@ function renderKlussenBeheer(){
         <td class="px-3 py-2 text-center">${k.wegenMonsteren?'<span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium text-xs">Ja</span>':'<span class="text-xs text-gray-400">Nee</span>'}<div class="mt-1"><button data-mono="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.wegenMonsteren?'text-gray-500':'text-blue-700 dark:text-blue-400'}">${k.wegenMonsteren?'uitzetten':'aanvinken'}</button></div></td>
         <td class="px-3 py-2 min-w-[160px] max-w-[240px]">${klusNotitieCel(k.id)}</td>
         <td class="px-3 py-2 text-center">${statusBadge(k)}<div class="mt-1"><button data-toggle="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.gefactureerd?'text-gray-500':'text-emerald-700 dark:text-emerald-400'}">${k.gefactureerd?'terugdraaien':'afvinken'}</button></div>${k.factuurdatum?`<div class="text-[11px] text-gray-500 mt-0.5">${k.factuurdatum}</div>`:''}</td>
-        <td class="px-3 py-2 text-xs text-gray-500">${k.dagStatus==='goedgekeurd'?'Goedgekeurd':k.dagStatus==='verwerkt'?'Verwerkt':'In afwachting'}<div><button data-del-klus="${k.id}" data-dag="${k.dagId}" class="text-xs text-red-500 hover:text-red-700 underline min-h-[40px]">Verwijder</button></div></td>
+        <td class="px-3 py-2 text-xs text-gray-500">${k.dagStatus==='goedgekeurd'?'Goedgekeurd':k.dagStatus==='verwerkt'?'Verwerkt':'In afwachting'}<div><button data-edit-klus="${k.id}" data-dag="${k.dagId}" class="text-xs text-blue-600 hover:text-blue-800 underline min-h-[40px] mr-2">Wijzig</button><button data-del-klus="${k.id}" data-dag="${k.dagId}" class="text-xs text-red-500 hover:text-red-700 underline min-h-[40px]">Verwijder</button></div></td>
       </tr>`).join(''):'<tr><td colspan="13" class="px-3 py-8 text-center text-gray-400">Geen klussen in deze selectie</td></tr>'}</tbody>
     </table></div>
   </div>
@@ -1052,6 +1115,7 @@ function renderKlussenBeheer(){
     renderKlussenBeheer();
   };
   document.querySelectorAll('[data-notitie]').forEach(b=>b.onclick=()=>openKlusNotitie(b.dataset.notitie));
+  document.querySelectorAll('[data-edit-klus]').forEach(b=>b.onclick=()=>openKlusWijzigen(b.dataset.dag,b.dataset.editKlus));
   document.querySelectorAll('[data-mono]').forEach(b=>b.onclick=()=>{
     const rij=alle.find(r=>r.id===b.dataset.mono);
     zetMono([{dagId:b.dataset.dag,klusId:b.dataset.mono}],!(rij&&rij.wegenMonsteren));
