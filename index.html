@@ -866,6 +866,66 @@ function zetMono(paren,waarde){
   });
 }
 // Klussen definitief verwijderen. Is het de laatste klus van een werkdag, dan gaat de hele werkdag weg.
+// === WERKBON / DAGSTAAT PER KLUS (om door te sturen naar de klant) ===
+// Opent een nette afdrukpagina (afdrukken of opslaan als PDF). Zonder tarieven of bedragen.
+async function openWerkbon(paren){
+  const alle=alleKlussen();
+  const items=paren.map(p=>alle.find(k=>k.id===p.klusId)).filter(Boolean);
+  if(!items.length){toast('Geen klussen gekozen','error');return}
+  const metFoto=items.some(k=>(k.fotos||[]).length);
+  const foto=metFoto&&confirm('Foto\'s (bijv. weegbon) bij de klus meenemen op de werkbon?');
+  const w=window.open('','_blank');
+  if(!w){toast('Je browser blokkeerde het nieuwe venster. Sta pop-ups toe voor deze site.','error');return}
+  w.document.write('<p style="font-family:sans-serif;padding:20px">Werkbon wordt gemaakt…</p>');
+  const perKlant={};
+  items.forEach(k=>{(perKlant[k.klantId||'_']=perKlant[k.klantId||'_']||[]).push(k)});
+  const e=esc;
+  const eenhNaam={uur:'uur',m3:'m³',ha:'ha',ritten:'ritten',km:'km',stukken:'stuks'};
+  const dagNaam=iso=>{const d=new Date(iso+'T12:00:00');return isNaN(d)?e(iso||''):e(DAGEN_LANG[d.getDay()]+' '+iso.split('-').reverse().join('-'))};
+  const pagina=async(lijst)=>{
+    lijst.sort((a,b)=>(a.datum||'').localeCompare(b.datum||'')||(a.startTijd||'').localeCompare(b.startTijd||''));
+    const kl=lijst[0].klant;
+    const totUren=lijst.filter(k=>k.eenheid==='uur').reduce((x,k)=>x+(Number(k.aantal)||0),0);
+    let fotoHtml='';
+    if(foto){
+      for(const k of lijst){
+        for(const pad of (k.fotos||[])){
+          try{const u=await fotoUrl(pad);fotoHtml+='<figure><img src="'+u+'"><figcaption>'+dagNaam(k.datum)+' · '+e(k.omschrijving||'')+'</figcaption></figure>'}catch(x){}
+        }
+      }
+    }
+    return `<section class="pagina">
+    <header><img src="${location.origin}/logo.png" alt="Cas Wempe Mesthandel en Transport" class="logo"><div class="titel"><h1>Werkbon</h1><div class="sub">Cas Wempe Mesthandel en Transport</div></div></header>
+    <div class="klant"><div class="lab">Klant</div><div class="naam">${kl?e(kl.naam):'Onbekende klant'}${kl&&kl.klantcode?' <span class="code">('+e(kl.klantcode)+')</span>':''}</div>${kl&&klantAdres(kl)?'<div>'+e(klantAdres(kl))+'</div>':''}</div>
+    <table><thead><tr><th>Datum</th><th>Medewerker</th><th>Werkzaamheden</th><th>Kenteken</th><th>Tijd</th><th class="r">Aantal</th><th>Gewogen/ bemonsterd</th></tr></thead><tbody>
+    ${lijst.map(k=>`<tr><td>${dagNaam(k.datum)}</td><td>${e(k.medewerkerNaam||'')}</td><td><b>${e(k.dienst?k.dienst.naam:'')}</b>${k.omschrijving?'<br>'+e(k.omschrijving):''}</td><td>${e(k.kenteken||'')}</td><td>${k.startTijd&&k.eindTijd?e(k.startTijd)+' – '+e(k.eindTijd):''}</td><td class="r">${e(String(k.aantal))} ${e(eenhNaam[k.eenheid]||k.eenheid||'uur')}</td><td>${k.wegenMonsteren?'Ja':'Nee'}</td></tr>`).join('')}
+    </tbody></table>
+    ${lijst.length>1&&totUren?`<div class="tot">Totaal uren: <b>${String(Math.round(totUren*100)/100).replace('.',',')}</b></div>`:''}
+    <div class="akkoord"><div>Voor akkoord klant:<div class="lijn"></div><small>Naam en handtekening</small></div><div>Datum:<div class="lijn"></div></div></div>
+    ${fotoHtml?'<h2>Foto\'s</h2><div class="fotos">'+fotoHtml+'</div>':''}
+    </section>`;
+  };
+  const delen=[];
+  for(const key of Object.keys(perKlant))delen.push(await pagina(perKlant[key]));
+  const kl0=items[0].klant;
+  const titel='Werkbon '+(kl0?kl0.naam:'')+' '+(items.length===1?items[0].datum:'');
+  const css=`body{font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:0;background:#eee}
+  .bar{position:sticky;top:0;background:#111;color:#fff;padding:10px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between}
+  .bar button{background:#fff;color:#111;border:0;border-radius:8px;padding:10px 16px;font-size:15px;font-weight:600;cursor:pointer}
+  .pagina{background:#fff;max-width:900px;margin:16px auto;padding:32px;box-sizing:border-box}
+  header{display:flex;align-items:center;gap:20px;border-bottom:3px solid #111;padding-bottom:14px;margin-bottom:18px}
+  .logo{height:54px;width:auto}.titel h1{margin:0;font-size:28px}.sub{color:#555;font-size:13px}
+  .klant{margin-bottom:18px;line-height:1.5}.lab{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#666}.naam{font-size:18px;font-weight:700}.code{font-weight:400;color:#666;font-size:14px}
+  table{width:100%;border-collapse:collapse;font-size:13px}th{background:#f1f1f1;text-align:left}th,td{border:1px solid #ccc;padding:7px 8px;vertical-align:top}.r{text-align:right;white-space:nowrap}
+  .tot{text-align:right;margin-top:10px;font-size:14px}
+  .akkoord{display:flex;gap:40px;margin-top:40px;font-size:13px}.akkoord>div:first-child{flex:2}.akkoord>div:last-child{flex:1}.lijn{border-bottom:1px solid #111;height:34px}small{color:#666}
+  h2{font-size:16px;margin:26px 0 8px}.fotos{display:grid;grid-template-columns:1fr 1fr;gap:12px}figure{margin:0;break-inside:avoid}figure img{width:100%;border:1px solid #ccc}figcaption{font-size:11px;color:#555}
+  @media print{body{background:#fff}.bar{display:none}.pagina{margin:0;padding:0;max-width:none;page-break-after:always}.pagina:last-child{page-break-after:auto}}
+  @page{margin:16mm}`;
+  w.document.open();
+  w.document.write('<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+e(titel.trim())+'</title><style>'+css+'</style></head><body><div class="bar"><span>Werkbon klaar. Druk op Afdrukken en kies "Opslaan als PDF" om hem door te sturen.</span><button onclick="window.print()">Afdrukken / PDF</button></div>'+delen.join('')+'</body></html>');
+  w.document.close();
+}
 // Beheerder wijzigt achteraf een klus (klant, dienst, kenteken, tijden, aantal, omschrijving, datum).
 // De datum hoort bij de werkdag: wijzigen verplaatst dus de hele werkdag van die medewerker.
 function openKlusWijzigen(dagId,klusId){
@@ -1045,6 +1105,7 @@ function renderKlussenBeheer(){
   <div class="flex flex-wrap gap-2 mb-3">
     <button id="btnKlusBulk" class="px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 min-h-[48px] font-medium opacity-40" disabled>Geselecteerde afvinken</button>
     <button id="btnKlusAlles" class="px-3 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800 min-h-[48px] font-medium">Alle ${open.length} open in filter afvinken</button>
+    <button id="btnKlusWerkbon" class="px-3 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800 min-h-[48px] font-medium">Werkbon van selectie</button>
     <button id="btnKlusVerwijder" class="px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 min-h-[48px] font-medium">Geselecteerde verwijderen</button>
     <button id="btnKlusSelectieWeg" class="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 rounded-lg min-h-[48px] font-medium">Selectie wissen</button>
     <button id="btnKlusCSV" class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 min-h-[48px] font-medium">Facturatielijst als CSV</button>
@@ -1075,7 +1136,7 @@ function renderKlussenBeheer(){
         <td class="px-3 py-2 text-center">${k.wegenMonsteren?'<span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium text-xs">Ja</span>':'<span class="text-xs text-gray-400">Nee</span>'}<div class="mt-1"><button data-mono="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.wegenMonsteren?'text-gray-500':'text-blue-700 dark:text-blue-400'}">${k.wegenMonsteren?'uitzetten':'aanvinken'}</button></div></td>
         <td class="px-3 py-2 min-w-[160px] max-w-[240px]">${klusNotitieCel(k.id)}</td>
         <td class="px-3 py-2 text-center">${statusBadge(k)}<div class="mt-1"><button data-toggle="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.gefactureerd?'text-gray-500':'text-emerald-700 dark:text-emerald-400'}">${k.gefactureerd?'terugdraaien':'afvinken'}</button></div>${k.factuurdatum?`<div class="text-[11px] text-gray-500 mt-0.5">${k.factuurdatum}</div>`:''}</td>
-        <td class="px-3 py-2 text-xs text-gray-500">${k.dagStatus==='goedgekeurd'?'Goedgekeurd':k.dagStatus==='verwerkt'?'Verwerkt':'In afwachting'}<div><button data-edit-klus="${k.id}" data-dag="${k.dagId}" class="text-xs text-blue-600 hover:text-blue-800 underline min-h-[40px] mr-2">Wijzig</button><button data-del-klus="${k.id}" data-dag="${k.dagId}" class="text-xs text-red-500 hover:text-red-700 underline min-h-[40px]">Verwijder</button></div></td>
+        <td class="px-3 py-2 text-xs text-gray-500">${k.dagStatus==='goedgekeurd'?'Goedgekeurd':k.dagStatus==='verwerkt'?'Verwerkt':'In afwachting'}<div><button data-edit-klus="${k.id}" data-dag="${k.dagId}" class="text-xs text-blue-600 hover:text-blue-800 underline min-h-[40px] mr-2">Wijzig</button><button data-werkbon="${k.id}" data-dag="${k.dagId}" class="text-xs text-gray-700 dark:text-gray-200 hover:text-black underline min-h-[40px] mr-2">Werkbon</button><button data-del-klus="${k.id}" data-dag="${k.dagId}" class="text-xs text-red-500 hover:text-red-700 underline min-h-[40px]">Verwijder</button></div></td>
       </tr>`).join(''):'<tr><td colspan="13" class="px-3 py-8 text-center text-gray-400">Geen klussen in deze selectie</td></tr>'}</tbody>
     </table></div>
   </div>
@@ -1115,6 +1176,8 @@ function renderKlussenBeheer(){
     renderKlussenBeheer();
   };
   document.querySelectorAll('[data-notitie]').forEach(b=>b.onclick=()=>openKlusNotitie(b.dataset.notitie));
+  document.querySelectorAll('[data-werkbon]').forEach(b=>b.onclick=()=>openWerkbon([{dagId:b.dataset.dag,klusId:b.dataset.werkbon}]));
+  $('btnKlusWerkbon').onclick=()=>{const paren=[...klusSelectie].map(id=>{const r=alle.find(x=>x.id===id);return r&&{dagId:r.dagId,klusId:id}}).filter(Boolean);if(!paren.length){toast('Vink eerst één of meer klussen aan','error');return}openWerkbon(paren)};
   document.querySelectorAll('[data-edit-klus]').forEach(b=>b.onclick=()=>openKlusWijzigen(b.dataset.dag,b.dataset.editKlus));
   document.querySelectorAll('[data-mono]').forEach(b=>b.onclick=()=>{
     const rij=alle.find(r=>r.id===b.dataset.mono);
