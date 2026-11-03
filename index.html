@@ -231,6 +231,10 @@ function datumMetDag(iso){
   const n=d.getDay(),weekend=n===0||n===6;
   return `<span class="${weekend?'font-bold text-amber-700 dark:text-amber-400':'font-medium'}" title="${DAGEN_LANG[n]}">${DAGEN_KORT[n]}</span> ${esc(iso)}`;
 }
+// Tijd van een klus als tekst, met de pauze erbij als die is ingevuld: "08:00-12:00 (30 min pauze)"
+const PAUZE_OPTIES=[0,15,30,45,60,75,90,120];
+const klusTijdTekst=(k,streep)=>k.startTijd&&k.eindTijd?k.startTijd+(streep||'-')+k.eindTijd+((+k.pauzeMin)>0?' ('+(+k.pauzeMin)+' min pauze)':''):'';
+const pauzeSelect=(id,waarde,cls)=>{const w=+waarde||0;const opt=PAUZE_OPTIES.includes(w)?PAUZE_OPTIES:[...PAUZE_OPTIES,w].sort((a,b)=>a-b);return `<select id="${id}" class="${cls}">${opt.map(m=>`<option value="${m}"${m===w?' selected':''}>${m?m+' min':'Geen pauze'}</option>`).join('')}</select>`};
 const nieuweKlantcode=()=>{let m=0;DB.list('klanten').forEach(k=>{const r=/^K(\d+)$/.exec(k.klantcode||'');if(r)m=Math.max(m,parseInt(r[1],10))});return 'K'+String(m+1).padStart(4,'0')};
 const klantAdres=k=>k?[k.adres,[k.postcode,k.plaats].filter(Boolean).join(' ')].filter(Boolean).join(', '):'';
 
@@ -548,7 +552,7 @@ function renderInvoer(){
        <div>Netto uren: <strong class="text-emerald-700 dark:text-emerald-400">${fmtNum(netto)}u</strong></div>
        <div>Klussen (uren): <strong>${fmtNum(ksUren)}u</strong>${warn?' <span class="text-amber-600 dark:text-amber-400">Verschil!</span>':''}</div>`;
   };
-  function getKlussen(){return ds.klussen.map(k=>({...k, wegenMonsteren:($('wm_'+k.id)?$('wm_'+k.id).checked:!!k.wegenMonsteren), klantId:$('klant_'+k.id)?.value||k.klantId, dienstId:($('dienst_'+k.id)?$('dienst_'+k.id).value:'')||k.dienstId||(diensten[0]?diensten[0].id:''), kenteken:$('ket_'+k.id)?.value||k.kenteken, omschrijving:$('oms_'+k.id)?.value||k.omschrijving, aantal:+($('aant_'+k.id)?.value||k.aantal||1), eenheid:$('een_'+k.id)?.value||k.eenheid||'uur', startTijd:$('kbeg_'+k.id)?$('kbeg_'+k.id).value:(k.startTijd||''), eindTijd:$('keind_'+k.id)?$('keind_'+k.id).value:(k.eindTijd||'')}))}
+  function getKlussen(){return ds.klussen.map(k=>({...k, wegenMonsteren:($('wm_'+k.id)?$('wm_'+k.id).checked:!!k.wegenMonsteren), klantId:$('klant_'+k.id)?.value||k.klantId, dienstId:($('dienst_'+k.id)?$('dienst_'+k.id).value:'')||k.dienstId||(diensten[0]?diensten[0].id:''), kenteken:$('ket_'+k.id)?.value||k.kenteken, omschrijving:$('oms_'+k.id)?.value||k.omschrijving, aantal:+($('aant_'+k.id)?.value||k.aantal||1), eenheid:$('een_'+k.id)?.value||k.eenheid||'uur', startTijd:$('kbeg_'+k.id)?$('kbeg_'+k.id).value:(k.startTijd||''), eindTijd:$('keind_'+k.id)?$('keind_'+k.id).value:(k.eindTijd||''), pauzeMin:$('kpauze_'+k.id)?(+$('kpauze_'+k.id).value||0):(+k.pauzeMin||0)}))}
   function klantZoek(q){
     const all=DB.list('klanten').filter(k=>k.actief!==false);
     const t=(q||'').trim().toLowerCase();
@@ -580,6 +584,7 @@ function renderInvoer(){
     <div><label class="text-xs text-gray-500">Kenteken/Materieel</label><input id="ket_${k.id}" value="${esc(k.kenteken)}" list="ddKenteken" class="${selCls}"></div>
     <div><label class="text-xs text-gray-500" for="kbeg_${k.id}">Start klus</label>${kwartierSelect('kbeg_'+k.id,k.startTijd,selCls)}</div>
     <div><label class="text-xs text-gray-500" for="keind_${k.id}">Eind klus</label>${kwartierSelect('keind_'+k.id,k.eindTijd,selCls)}</div>
+    <div class="col-span-2"><label class="text-xs text-gray-500" for="kpauze_${k.id}">Pauze tijdens deze klus</label>${pauzeSelect('kpauze_'+k.id,k.pauzeMin,selCls)}</div>
     <div class="col-span-2 text-[11px] text-gray-500 dark:text-gray-400 -mt-1" id="khint_${k.id}">Vul start en eind in, dan wordt het aantal uren automatisch berekend.</div>
     <div><label class="text-xs text-gray-500">Aantal</label><input id="aant_${k.id}" type="number" value="${k.aantal||1}" min="0.1" step="0.01" class="${selCls}"></div>
     <div><label class="text-xs text-gray-500">Eenheid</label><select id="een_${k.id}" class="${selCls}"><option value="uur"${k.eenheid==='uur'?' selected':''}>uur</option><option value="m3"${k.eenheid==='m3'?' selected':''}>m³</option><option value="ha"${k.eenheid==='ha'?' selected':''}>ha</option><option value="ritten"${k.eenheid==='ritten'?' selected':''}>ritten</option><option value="km"${k.eenheid==='km'?' selected':''}>km</option><option value="stukken"${k.eenheid==='stukken'?' selected':''}>stuks</option></select></div>
@@ -633,11 +638,15 @@ function renderInvoer(){
     let m=naarMin(e.value)-naarMin(s.value);let nacht=false;
     if(m<0){m+=1440;nacht=true}
     if(m===0){if(hint)hint.textContent='Start en eind zijn gelijk.';return}
+    const p=$('kpauze_'+kid)?(+$('kpauze_'+kid).value||0):0;
+    if(p>=m){if(hint)hint.textContent='De pauze is langer dan de klus.';return}
+    m-=p;
     const uren=Math.round(m/60*100)/100;
     $('aant_'+kid).value=uren;if($('een_'+kid))$('een_'+kid).value='uur';
-    if(hint)hint.textContent='Berekend: '+fmtNum(uren)+' uur ('+Math.floor(m/60)+' u '+String(m%60).padStart(2,'0')+' min)'+(nacht?', over middernacht':'');
+    if(hint)hint.textContent='Berekend: '+fmtNum(uren)+' uur ('+Math.floor(m/60)+' u '+String(m%60).padStart(2,'0')+' min'+(p?', na '+p+' min pauze':'')+')'+(nacht?', over middernacht':'');
   };
-  $('main').oninput=e=>{if(e.target.id&&(e.target.id.startsWith('kbeg_')||e.target.id.startsWith('keind_'))){klusTijdRekenen(e.target.id.slice(e.target.id.indexOf('_')+1));saveConcept();calcAndRender();return}
+  $('main').oninput=e=>{if(e.target.id&&e.target.id.startsWith('kpauze_')){const kid=e.target.id.slice(7);klusTijdRekenen(kid);const som=ds.klussen.reduce((t,k)=>t+(+(($('kpauze_'+k.id)||{}).value)||0),0);if($('inPauze'))$('inPauze').value=som;saveConcept();calcAndRender();return}
+    if(e.target.id&&(e.target.id.startsWith('kbeg_')||e.target.id.startsWith('keind_'))){klusTijdRekenen(e.target.id.slice(e.target.id.indexOf('_')+1));saveConcept();calcAndRender();return}
     if(['inDatum','inMedew','inStart','inEind','inPauze'].includes(e.target.id)){saveConcept();calcAndRender()}if(e.target.id.startsWith('klant_')||e.target.id.startsWith('dienst_')||e.target.id.startsWith('ket_')||e.target.id.startsWith('oms_')||e.target.id.startsWith('aant_')||e.target.id.startsWith('een_')){saveConcept();calcAndRender()}};
   $('main').onchange=async e=>{
     if(e.target.id&&e.target.id.startsWith('foto_')){
@@ -747,7 +756,7 @@ function renderDagKaart(d){
   return`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="flex justify-between items-center"><div><span class="font-semibold">${esc(d.medewerkerNaam)}</span> <span class="text-gray-400 text-sm">${datumMetDag(d.datum)}</span></div><span class="badge ${badgeClass}">${statusLabel}</span></div>
   <div class="mt-2 text-sm text-gray-600 dark:text-gray-300">${d.startTime} – ${d.endTime} · pauze ${d.pauzeMin}m · <strong>${fmtNum(d.nettoUren)}u netto</strong> · ${totalKlussen} klus${totalKlussen!==1?'sen':''}</div>
   <div class="flex items-center gap-4 mt-1"><button class="muToggle text-xs text-emerald-600 dark:text-emerald-400 font-medium min-h-[44px]" data-dag-id="${d.id}">Bekijk details</button>${isMedewerker()?(d.status==='verwerkt'?'<span class="text-xs text-gray-400">Verwerkt, niet meer te wijzigen</span>':`<button class="muEdit text-xs text-blue-600 dark:text-blue-400 font-medium min-h-[44px]" data-wijzig-id="${d.id}">Wijzigen</button>`):''}</div>
-  <div id="muDet_${d.id}" class="hidden mt-3 space-y-2 border-t border-gray-100 dark:border-gray-700 pt-3">${d.klussen.map(k=>{const kd=DB.get('klanten',k.klantId);const dd=DB.get('diensten',k.dienstId);return`<div class="text-sm bg-gray-50 dark:bg-gray-700 rounded-lg p-2"><div class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekend'}</div>${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500 dark:text-gray-400">${esc(klantAdres(kd))}</div>`:''}<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">${dd?esc(dd.naam):'Onbekend'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')} · ${k.startTijd&&k.eindTijd?esc(k.startTijd)+'-'+esc(k.eindTijd)+' · ':''}${k.aantal} ${esc(k.eenheid||'uur')}</div>${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">Wegen monsteren</span></div>':''}${fotoKnop(k)?'<div class="mt-1">'+fotoKnop(k)+'</div>':''}</div>`}).join('')}</div></div>`;
+  <div id="muDet_${d.id}" class="hidden mt-3 space-y-2 border-t border-gray-100 dark:border-gray-700 pt-3">${d.klussen.map(k=>{const kd=DB.get('klanten',k.klantId);const dd=DB.get('diensten',k.dienstId);return`<div class="text-sm bg-gray-50 dark:bg-gray-700 rounded-lg p-2"><div class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekend'}</div>${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500 dark:text-gray-400">${esc(klantAdres(kd))}</div>`:''}<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">${dd?esc(dd.naam):'Onbekend'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')} · ${klusTijdTekst(k)?esc(klusTijdTekst(k))+' · ':''}${k.aantal} ${esc(k.eenheid||'uur')}</div>${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">Wegen monsteren</span></div>':''}${fotoKnop(k)?'<div class="mt-1">'+fotoKnop(k)+'</div>':''}</div>`}).join('')}</div></div>`;
 }
 
 // === BEHEER: DASHBOARD ===
@@ -761,7 +770,7 @@ function renderDashRows(dagen){
     const detail=klussen.length?klussen.map(k=>{
       const kd=DB.get('klanten',k.klantId),dd=DB.get('diensten',k.dienstId);
       return `<div class="text-sm bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-2 mb-1">
-        <div class="flex justify-between gap-2"><span class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekende klant'}</span><span class="text-xs text-gray-500 whitespace-nowrap">${k.startTijd&&k.eindTijd?esc(k.startTijd)+'-'+esc(k.eindTijd)+' · ':''}${k.aantal} ${esc(k.eenheid||'uur')}</span></div>
+        <div class="flex justify-between gap-2"><span class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekende klant'}</span><span class="text-xs text-gray-500 whitespace-nowrap">${klusTijdTekst(k)?esc(klusTijdTekst(k))+' · ':''}${k.aantal} ${esc(k.eenheid||'uur')}</span></div>
         ${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500">${esc(klantAdres(kd))}</div>`:''}
         <div class="text-xs text-gray-500 mt-0.5">${dd?esc(dd.naam):'—'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')}</div>
         ${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">Wegen monsteren</span></div>':''}
@@ -976,7 +985,7 @@ async function openWerkbon(paren){
     <header><img src="${location.origin}/logo.png" alt="Cas Wempe Mesthandel en Transport" class="logo"><div class="titel"><h1>Werkbon</h1><div class="sub">Cas Wempe Mesthandel en Transport</div></div></header>
     <div class="klant"><div class="lab">Klant</div><div class="naam">${kl?e(kl.naam):'Onbekende klant'}${kl&&kl.klantcode?' <span class="code">('+e(kl.klantcode)+')</span>':''}</div>${kl&&klantAdres(kl)?'<div>'+e(klantAdres(kl))+'</div>':''}</div>
     <table><thead><tr><th>Datum</th><th>Medewerker</th><th>Werkzaamheden</th><th>Kenteken</th><th>Tijd</th><th class="r">Aantal</th><th>Gewogen/ bemonsterd</th></tr></thead><tbody>
-    ${lijst.map(k=>`<tr><td>${dagNaam(k.datum)}</td><td>${e(k.medewerkerNaam||'')}</td><td><b>${e(k.dienst?k.dienst.naam:'')}</b>${k.omschrijving?'<br>'+e(k.omschrijving):''}</td><td>${e(k.kenteken||'')}</td><td>${k.startTijd&&k.eindTijd?e(k.startTijd)+' – '+e(k.eindTijd):''}</td><td class="r">${e(String(k.aantal))} ${e(eenhNaam[k.eenheid]||k.eenheid||'uur')}</td><td>${k.wegenMonsteren?'Ja':'Nee'}</td></tr>`).join('')}
+    ${lijst.map(k=>`<tr><td>${dagNaam(k.datum)}</td><td>${e(k.medewerkerNaam||'')}</td><td><b>${e(k.dienst?k.dienst.naam:'')}</b>${k.omschrijving?'<br>'+e(k.omschrijving):''}</td><td>${e(k.kenteken||'')}</td><td>${e(klusTijdTekst(k,' – '))}</td><td class="r">${e(String(k.aantal))} ${e(eenhNaam[k.eenheid]||k.eenheid||'uur')}</td><td>${k.wegenMonsteren?'Ja':'Nee'}</td></tr>`).join('')}
     </tbody></table>
     ${lijst.length>1&&totUren?`<div class="tot">Totaal uren: <b>${String(Math.round(totUren*100)/100).replace('.',',')}</b></div>`:''}
     <div class="akkoord"><div>Voor akkoord klant:<div class="lijn"></div><small>Naam en handtekening</small></div><div>Datum:<div class="lijn"></div></div></div>
@@ -1030,6 +1039,7 @@ function openKlusWijzigen(dagId,klusId){
     <div><label class="block text-sm font-medium mb-1" for="kw_ket">Kenteken/Materieel</label><input id="kw_ket" value="${esc(klus.kenteken||'')}" list="kw_kets" class="${cls}"><datalist id="kw_kets">${DB.list('materieel').filter(x=>x.actief!==false).map(x=>`<option value="${esc(x.kenteken)}"></option>`).join('')}</datalist></div>
     <div><label class="block text-sm font-medium mb-1" for="kw_beg">Start klus</label>${kwartierSelect('kw_beg',klus.startTijd,cls)}</div>
     <div><label class="block text-sm font-medium mb-1" for="kw_eind">Eind klus</label>${kwartierSelect('kw_eind',klus.eindTijd,cls)}</div>
+    <div class="col-span-2"><label class="block text-sm font-medium mb-1" for="kw_pauze">Pauze tijdens deze klus</label>${pauzeSelect('kw_pauze',klus.pauzeMin,cls)}</div>
     <div><label class="block text-sm font-medium mb-1" for="kw_aantal">Aantal</label><input id="kw_aantal" type="number" min="0.01" step="0.01" value="${esc(klus.aantal==null?'':klus.aantal)}" class="${cls}"></div>
     <div><label class="block text-sm font-medium mb-1" for="kw_een">Eenheid</label><select id="kw_een" class="${cls}">${eenheden.map(([v,l])=>`<option value="${v}" ${(klus.eenheid||'uur')===v?'selected':''}>${l}</option>`).join('')}</select></div>
    </div>
@@ -1045,11 +1055,13 @@ function openKlusWijzigen(dagId,klusId){
     if(!a||!b){h.textContent='';return}
     let mm=naarMin(b)-naarMin(a);if(mm<0)mm+=1440;
     if(mm===0){h.textContent='Start en eind zijn gelijk.';return}
+    const p=+$('kw_pauze').value||0;if(p>=mm){h.textContent='De pauze is langer dan de klus.';return}
+    mm-=p;
     const uren=Math.round(mm/60*100)/100;
     $('kw_aantal').value=uren;$('kw_een').value='uur';
-    h.textContent='Berekend uit de tijden: '+uren+' uur';
+    h.textContent='Berekend uit de tijden: '+uren+' uur'+(p?' (na '+p+' min pauze)':'');
   };
-  $('kw_beg').onchange=rekenen;$('kw_eind').onchange=rekenen;
+  $('kw_beg').onchange=rekenen;$('kw_eind').onchange=rekenen;$('kw_pauze').onchange=rekenen;
   $('kwX').onclick=()=>m.remove();
   $('kwSave').onclick=()=>{
     const datum=$('kw_datum').value;
@@ -1062,7 +1074,7 @@ function openKlusWijzigen(dagId,klusId){
     if(datum!==dag.datum&&DB.list('dagstaten').some(d=>d.id!==dag.id&&d.medewerkerId===dag.medewerkerId&&d.datum===datum)){
       toast((dag.medewerkerNaam||'Deze medewerker')+' heeft op die datum al een werkdag. Verwijder of verplaats die eerst.','error');return}
     if((dag.status==='verwerkt'||klus.gefactureerd)&&!confirm('Deze '+(klus.gefactureerd?'klus is al gefactureerd':'werkdag is al verwerkt')+'. Toch wijzigen?'))return;
-    const nieuw={klantId:klant.id,dienstId:$('kw_dienst').value,kenteken:$('kw_ket').value.trim(),startTijd:$('kw_beg').value||'',eindTijd:$('kw_eind').value||'',aantal,eenheid:$('kw_een').value,omschrijving:$('kw_oms').value.trim(),wegenMonsteren:$('kw_wm').checked};
+    const nieuw={klantId:klant.id,dienstId:$('kw_dienst').value,kenteken:$('kw_ket').value.trim(),startTijd:$('kw_beg').value||'',eindTijd:$('kw_eind').value||'',pauzeMin:+$('kw_pauze').value||0,aantal,eenheid:$('kw_een').value,omschrijving:$('kw_oms').value.trim(),wegenMonsteren:$('kw_wm').checked};
     DB.update('dagstaten',dag.id,{...dag,datum,klussen:(dag.klussen||[]).map(k=>k.id===klusId?{...k,...nieuw}:k)});
     m.remove();toast('Klus gewijzigd','success');renderKlussenBeheer();
   };
@@ -1210,7 +1222,7 @@ function renderKlussenBeheer(){
         <td class="px-3 py-2">${k.dienst?esc(k.dienst.naam):'—'}</td>
         <td class="px-3 py-2">${esc(k.kenteken||'—')}</td>
         <td class="px-3 py-2 max-w-[220px]">${esc(k.omschrijving||'—')}${fotoKnop(k)?'<div>'+fotoKnop(k)+'</div>':''}</td>
-        <td class="px-3 py-2 text-right whitespace-nowrap">${k.aantal} ${esc(k.eenheid||'uur')}${k.startTijd&&k.eindTijd?'<div class="text-xs text-gray-500">'+esc(k.startTijd)+'-'+esc(k.eindTijd)+'</div>':''}</td>
+        <td class="px-3 py-2 text-right whitespace-nowrap">${k.aantal} ${esc(k.eenheid||'uur')}${klusTijdTekst(k)?'<div class="text-xs text-gray-500">'+esc(klusTijdTekst(k))+'</div>':''}</td>
         <td class="px-3 py-2 text-right whitespace-nowrap">${klusBedrag(k)?euro(klusBedrag(k)):'—'}</td>
         <td class="px-3 py-2 text-center">${k.wegenMonsteren?'<span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium text-xs">Ja</span>':'<span class="text-xs text-gray-400">Nee</span>'}<div class="mt-1"><button data-mono="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.wegenMonsteren?'text-gray-500':'text-blue-700 dark:text-blue-400'}">${k.wegenMonsteren?'uitzetten':'aanvinken'}</button></div></td>
         <td class="px-3 py-2 min-w-[160px] max-w-[240px]">${klusNotitieCel(k.id)}</td>
@@ -1312,11 +1324,11 @@ function renderKlussenBeheer(){
 
 // Facturatielijst als CSV (puntkomma + UTF-8 BOM, opent goed in Nederlandse Excel)
 function exportKlussenCSV(rows){
-  const headers=['Datum','Medewerker','Klantcode','Klant','Adres klant','Dienst','Kenteken/Materieel','Omschrijving','Aantal','Eenheid','Uurtarief','Indicatief bedrag','Wegen monsteren','Facturatiestatus','Factuurdatum','Dagstaatstatus','Opmerking beheer'];
+  const headers=['Datum','Medewerker','Klantcode','Klant','Adres klant','Dienst','Kenteken/Materieel','Omschrijving','Aantal','Eenheid','Uurtarief','Indicatief bedrag','Wegen monsteren','Facturatiestatus','Factuurdatum','Dagstaatstatus','Opmerking beheer','Tijd klus'];
   const lijnen=rows.map(k=>{
     const tarief=k.dienst&&k.dienst.tarief?Number(k.dienst.tarief):0;
     const bud=klusBedrag(k);
-    return [k.datum,k.medewerkerNaam||'',k.klant?esc(k.klant.klantcode||''):'',k.klant?esc(k.klant.naam):'',esc(k.klant?klantAdres(k.klant):''),k.dienst?esc(k.dienst.naam):'',esc(k.kenteken||''),esc(k.omschrijving||''),k.aantal,k.eenheid||'uur',tarief?tarief.toFixed(2):'',bud?bud.toFixed(2):'',k.wegenMonsteren?'Ja':'Nee',k.gefactureerd?'Gefactureerd':'Te factureren',k.factuurdatum||'',k.dagStatus||'',esc(((DB.get('klus_notities',k.id)||{}).tekst||'').replace(/\s+/g,' '))].join(';');
+    return [k.datum,k.medewerkerNaam||'',k.klant?esc(k.klant.klantcode||''):'',k.klant?esc(k.klant.naam):'',esc(k.klant?klantAdres(k.klant):''),k.dienst?esc(k.dienst.naam):'',esc(k.kenteken||''),esc(k.omschrijving||''),k.aantal,k.eenheid||'uur',tarief?tarief.toFixed(2):'',bud?bud.toFixed(2):'',k.wegenMonsteren?'Ja':'Nee',k.gefactureerd?'Gefactureerd':'Te factureren',k.factuurdatum||'',k.dagStatus||'',esc(((DB.get('klus_notities',k.id)||{}).tekst||'').replace(/\s+/g,' ')),esc(klusTijdTekst(k))].join(';');
   });
   const csv='\uFEFF'+headers.join(';')+'\n'+lijnen.join('\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
@@ -2069,7 +2081,7 @@ function werkbonPdfDef(lijst,b,img){
       {text:kl.naam||'',bold:true,fontSize:11},kl.adres?{text:kl.adres}:'',(kl.postcode||kl.plaats)?{text:[kl.postcode,kl.plaats].filter(Boolean).join('  ')}:'',
       {margin:[0,22,0,0],table:{headerRows:1,dontBreakRows:true,widths:[60,68,'*',54,50,52,46],
         body:[[th('Datum'),th('Medewerker'),th('Werkzaamheden'),th('Kenteken'),th('Tijd'),th('Aantal','right'),th('Gewogen','center')],
-          ...lijst.map(k=>[{text:dagNaam(k.datum),noWrap:true},k.medewerkerNaam||'',{stack:[{text:(k.dienst&&k.dienst.naam)||'',bold:true},k.omschrijving?{text:k.omschrijving,color:grijs}:'']},k.kenteken||'',k.startTijd&&k.eindTijd?k.startTijd+'–'+k.eindTijd:'',{text:num2(k.aantal)+' '+eenhLabel(k.eenheid),alignment:'right',noWrap:true},{text:k.wegenMonsteren?'Ja':'Nee',alignment:'center'}])]},
+          ...lijst.map(k=>[{text:dagNaam(k.datum),noWrap:true},k.medewerkerNaam||'',{stack:[{text:(k.dienst&&k.dienst.naam)||'',bold:true},k.omschrijving?{text:k.omschrijving,color:grijs}:'']},k.kenteken||'',klusTijdTekst(k,'–'),{text:num2(k.aantal)+' '+eenhLabel(k.eenheid),alignment:'right',noWrap:true},{text:k.wegenMonsteren?'Ja':'Nee',alignment:'center'}])]},
         layout:{hLineWidth:i=>i===0?0:(i===1?1.2:0.5),hLineColor:i=>i===1?inkt:lijn,vLineWidth:()=>0,paddingLeft:i=>i===0?0:5,paddingRight:(i,n)=>i===n.table.widths.length-1?0:5,paddingTop:()=>5,paddingBottom:()=>5}},
       lijst.length>1&&uren?{text:['Totaal uren: ',{text:num2(uren),bold:true}],alignment:'right',margin:[0,10,0,0]}:'',
       {unbreakable:true,margin:[0,36,0,0],columns:[
