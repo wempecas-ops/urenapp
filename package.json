@@ -1,0 +1,8 @@
+{
+  "name": "wempe-op-pad",
+  "private": true,
+  "description": "Wempe op Pad: uren, klussen, planning en facturen",
+  "dependencies": {
+    "nodemailer": "6.9.16"
+  }
+}

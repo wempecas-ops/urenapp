@@ -1254,7 +1254,7 @@ function exportKlussenCSV(rows){
 // krijgen ze een doorlopend nummer uit de database. Een definitieve factuur wijzig je niet meer:
 // correcties gaan via een creditnota. De pdf wordt in de browser gemaakt (pdfmake, eigen kopie in /vendor).
 const FACT_GROEN='#2f6b45',FACT_GROEN2='#7fb08b',FACT_TINT='#eef5f0',FACT_SUB='#cfe5d5';
-const BEDRIJF_STANDAARD={naam:'Cas Wempe',onderNaam:'Mesthandel & Transport',adres:'Slikkerdijk 6',postcode:'1766 GK',plaats:'Wieringerwaard',telefoon:'06-28064945',email:'caswempe@hotmail.com',iban:'NL48 ABNA 0870 2146 32',tenaamstelling:'Cas Wempe',kvk:'75382423',btw:'NL002406334B63',termijn:30};
+const BEDRIJF_STANDAARD={naam:'Cas Wempe',onderNaam:'Mesthandel & Transport',adres:'Slikkerdijk 6',postcode:'1766 GK',plaats:'Wieringerwaard',telefoon:'06-28064945',email:'facturencaswempe@gmail.com',yukiEmail:'',iban:'NL48 ABNA 0870 2146 32',tenaamstelling:'Cas Wempe',kvk:'75382423',btw:'NL002406334B63',termijn:30};
 const BTW_OPTIES=[['21','21%'],['9','9%'],['0','0%'],['verlegd','Verlegd']];
 const EENHEDEN_F=[['uur','uur'],['ton','ton'],['m3','m³'],['ha','ha'],['ritten','ritten'],['km','km'],['stuk','stuk'],['stukken','stuks'],['dag','dag'],['vracht','vracht']];
 const eenhLabel=e=>(EENHEDEN_F.find(x=>x[0]===e)||[e,e||''])[1];
@@ -1359,8 +1359,8 @@ function renderFacturen(){
     <td class="px-3 py-2">${esc(f.klant?f.klant.naam:'—')}</td>
     <td class="px-3 py-2 text-right whitespace-nowrap font-medium">${eurF(f.totaalIncl)}</td>
     <td class="px-3 py-2 whitespace-nowrap ${s==='verlopen'?'text-red-600 font-medium':''}">${f.soort==='credit'?'—':esc(datumNL(f.vervaldatum))}${s==='verlopen'?' <span class="text-xs">('+(-dagenTot(f.vervaldatum))+' d te laat)</span>':''}</td>
-    <td class="px-3 py-2 whitespace-nowrap"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${F_STATUS[s][1]}">${F_STATUS[s][0]}</span>${f.status==='betaald'&&f.betaaldOp?'<div class="text-[11px] text-gray-500">'+esc(datumNL(f.betaaldOp))+'</div>':''}</td>
-    <td class="px-3 py-2 whitespace-nowrap"><button data-fopen="${f.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[44px]">${s==='concept'?'Bewerken':'Bekijken'}</button><button data-fpdf="${f.id}" class="text-gray-700 dark:text-gray-200 underline text-xs mr-2 min-h-[44px]">PDF</button>${(s==='open'||s==='verlopen')?`<button data-fbetaald="${f.id}" class="text-emerald-700 dark:text-emerald-400 underline text-xs min-h-[44px]">Betaald</button>`:''}</td></tr>`).join(''):'<tr><td colspan="7" class="px-3 py-8 text-center text-gray-400">Nog geen facturen in deze selectie.</td></tr>'}
+    <td class="px-3 py-2 whitespace-nowrap"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${F_STATUS[s][1]}">${F_STATUS[s][0]}</span>${f.status==='betaald'&&f.betaaldOp?'<div class="text-[11px] text-gray-500">'+esc(datumNL(f.betaaldOp))+'</div>':''}${f.status!=='concept'?(f.verstuurdOp?'<div class="text-[11px] text-gray-500">✉ verstuurd '+esc(datumNL(String(f.verstuurdOp).slice(0,10)))+'</div>':'<div class="text-[11px] text-amber-700">nog niet verstuurd</div>'):''}</td>
+    <td class="px-3 py-2 whitespace-nowrap"><button data-fopen="${f.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[44px]">${s==='concept'?'Bewerken':'Bekijken'}</button>${s!=='concept'?`<button data-fmail="${f.id}" class="text-emerald-700 dark:text-emerald-400 underline text-xs mr-2 min-h-[44px]">Versturen</button>`:''}<button data-fpdf="${f.id}" class="text-gray-700 dark:text-gray-200 underline text-xs mr-2 min-h-[44px]">PDF</button>${(s==='open'||s==='verlopen')?`<button data-fbetaald="${f.id}" class="text-emerald-700 dark:text-emerald-400 underline text-xs min-h-[44px]">Betaald</button>`:''}</td></tr>`).join(''):'<tr><td colspan="7" class="px-3 py-8 text-center text-gray-400">Nog geen facturen in deze selectie.</td></tr>'}
   </tbody></table></div>
   <p class="text-xs text-gray-400 mt-3">Tip: bij Klussen kun je klussen aanvinken en op "Factureer selectie" drukken; dan staat de conceptfactuur meteen klaar.</p></div>`;
   document.querySelectorAll('[data-ffilt]').forEach(b=>b.onclick=()=>{FFILT.status=FFILT.status===b.dataset.ffilt&&b.dataset.ffilt!==''?'':b.dataset.ffilt;renderFacturen()});
@@ -1369,6 +1369,7 @@ function renderFacturen(){
   $('fNieuw').onclick=openNieuweFactuur;
   $('fBedrijf').onclick=openBedrijfsgegevens;
   document.querySelectorAll('[data-fopen]').forEach(b=>b.onclick=()=>openFactuurEditor(b.dataset.fopen));
+  document.querySelectorAll('[data-fmail]').forEach(b=>b.onclick=()=>openFactuurVersturen(b.dataset.fmail));
   document.querySelectorAll('[data-fpdf]').forEach(b=>b.onclick=()=>factuurPdf(b.dataset.fpdf,'open'));
   document.querySelectorAll('[data-fbetaald]').forEach(b=>b.onclick=()=>markeerBetaald(b.dataset.fbetaald));
 }
@@ -1453,12 +1454,15 @@ function openFactuurEditor(id){
       <button id="fePdf" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">Voorbeeld (PDF)</button>
       <button id="feDef" class="px-4 py-2 bg-emerald-600 text-white rounded-xl min-h-[48px] font-medium">Definitief maken</button>
       <button id="feDel" class="px-4 py-2 text-red-600 min-h-[48px] ml-auto">Concept verwijderen</button>`
-     :`<button id="fePdf" class="px-4 py-2 bg-emerald-600 text-white rounded-xl min-h-[48px] font-medium">PDF openen</button>
+     :`<button id="feMail" class="px-4 py-2 bg-emerald-600 text-white rounded-xl min-h-[48px] font-medium">${(f.verzendingen||[]).length?'Opnieuw versturen':'Versturen per mail'}</button>
+      <button id="fePdf" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">PDF openen</button>
       <button id="fePdfDl" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">PDF downloaden</button>
       ${(s==='open'||s==='verlopen')?'<button id="feBetaald" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">Markeer als betaald</button>':''}
       ${s==='betaald'?'<button id="feOnbetaald" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">Toch niet betaald</button>':''}
       ${f.soort!=='credit'&&f.status!=='gecrediteerd'?'<button id="feCredit" class="px-4 py-2 text-purple-700 dark:text-purple-300 min-h-[48px] ml-auto">Creditnota maken</button>':''}`}
-   </div></div>`;
+   </div>
+   ${(f.verzendingen||[]).length?`<div class="mt-5 border-t border-gray-200 dark:border-gray-700 pt-3"><div class="text-sm font-medium mb-1">Verstuurd</div>${f.verzendingen.slice().reverse().map(v=>`<div class="text-xs text-gray-600 dark:text-gray-300 mb-1">✉ ${esc(tijdKort(v.op))} naar ${esc((v.aan||[]).join(', '))}${(v.cc||[]).length?' (cc '+esc(v.cc.join(', '))+')':''}${(v.bijlagen||[]).length?' · bijlagen: '+esc(v.bijlagen.join(', ')):''}${v.yuki?' · kopie naar Yuki':''}${v.yukiFout?' · <span class="text-red-600">kopie naar Yuki mislukt</span>':''}</div>`).join('')}</div>`:''}
+   </div>`;
   document.body.appendChild(m);
   const sluit=()=>{m.remove();renderCurrentView()};
   const dis=concept?'':'disabled';
@@ -1530,6 +1534,7 @@ function openFactuurEditor(id){
       }catch(e){toast('Definitief maken mislukt: '+e.message,'error');knop.disabled=false;knop.textContent='Definitief maken'}
     };
   } else {
+    $('feMail').onclick=()=>openFactuurVersturen(f.id);
     $('fePdf').onclick=()=>factuurPdf(f.id,'open');
     $('fePdfDl').onclick=()=>factuurPdf(f.id,'download');
     if($('feBetaald'))$('feBetaald').onclick=()=>{m.remove();markeerBetaald(f.id)};
@@ -1567,11 +1572,11 @@ async function volgendFactuurnummer(){
 function openBedrijfsgegevens(){
   const b=bedrijf();
   const teller=DB.get('factuur_teller','1');
-  const velden=[['naam','Bedrijfsnaam'],['onderNaam','Onder de naam (bijv. Mesthandel & Transport)'],['adres','Adres'],['postcode','Postcode'],['plaats','Plaats'],['telefoon','Telefoon'],['email','E-mail (komt op de factuur)'],['iban','IBAN'],['tenaamstelling','Ten name van'],['kvk','KvK-nummer'],['btw','Btw-nummer'],['termijn','Betalingstermijn (dagen)']];
+  const velden=[['naam','Bedrijfsnaam'],['onderNaam','Onder de naam (bijv. Mesthandel & Transport)'],['adres','Adres'],['postcode','Postcode'],['plaats','Plaats'],['telefoon','Telefoon'],['email','E-mail (komt op de factuur)'],['iban','IBAN'],['tenaamstelling','Ten name van'],['kvk','KvK-nummer'],['btw','Btw-nummer'],['termijn','Betalingstermijn (dagen)'],['yukiEmail','Yuki-mailadres van de boekhouder (kopie van elke factuur)']];
   const m=document.createElement('div');m.id='fBedrijfM';m.className='fixed inset-0 bg-black/50 z-30 overflow-auto p-3';
   m.innerHTML=`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 w-full max-w-lg mx-auto my-4">
    <h3 class="font-bold mb-3">Bedrijfsgegevens op de factuur</h3>
-   <div class="grid grid-cols-2 gap-x-3">${velden.map(([k,l])=>`<div class="${['naam','onderNaam','adres','email','iban','tenaamstelling'].includes(k)?'col-span-2':''}"><label class="block text-xs font-medium mb-1" for="bg_${k}">${l}</label><input id="bg_${k}" value="${esc(String(b[k]??''))}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div>`).join('')}</div>
+   <div class="grid grid-cols-2 gap-x-3">${velden.map(([k,l])=>`<div class="${['naam','onderNaam','adres','email','iban','tenaamstelling','yukiEmail'].includes(k)?'col-span-2':''}"><label class="block text-xs font-medium mb-1" for="bg_${k}">${l}</label><input id="bg_${k}" value="${esc(String(b[k]??''))}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div>`).join('')}</div>
    <div class="border-t border-gray-200 dark:border-gray-700 mt-2 pt-3">
     <label class="block text-sm font-medium mb-1" for="bg_nr">Volgende factuurnummer</label>
     <input id="bg_nr" inputmode="numeric" value="${esc(teller&&teller.volgend?String(teller.volgend):'')}" placeholder="bijv. 2026350" class="w-full border rounded-xl px-3 py-2 mb-1 bg-white dark:bg-gray-700 dark:border-gray-600">
@@ -1581,6 +1586,7 @@ function openBedrijfsgegevens(){
   $('bgX').onclick=()=>m.remove();
   $('bgSave').onclick=async()=>{
     const w={};velden.forEach(([k])=>{w[k]=$('bg_'+k).value.trim()});w.termijn=parseInt(w.termijn,10)||30;
+    if(w.yukiEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(w.yukiEmail)){toast('Het Yuki-mailadres klopt niet','error');return}
     if(DB.get('instellingen','bedrijf'))DB.update('instellingen','bedrijf',{waarde:w});else DB.insert('instellingen',{id:'bedrijf',waarde:w});
     const nr=$('bg_nr').value.replace(/\D/g,'');
     if(nr&&String(teller&&teller.volgend||'')!==nr){
@@ -1731,7 +1737,163 @@ async function factuurPdf(id,actie){
     if(actie==='blob')return await new Promise(ok=>doc.getBlob(ok));
     if(actie==='download'){doc.download(naam);return}
     doc.getBlob(b=>{const u=URL.createObjectURL(b);if(w)w.location.href=u;else window.open(u,'_blank')});
-  }catch(e){if(w)w.close();toast('PDF maken mislukt: '+e.message,'error')}
+  }catch(e){if(actie==='blob')throw e;if(w)w.close();toast('PDF maken mislukt: '+e.message,'error')}
+}
+
+// ---- Factuur versturen per mail ----
+// De pdf's en bijlagen gaan eerst naar de besloten opslag (map facturen/<id>/), daarna verstuurt
+// /api/factuur-mail de mail via Gmail. Vooraf rekenen we uit of de mail niet te groot wordt.
+const MAIL_MAX=25*1024*1024;                 // Gmail: 25 MB per mail
+const mbF=n=>(n/1024/1024).toFixed(1).replace('.',',')+' MB';
+const veiligBestand=n=>String(n||'bestand').normalize('NFKD').replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_').slice(0,80)||'bestand';
+async function opslagUpload(pad,blob,type){
+  if(CONFIG.MODE!=='supabase')throw new Error('Versturen werkt alleen met de database (niet in demo-modus)');
+  await zorgVoorToken();
+  const r=await fetch(CONFIG.SUPABASE_URL+'/storage/v1/object/bijlagen/'+pad.split('/').map(encodeURIComponent).join('/'),{method:'POST',headers:{apikey:CONFIG.SUPABASE_ANON_KEY,Authorization:'Bearer '+AUTH_TOKEN,'Content-Type':type||blob.type||'application/octet-stream'},body:blob});
+  if(!r.ok){let m='Uploaden mislukt';try{const j=await r.json();m=j.message||j.error||m}catch(e){}throw new Error(m)}
+  return pad;
+}
+function standaardMailtekst(f,b){
+  const kl=f.klantId?DB.get('klanten',f.klantId):null;
+  const aanhef=kl&&kl.contact?'Beste '+kl.contact+',':'Geachte heer/mevrouw,';
+  const t=factuurTotalen(f.regels);
+  const groet=['Met vriendelijke groet,','',b.naam,b.onderNaam,b.telefoon].filter(x=>x!==undefined&&x!==null).join('\n');
+  if(f.soort==='credit')return aanhef+'\n\nIn de bijlage vindt u creditnota '+f.nummer+' van '+datumLangNL(f.factuurdatum)+' voor een bedrag van '+eurF(Math.abs(t.incl))+'.\n\nHeeft u vragen? Neem dan gerust contact met ons op.\n\n'+groet;
+  return aanhef+'\n\nIn de bijlage vindt u factuur '+f.nummer+' van '+datumLangNL(f.factuurdatum)+' voor een bedrag van '+eurF(t.incl)+'.\n\nWij verzoeken u dit bedrag vóór '+datumLangNL(f.vervaldatum)+' over te maken op '+b.iban+' t.n.v. '+(b.tenaamstelling||b.naam)+', onder vermelding van factuurnummer '+f.nummer+'.\n\nHeeft u vragen over deze factuur? Neem dan gerust contact met ons op.\n\n'+groet;
+}
+function openFactuurVersturen(id){
+  const f=DB.get('facturen',id);if(!f)return;
+  if(f.status==='concept'){toast('Maak de factuur eerst definitief','error');return}
+  const b=bedrijf();
+  const kl=f.klantId?DB.get('klanten',f.klantId):null;
+  const naarAdres=(kl&&kl.email)||(f.klant&&f.klant.email)||'';
+  const klussen=(f.klusIds||[]).map(p=>alleKlussen().find(k=>k.id===p.klusId)).filter(Boolean);
+  const cls='w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600';
+  const extra=[];   // {naam, blob}
+  const m=document.createElement('div');m.id='fMail';m.className='fixed inset-0 bg-black/50 z-40 overflow-auto p-3';
+  m.innerHTML=`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 w-full max-w-2xl mx-auto my-4">
+   <div class="flex items-start justify-between gap-2 mb-3"><h3 class="font-bold text-lg">${f.soort==='credit'?'Creditnota':'Factuur'} ${esc(f.nummer)} versturen</h3><button id="fmX" class="px-3 min-h-[44px] text-gray-500" aria-label="Sluiten">✕</button></div>
+   ${(f.verzendingen||[]).length?`<p class="text-xs text-amber-700 mb-3">Deze factuur is al eerder verstuurd (laatst op ${esc(tijdKort(f.verzendingen[f.verzendingen.length-1].op))}). Je verstuurt hem nu opnieuw.</p>`:''}
+   <label class="block text-sm font-medium mb-1" for="fm_aan">Aan (meerdere adressen scheiden met een komma)</label>
+   <input id="fm_aan" value="${esc(naarAdres)}" class="${cls} mb-1" placeholder="klant@voorbeeld.nl">
+   ${naarAdres?'':'<p class="text-xs text-amber-700 mb-2">Bij deze klant staat nog geen e-mailadres. Vul het hier in, of zet het vast bij Klanten → Wijzig.</p>'}
+   <label class="block text-sm font-medium mb-1 mt-2" for="fm_cc">Cc (optioneel)</label><input id="fm_cc" class="${cls} mb-3">
+   <label class="block text-sm font-medium mb-1" for="fm_ond">Onderwerp</label><input id="fm_ond" value="${esc((f.soort==='credit'?'Creditnota ':'Factuur ')+f.nummer+' – '+[b.naam,b.onderNaam].filter(Boolean).join(' '))}" class="${cls} mb-3">
+   <label class="block text-sm font-medium mb-1" for="fm_tekst">Bericht</label><textarea id="fm_tekst" rows="11" class="${cls} mb-3 text-sm" style="min-height:0">${esc(standaardMailtekst(f,b))}</textarea>
+   <div class="text-sm font-medium mb-1">Bijlagen</div>
+   <div class="text-sm mb-1">📄 ${esc((f.soort==='credit'?'Creditnota ':'Factuur ')+f.nummer)}.pdf <span class="text-xs text-gray-500">(altijd)</span></div>
+   ${klussen.length?`<label class="flex items-center gap-2 text-sm mb-1 min-h-[40px]"><input type="checkbox" id="fm_wb" style="min-height:auto"> Werkbon meesturen (${klussen.length} klus${klussen.length===1?'':'sen'})</label>`:''}
+   <div id="fm_extra" class="space-y-1 mb-2"></div>
+   <label class="inline-block px-3 py-2 rounded-xl bg-gray-200 dark:bg-gray-700 text-sm min-h-[44px] cursor-pointer mb-3">+ Bijlage toevoegen<input type="file" id="fm_file" multiple class="hidden"></label>
+   <div class="border-t border-gray-200 dark:border-gray-700 pt-3 mb-3">
+    <label class="flex items-center gap-2 text-sm min-h-[40px]"><input type="checkbox" id="fm_yuki" ${b.yukiEmail?'checked':''} ${b.yukiEmail?'':'disabled'} style="min-height:auto"> Kopie naar de boekhouding (Yuki)${b.yukiEmail?': <span class="text-gray-500">'+esc(b.yukiEmail)+'</span>':''}</label>
+    <p class="text-xs text-gray-500 ml-6">${b.yukiEmail?'Yuki krijgt een aparte mail met alleen de factuur-pdf, zonder bijlagen of werkbon.':'Vul het Yuki-adres in bij Facturen → Bedrijfsgegevens &amp; nummering.'}</p></div>
+   <div id="fm_maat" class="text-sm mb-3"></div>
+   <div class="flex gap-2"><button id="fmSend" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Versturen</button><button id="fmCancel" class="px-4 bg-gray-200 dark:bg-gray-700 rounded-xl min-h-[48px]">Annuleren</button></div></div>`;
+  document.body.appendChild(m);
+  let pdfMaat=150*1024,wbMaat=0;   // schatting tot de echte pdf's er zijn
+  const tekenExtra=()=>{
+    $('fm_extra').innerHTML=extra.map((x,i)=>`<div class="flex items-center justify-between gap-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1"><span class="truncate">📎 ${esc(x.naam)} <span class="text-xs text-gray-500">${mbF(x.blob.size)}</span></span><button data-fmrm="${i}" class="text-red-500 px-2 min-h-[36px]" aria-label="Bijlage verwijderen">✕</button></div>`).join('');
+    m.querySelectorAll('[data-fmrm]').forEach(bt=>bt.onclick=()=>{extra.splice(+bt.dataset.fmrm,1);tekenExtra()});
+    tekenMaat();
+  };
+  const tekenMaat=()=>{
+    const ruw=pdfMaat+(($('fm_wb')&&$('fm_wb').checked)?wbMaat||200*1024:0)+extra.reduce((s,x)=>s+x.blob.size,0);
+    const mail=Math.round(ruw*1.37)+30*1024;
+    const te=mail>MAIL_MAX;
+    $('fm_maat').innerHTML=`<div class="flex justify-between"><span>Grootte van de mail (ongeveer)</span><span class="${te?'text-red-600 font-bold':mail>MAIL_MAX*0.8?'text-amber-700 font-medium':'font-medium'}">${mbF(mail)} van 25 MB</span></div>
+      <div class="h-2 bg-gray-200 dark:bg-gray-700 rounded-full mt-1 overflow-hidden"><div class="h-2 ${te?'bg-red-600':mail>MAIL_MAX*0.8?'bg-amber-500':'bg-emerald-600'}" style="width:${Math.min(100,mail/MAIL_MAX*100).toFixed(0)}%"></div></div>
+      ${te?'<p class="text-xs text-red-600 mt-1">Te groot voor één mail. Haal een bijlage weg of verklein hem. (Bijlagen worden bij het versturen ongeveer een derde groter.)</p>':''}`;
+    $('fmSend').disabled=te;$('fmSend').classList.toggle('opacity-40',te);
+    return mail;
+  };
+  tekenExtra();
+  // echte grootte van de factuur-pdf alvast bepalen
+  factuurPdf(f.id,'blob').then(bl=>{if(bl){pdfMaat=bl.size;tekenMaat()}}).catch(()=>{});
+  if($('fm_wb'))$('fm_wb').onchange=async()=>{tekenMaat();if($('fm_wb').checked&&!wbMaat){try{const bl=await werkbonPdfBlob(klussen);wbMaat=bl.size;tekenMaat()}catch(e){}}};
+  $('fm_file').onchange=async e=>{
+    for(const file of [...e.target.files]){
+      let blob=file,naam=file.name;
+      // Foto's groter dan 1 MB verkleinen we (zoals bij de klussen); pdf's en andere bestanden blijven zoals ze zijn.
+      if(/^image\//.test(file.type)&&file.size>1024*1024){try{blob=await fotoVerkleinen(file);naam=naam.replace(/\.[^.]+$/,'')+'.jpg'}catch(x){}}
+      extra.push({naam,blob});
+    }
+    e.target.value='';tekenExtra();
+  };
+  const sluit=()=>m.remove();
+  $('fmX').onclick=sluit;$('fmCancel').onclick=sluit;
+  $('fmSend').onclick=async()=>{
+    const aan=$('fm_aan').value.trim();
+    if(!aan){toast('Vul een ontvanger in','error');return}
+    if(tekenMaat()>MAIL_MAX){toast('De mail is te groot','error');return}
+    if(CONFIG.MODE!=='supabase'){toast('Versturen werkt alleen met de database (niet in demo-modus)','error');return}
+    if(navigator.onLine===false){toast('Geen internet','error');return}
+    const knop=$('fmSend');knop.disabled=true;knop.textContent='Bezig met versturen…';
+    try{
+      const map='facturen/'+f.id+'/'+Date.now().toString(36)+'-';
+      const fnaam=((f.soort==='credit'?'Creditnota ':'Factuur ')+f.nummer+' - '+((f.klant&&f.klant.naam)||'')).replace(/[\\/:*?"<>|]/g,'').trim()+'.pdf';
+      const pdf=await factuurPdf(f.id,'blob');
+      const factuurPad=await opslagUpload(map+'factuur.pdf',pdf,'application/pdf');
+      const bijlagen=[];
+      if($('fm_wb')&&$('fm_wb').checked){const wb=await werkbonPdfBlob(klussen);bijlagen.push({pad:await opslagUpload(map+'werkbon.pdf',wb,'application/pdf'),naam:'Werkbon bij '+(f.soort==='credit'?'creditnota ':'factuur ')+f.nummer+'.pdf'})}
+      for(let i=0;i<extra.length;i++){const x=extra[i];bijlagen.push({pad:await opslagUpload(map+i+'-'+veiligBestand(x.naam),x.blob,x.blob.type),naam:x.naam})}
+      await zorgVoorToken();
+      const r=await fetch('/api/factuur-mail',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+AUTH_TOKEN},body:JSON.stringify({factuurId:f.id,aan,cc:$('fm_cc').value.trim(),onderwerp:$('fm_ond').value,tekst:$('fm_tekst').value,factuurPad,factuurNaam:fnaam,bijlagen,yuki:($('fm_yuki').checked&&b.yukiEmail)?b.yukiEmail:'',afzenderNaam:[b.naam,b.onderNaam].filter(Boolean).join(' ')})});
+      let j={};try{j=await r.json()}catch(e){}
+      if(!r.ok||!j.ok)throw new Error(j.fout||('Fout '+r.status));
+      // lokaal bijwerken (de server heeft het al vastgelegd)
+      const rij=DB.get('facturen',f.id);if(rij){rij.verstuurdOp=j.verstuurdOp;rij.pdfPad=factuurPad;rij.verzendingen=[...(rij.verzendingen||[]),j.verzending];cacheBewaar()}
+      sluit();
+      toast('Verstuurd naar '+aan+(j.yuki===true?' (en kopie naar Yuki)':'')+(j.yuki===false?' — let op: de kopie naar Yuki is mislukt':''),j.yuki===false?'error':'success');
+      document.querySelectorAll('#fEditor').forEach(x=>x.remove());renderCurrentView();
+    }catch(e){toast('Versturen mislukt: '+e.message,'error');knop.disabled=false;knop.textContent='Versturen'}
+  };
+}
+
+// ---- Werkbon als pdf (voor bij de mail), in dezelfde stijl als de factuur ----
+function werkbonPdfDef(lijst,b,img){
+  lijst=lijst.slice().sort((a,c)=>(a.datum||'').localeCompare(c.datum||'')||(a.startTijd||'').localeCompare(c.startTijd||''));
+  const kl=lijst[0]&&lijst[0].klant||{};
+  const grijs='#6b6b6b',lijn='#e4e1da',inkt='#111111';
+  const th=(tx,al)=>({text:tx.toUpperCase(),fontSize:6.4,bold:true,color:grijs,characterSpacing:1.1,alignment:al||'left'});
+  const dagNaam=iso=>{const d=new Date(iso+'T12:00:00');return isNaN(d)?(iso||''):DAGEN_KORT[d.getDay()]+' '+datumNL(iso)};
+  const uren=lijst.filter(k=>k.eenheid==='uur').reduce((s,k)=>s+(Number(k.aantal)||0),0);
+  const datums=[...new Set(lijst.map(k=>k.datum))].sort();
+  const kop=(datums.length>1?datumNL(datums[0])+' t/m '+datumNL(datums[datums.length-1]):datumNL(datums[0]||'')).toUpperCase();
+  return {
+    pageSize:'A4',pageOrientation:'portrait',pageMargins:[45,50,45,72],
+    info:{title:'Werkbon '+(kl.naam||''),author:b.naam},
+    defaultStyle:{font:'Inter',fontSize:8.6,color:inkt,lineHeight:1.2},
+    background:(page)=>page!==1?null:[
+      {image:img.banner,width:595.28,height:209.8,absolutePosition:{x:0,y:0}},
+      {canvas:[{type:'rect',x:0,y:0,w:595.28,h:3.4,color:FACT_GROEN}],absolutePosition:{x:0,y:209.8}},
+      {image:img.logo,width:176,absolutePosition:{x:45,y:42}},
+      {text:'WERKBON',font:'InterLicht',fontSize:27,characterSpacing:5,color:'#ffffff',absolutePosition:{x:45,y:124}},
+      {text:kop,fontSize:8.2,characterSpacing:1.6,color:FACT_SUB,absolutePosition:{x:45,y:163}}
+    ],
+    header:(page)=>page===1?null:{text:[{text:(b.naam||'').toUpperCase(),bold:true},'   ·   Werkbon (vervolg)'],fontSize:7,characterSpacing:1,color:FACT_GROEN,margin:[45,28,45,0]},
+    footer:(page,aantal)=>({margin:[45,18,45,0],stack:[{canvas:[{type:'line',x1:0,y1:0,x2:505.28,y2:0,lineWidth:0.5,lineColor:lijn}],margin:[0,0,0,6]},
+      {columns:[{text:[b.naam,b.onderNaam,b.adres+', '+b.postcode+' '+b.plaats,'T '+b.telefoon].filter(Boolean).join(' · '),fontSize:6.8,color:'#7a7a7a'},{text:'Pagina '+page+' van '+aantal,fontSize:6.8,color:'#7a7a7a',alignment:'right',width:90}]}]}),
+    content:[
+      {text:'',margin:[0,175,0,0]},
+      {text:'KLANT',fontSize:6.6,bold:true,color:FACT_GROEN,characterSpacing:1.2,margin:[0,0,0,5]},
+      {text:kl.naam||'',bold:true,fontSize:11},kl.adres?{text:kl.adres}:'',(kl.postcode||kl.plaats)?{text:[kl.postcode,kl.plaats].filter(Boolean).join('  ')}:'',
+      {margin:[0,22,0,0],table:{headerRows:1,dontBreakRows:true,widths:[60,68,'*',54,50,52,46],
+        body:[[th('Datum'),th('Medewerker'),th('Werkzaamheden'),th('Kenteken'),th('Tijd'),th('Aantal','right'),th('Gewogen','center')],
+          ...lijst.map(k=>[{text:dagNaam(k.datum),noWrap:true},k.medewerkerNaam||'',{stack:[{text:(k.dienst&&k.dienst.naam)||'',bold:true},k.omschrijving?{text:k.omschrijving,color:grijs}:'']},k.kenteken||'',k.startTijd&&k.eindTijd?k.startTijd+'–'+k.eindTijd:'',{text:num2(k.aantal)+' '+eenhLabel(k.eenheid),alignment:'right',noWrap:true},{text:k.wegenMonsteren?'Ja':'Nee',alignment:'center'}])]},
+        layout:{hLineWidth:i=>i===0?0:(i===1?1.2:0.5),hLineColor:i=>i===1?inkt:lijn,vLineWidth:()=>0,paddingLeft:i=>i===0?0:5,paddingRight:(i,n)=>i===n.table.widths.length-1?0:5,paddingTop:()=>5,paddingBottom:()=>5}},
+      lijst.length>1&&uren?{text:['Totaal uren: ',{text:num2(uren),bold:true}],alignment:'right',margin:[0,10,0,0]}:'',
+      {unbreakable:true,margin:[0,36,0,0],columns:[
+        {width:'*',stack:[{text:'Voor akkoord klant:',fontSize:8.4},{canvas:[{type:'line',x1:0,y1:26,x2:280,y2:26,lineWidth:0.7,lineColor:inkt}]},{text:'Naam en handtekening',fontSize:7,color:grijs,margin:[0,3,0,0]}]},
+        {width:150,stack:[{text:'Datum:',fontSize:8.4},{canvas:[{type:'line',x1:0,y1:26,x2:150,y2:26,lineWidth:0.7,lineColor:inkt}]}]}]}
+    ]
+  };
+}
+async function werkbonPdfBlob(klussen){
+  if(!klussen.length)throw new Error('Geen klussen');
+  const img=await pdfKlaarmaken();
+  const doc=pdfMake.createPdf(werkbonPdfDef(klussen,bedrijf(),img));
+  return await new Promise(ok=>doc.getBlob(ok));
 }
 
 // === BEHEER: CRUD VIEWS ===
