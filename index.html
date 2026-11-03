@@ -1547,6 +1547,27 @@ function openNieuweFactuur(){
   };
 }
 
+// ---- Bijlagen bij een factuur: eigen bestanden (bijv. overzicht uit de mestboekhouding) en foto's bij de klussen ----
+// Bewaard in factuur.bijlagen als [{pad, naam, grootte, bron:'upload'|'klus', mee:true|false}]
+function factuurKlusFotos(f){
+  const alle=alleKlussen();
+  return (f.klusIds||[]).map(x=>alle.find(k=>k.id===x.klusId)).filter(Boolean).flatMap(k=>(k.fotos||[]).map((pad,i)=>({pad,bron:'klus',naam:'Foto klus '+datumNL(k.datum)+(k.kenteken?' '+k.kenteken:'')+((k.fotos||[]).length>1?' ('+(i+1)+')':'')+'.jpg'})));
+}
+// Alle bijlagen van een factuur, met per bijlage of hij standaard mee gaat
+function factuurBijlagen(f){
+  const eigen=(f.bijlagen||[]).filter(x=>x.bron!=='klus');
+  const keuze={};(f.bijlagen||[]).filter(x=>x.bron==='klus').forEach(x=>keuze[x.pad]=x.mee!==false);
+  return [...eigen.map(x=>({...x,mee:x.mee!==false})),...factuurKlusFotos(f).map(x=>({...x,mee:!!keuze[x.pad]}))];
+}
+function bewaarFactuurBijlagen(id,lijst){
+  const r=DB.get('facturen',id);if(!r)return;
+  const data={...r,bijlagen:lijst.map(x=>({pad:x.pad,naam:x.naam,grootte:x.grootte||null,bron:x.bron,mee:x.mee!==false}))};
+  delete data.id;DB.update('facturen',id,data);
+}
+async function opslagVerwijder(pad){
+  try{await zorgVoorToken();await fetch(CONFIG.SUPABASE_URL+'/storage/v1/object/bijlagen/'+pad.split('/').map(encodeURIComponent).join('/'),{method:'DELETE',headers:{apikey:CONFIG.SUPABASE_ANON_KEY,Authorization:'Bearer '+AUTH_TOKEN}})}catch(e){}
+}
+
 // ---- Factuur als pagina: bewerken (concept) of bekijken (definitief) ----
 function openFactuurEditor(id){
   FACT_OPEN=id;
@@ -1614,6 +1635,12 @@ function renderFactuurPagina(id){
       <h2 id="h-opm" style="margin:0 0 12px;font-size:15px;font-weight:600"><label for="fe_opm">Opmerking op de factuur</label></h2>
       <textarea id="fe_opm" rows="3" class="${inv}" style="resize:vertical" placeholder="Bijv. referentie of projectnummer van de klant" ${dis}>${esc(f.opmerking||'')}</textarea>
      </section>
+     <section aria-labelledby="h-bijl" class="zk-kaart" style="padding:22px 24px">
+      <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:4px"><h2 id="h-bijl" style="margin:0;font-size:15px;font-weight:600">Bijlagen bij deze factuur</h2><span id="fe_bijlmaat" style="font-size:13px;color:#5a655e"></span></div>
+      <p style="margin:0 0 14px;font-size:13px;color:#5a655e">Wat hier aangevinkt staat, gaat standaard mee als je de factuur verstuurt. Bijvoorbeeld het overzicht uit je mestboekhouding, of de foto van een weegbon die bij de klus is gemaakt.</p>
+      <div id="fe_bijl"></div>
+      <label class="zk-stippel" style="display:inline-flex;align-items:center;margin-top:6px">+ Bestand toevoegen (pdf, foto, Excel…)<input type="file" id="fe_bijlIn" multiple class="sr-only"></label>
+     </section>
     </div>
     <aside aria-label="Totaal en controle" style="flex:1 1 320px;max-width:420px;display:flex;flex-direction:column;gap:20px">
      <section id="fe_tot" style="background:#101513;color:#e7ece9;border-radius:14px;padding:22px 24px"></section>
@@ -1676,13 +1703,48 @@ function renderFactuurPagina(id){
     $('fe_checks').innerHTML=c.map(([g,t])=>`<div style="display:flex;gap:10px;align-items:flex-start;font-size:13px;padding:6px 0;color:#3e4842"><span style="${g?ok:nee}" aria-hidden="true">${g?'✓':'!'}</span><span>${esc(t)}</span></div>`).join('');
   };
   toonAdres();tekenRegels();
+  let bijl=factuurBijlagen(f);
+  const tekenBijlagen=()=>{
+    const mee=bijl.filter(x=>x.mee);
+    $('fe_bijlmaat').textContent=bijl.length?mee.length+' van '+bijl.length+' gaat mee':'';
+    $('fe_bijl').innerHTML=bijl.length?bijl.map((x,i)=>{const ext=x.bron==='klus'?'FOTO':((x.naam.split('.').pop()||'').toUpperCase().slice(0,4));
+      return `<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid #e3e6e0;border-radius:10px;margin-bottom:8px">
+       <span data-thumb="${esc(x.pad)}" aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:8px;font-size:10px;font-weight:700;flex:none;background:${x.bron==='klus'?'#8a5a12':ext==='PDF'?'#2f6b45':'#5a655e'};color:#fff;background-size:cover;background-position:center">${esc(ext||'BEST')}</span>
+       <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.naam)}</div><div style="font-size:12px;color:#5a655e">${x.bron==='klus'?'foto bij de klus (gemaakt door de chauffeur)':(x.grootte?mbF(x.grootte):'')}</div></div>
+       ${x.bron==='klus'?`<button type="button" data-bijlzie="${i}" style="font:inherit;font-size:12px;color:#2f6b45;background:none;border:0;cursor:pointer;min-height:36px">bekijk</button>`:''}
+       <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;min-height:36px"><input type="checkbox" data-bijlmee="${i}" ${x.mee?'checked':''} style="width:18px;height:18px;min-height:auto;accent-color:#2f6b45"> meesturen</label>
+       ${x.bron!=='klus'?`<button type="button" data-bijldel="${i}" aria-label="Bijlage ${esc(x.naam)} verwijderen" style="font:inherit;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;border:0;background:#fdecea;color:#b42318;cursor:pointer;min-height:32px">verwijder</button>`:''}</div>`}).join('')
+      :'<p style="font-size:13px;color:#5a655e;margin:0 0 6px">Nog geen bijlagen. Foto\'s die de chauffeurs bij de klussen van deze factuur maken, verschijnen hier vanzelf.</p>';
+    // kleine voorbeeldjes van de foto's
+    if(CONFIG.MODE==='supabase')m.querySelectorAll('[data-thumb]').forEach(el=>{const x=bijl.find(b=>b.pad===el.dataset.thumb);if(!x||x.bron!=='klus')return;fotoUrl(x.pad).then(u=>{el.style.backgroundImage='url("'+u+'")';el.textContent=''}).catch(()=>{})});
+  };
+  tekenBijlagen();
+  $('fe_bijl').onclick=e=>{const b2=e.target.closest('button');if(!b2)return;
+    if(b2.dataset.bijlzie!==undefined){toonFotos([bijl[+b2.dataset.bijlzie].pad]);return}
+    if(b2.dataset.bijldel!==undefined){const x=bijl[+b2.dataset.bijldel];if(!confirm('Bijlage "'+x.naam+'" verwijderen?'))return;bijl.splice(+b2.dataset.bijldel,1);bewaarFactuurBijlagen(f.id,bijl);opslagVerwijder(x.pad);tekenBijlagen()}};
+  $('fe_bijl').onchange=e=>{if(e.target.dataset.bijlmee===undefined)return;bijl[+e.target.dataset.bijlmee].mee=e.target.checked;bewaarFactuurBijlagen(f.id,bijl);tekenBijlagen()};
+  $('fe_bijlIn').onchange=async e=>{
+    const files=[...e.target.files];e.target.value='';
+    for(const file of files){
+      try{
+        let blob=file,naam=file.name;
+        if(/^image\//.test(file.type)&&file.size>1024*1024){try{blob=await fotoVerkleinen(file);naam=naam.replace(/\.[^.]+$/,'')+'.jpg'}catch(x){}}
+        if(blob.size>15*1024*1024){toast(naam+' is te groot (meer dan 15 MB)','error');continue}
+        toast(naam+' uploaden…');
+        const pad=await opslagUpload('facturen/'+f.id+'/b-'+Date.now().toString(36)+'-'+veiligBestand(naam),blob,blob.type);
+        bijl.splice(bijl.filter(x=>x.bron!=='klus').length,0,{pad,naam,grootte:blob.size,bron:'upload',mee:true});
+        bewaarFactuurBijlagen(f.id,bijl);tekenBijlagen();toast(naam+' toegevoegd','success');
+      }catch(err){toast('Toevoegen mislukt: '+err.message,'error')}
+    }
+  };
   $('feX').onclick=e=>{e.preventDefault();sluit()};
   const voorbeeld=()=>{if(concept)bewaar(true);factuurPdf(f.id,'open')};
   $('feGroot').onclick=voorbeeld;$('feMini').onclick=voorbeeld;
   const bewaar=(stil)=>{
     if(!concept)return f0;
     const t=factuurTotalen(f.regels);
-    const data={...f,regels:f.regels.map(r=>({...r,aantal:getal(r.aantal),prijs:getal(r.prijs)})),totaalExcl:t.excl,totaalBtw:t.btw,totaalIncl:t.incl};
+    const nu=DB.get('facturen',f.id)||{};
+    const data={...f,bijlagen:nu.bijlagen||f.bijlagen||[],regels:f.regels.map(r=>({...r,aantal:getal(r.aantal),prijs:getal(r.prijs)})),totaalExcl:t.excl,totaalBtw:t.btw,totaalIncl:t.incl};
     delete data.id;DB.update('facturen',f.id,data);if(!stil)toast('Concept opgeslagen','success');return data;
   };
   if(concept){
@@ -1968,6 +2030,7 @@ function openFactuurVersturen(id,soort){
   const klussen=(f.klusIds||[]).map(p=>alleKlussen().find(k=>k.id===p.klusId)).filter(Boolean);
   const cls='w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600';
   const extra=[];   // {naam, blob}
+  const vast=factuurBijlagen(f);   // bijlagen die bij de factuur zijn bewaard (incl. foto's bij de klussen)
   const m=document.createElement('div');m.id='fMail';m.className='fixed inset-0 z-40 overflow-auto p-3';m.style.background='rgba(16,21,19,.6)';
   const tot=factuurTotalen(f.regels);
   const lab='display:block;font-size:13px;color:#3e4842;font-weight:500;margin-bottom:6px';
@@ -1989,6 +2052,7 @@ function openFactuurVersturen(id,soort){
     <div style="flex:1 1 320px;max-width:400px;padding:24px 28px;background:#fafbf9;display:flex;flex-direction:column;gap:18px">
      <div><div style="font-size:13px;font-weight:600;margin-bottom:10px">Bijlagen</div>
       <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:#fff;border:1px solid #e3e6e0;border-radius:10px;margin-bottom:8px"><span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;font-size:11px;font-weight:700;background:#2f6b45;color:#fff;flex:none">PDF</span><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((f.soort==='credit'?'Creditnota ':'Factuur ')+f.nummer)}.pdf</div><div id="fm_pdfmaat" style="font-size:12px;color:#5a655e">wordt gemaakt…</div></div><span class="zk-pil" style="font-size:11px;padding:3px 8px;background:#e6f2ea;color:#245a39">altijd</span></div>
+      <div id="fm_vast"></div>
       <div id="fm_extra"></div>
       <label style="display:flex;align-items:center;justify-content:center;width:100%;height:44px;border-radius:10px;border:1px dashed #b9c1b8;background:#fff;font-size:13px;font-weight:500;cursor:pointer;margin-top:4px">+ Bijlage toevoegen<input type="file" id="fm_file" multiple class="sr-only"></label></div>
      <div style="display:flex;flex-direction:column;gap:10px">
@@ -2004,13 +2068,17 @@ function openFactuurVersturen(id,soort){
    </div></div>`;
   document.body.appendChild(m);
   let pdfMaat=150*1024,wbMaat=0;   // schatting tot de echte pdf's er zijn
+  const tekenVast=()=>{
+    $('fm_vast').innerHTML=vast.map((x,i)=>`<label style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:#fff;border:1px solid #e3e6e0;border-radius:10px;margin-bottom:8px;cursor:pointer"><span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;font-size:10px;font-weight:700;background:${x.bron==='klus'?'#8a5a12':'#5a655e'};color:#fff;flex:none">${x.bron==='klus'?'FOTO':esc((x.naam.split('.').pop()||'').toUpperCase().slice(0,4))}</span><span style="flex:1;min-width:0"><span style="display:block;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.naam)}</span><span style="font-size:12px;color:#5a655e">${x.bron==='klus'?'foto bij de klus':(x.grootte?mbF(x.grootte):'')}</span></span><input type="checkbox" data-fmvast="${i}" ${x.mee?'checked':''} style="width:20px;height:20px;min-height:auto;accent-color:#2f6b45"></label>`).join('');
+    m.querySelectorAll('[data-fmvast]').forEach(c=>c.onchange=()=>{vast[+c.dataset.fmvast].mee=c.checked;tekenMaat()});
+  };
   const tekenExtra=()=>{
     $('fm_extra').innerHTML=extra.map((x,i)=>{const ext=(x.naam.split('.').pop()||'').toUpperCase().slice(0,4);return `<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:#fff;border:1px solid #e3e6e0;border-radius:10px;margin-bottom:8px"><span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;font-size:11px;font-weight:700;background:${ext==='PDF'?'#5a655e':'#8a5a12'};color:#fff;flex:none">${esc(ext||'BEST')}</span><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.naam)}</div><div style="font-size:12px;color:#5a655e">${mbF(x.blob.size)}</div></div><button type="button" data-fmrm="${i}" aria-label="Bijlage ${esc(x.naam)} verwijderen" style="font:inherit;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;border:0;background:#fdecea;color:#b42318;cursor:pointer;min-height:32px">verwijder</button></div>`}).join('');
     m.querySelectorAll('[data-fmrm]').forEach(bt=>bt.onclick=()=>{extra.splice(+bt.dataset.fmrm,1);tekenExtra()});
     tekenMaat();
   };
   const tekenMaat=()=>{
-    const ruw=pdfMaat+(($('fm_wb')&&$('fm_wb').checked)?wbMaat||200*1024:0)+extra.reduce((s,x)=>s+x.blob.size,0);
+    const ruw=pdfMaat+(($('fm_wb')&&$('fm_wb').checked)?wbMaat||200*1024:0)+extra.reduce((s,x)=>s+x.blob.size,0)+vast.filter(x=>x.mee).reduce((s,x)=>s+(x.grootte||350*1024),0);
     const mail=Math.round(ruw*1.37)+30*1024;
     const te=mail>MAIL_MAX;
     $('fm_maat').innerHTML=`<div style="display:flex;justify-content:space-between;font-size:13px"><span style="font-weight:600">Grootte van de mail</span><span style="font-weight:600;color:${te?'#b42318':'#14181a'}">${mbF(mail)} <span style="color:#5a655e;font-weight:400">van 25 MB</span></span></div>
@@ -2019,7 +2087,7 @@ function openFactuurVersturen(id,soort){
     $('fmSend').disabled=te;
     return mail;
   };
-  tekenExtra();
+  tekenVast();tekenExtra();
   // echte grootte van de factuur-pdf alvast bepalen
   factuurPdf(f.id,'blob').then(bl=>{if(bl){pdfMaat=bl.size;if($('fm_pdfmaat'))$('fm_pdfmaat').textContent=mbF(bl.size);tekenMaat()}}).catch(()=>{if($('fm_pdfmaat'))$('fm_pdfmaat').textContent='kon niet worden gemaakt'});
   if($('fm_wb'))$('fm_wb').onchange=async()=>{tekenMaat();if($('fm_wb').checked&&!wbMaat){try{const bl=await werkbonPdfBlob(klussen);wbMaat=bl.size;tekenMaat()}catch(e){}}};
@@ -2048,6 +2116,10 @@ function openFactuurVersturen(id,soort){
       const factuurPad=await opslagUpload(map+'factuur.pdf',pdf,'application/pdf');
       const bijlagen=[];
       if($('fm_wb')&&$('fm_wb').checked){const wb=await werkbonPdfBlob(klussen);bijlagen.push({pad:await opslagUpload(map+'werkbon.pdf',wb,'application/pdf'),naam:'Werkbon bij '+(f.soort==='credit'?'creditnota ':'factuur ')+f.nummer+'.pdf'})}
+      for(const x of vast.filter(v=>v.mee)){
+        if(x.bron==='klus'){const r2_=await fetch(await fotoUrl(x.pad));if(!r2_.ok)throw new Error('Foto '+x.naam+' kon niet worden opgehaald');const bl=await r2_.blob();bijlagen.push({pad:await opslagUpload(map+'f-'+veiligBestand(x.naam),bl,bl.type||'image/jpeg'),naam:x.naam})}
+        else bijlagen.push({pad:x.pad,naam:x.naam});
+      }
       for(let i=0;i<extra.length;i++){const x=extra[i];bijlagen.push({pad:await opslagUpload(map+i+'-'+veiligBestand(x.naam),x.blob,x.blob.type),naam:x.naam})}
       await zorgVoorToken();
       const r=await fetch('/api/factuur-mail',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+AUTH_TOKEN},body:JSON.stringify({factuurId:f.id,aan,cc:$('fm_cc').value.trim(),onderwerp:$('fm_ond').value,tekst:$('fm_tekst').value,factuurPad,factuurNaam:fnaam,bijlagen,yuki:(!herinnering&&$('fm_yuki').checked&&b.yukiEmail)?b.yukiEmail:'',soort:herinnering?'herinnering':'factuur',afzenderNaam:[b.naam,b.onderNaam].filter(Boolean).join(' ')})});
