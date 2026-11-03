@@ -1473,7 +1473,7 @@ function renderFacturen(){
      <tbody>${lijst.length?lijst.map(({f,s})=>{const laat=s==='verlopen'?-(dagenTot(f.vervaldatum)||0):0;const v=f.verzendingen&&f.verzendingen.length?f.verzendingen[f.verzendingen.length-1]:null;
       return `<tr style="border-top:1px solid #eceee9">
        <td style="padding:14px 16px;font-weight:600;white-space:nowrap">${f.nummer?esc(f.nummer):'<span style="color:#5a655e;font-weight:500">Concept</span>'}</td>
-       <td style="padding:14px 16px"><div style="font-weight:500">${esc(f.klant?f.klant.naam:'—')}</div><div style="font-size:12px;color:#5a655e">${esc(f.klant&&f.klant.plaats||'')}</div></td>
+       <td style="padding:14px 16px"><div style="font-weight:500">${f.klantId&&DB.get('klanten',f.klantId)?`<button type="button" data-fklant-open="${f.klantId}" style="font:inherit;font-weight:500;background:none;border:0;padding:0;color:inherit;cursor:pointer;text-align:left;text-decoration:underline;text-decoration-color:#c9d3cc">${esc(f.klant?f.klant.naam:'—')}</button>`:esc(f.klant?f.klant.naam:'—')}</div><div style="font-size:12px;color:#5a655e">${esc(f.klant&&f.klant.plaats||'')}</div></td>
        <td style="padding:14px 16px;color:#3e4842;white-space:nowrap">${esc(datumNL(f.factuurdatum))}</td>
        <td style="padding:14px 16px;color:#3e4842;white-space:nowrap">${f.soort==='credit'?'—':esc(datumNL(f.vervaldatum))}${laat?`<div style="font-size:12px;color:#b42318;font-weight:500">${laat} dag${laat===1?'':'en'} te laat</div>`:''}</td>
        <td style="padding:14px 16px;text-align:right;font-weight:600;white-space:nowrap">${eurF(f.totaalIncl)}</td>
@@ -1497,6 +1497,7 @@ function renderFacturen(){
   $('fBedrijf').onclick=openBedrijfsgegevens;
   document.querySelectorAll('[data-fopen]').forEach(b=>b.onclick=()=>openFactuurEditor(b.dataset.fopen));
   document.querySelectorAll('[data-fmail]').forEach(b=>b.onclick=()=>openFactuurVersturen(b.dataset.fmail));
+  document.querySelectorAll('[data-fklant-open]').forEach(b=>b.onclick=()=>openKlantOverzicht(b.dataset.fklantOpen));
   document.querySelectorAll('[data-fherinner]').forEach(b=>b.onclick=()=>openFactuurVersturen(b.dataset.fherinner,'herinnering'));
   document.querySelectorAll('[data-fpdf]').forEach(b=>b.onclick=()=>factuurPdf(b.dataset.fpdf,'open'));
   document.querySelectorAll('[data-fbetaald]').forEach(b=>b.onclick=()=>markeerBetaald(b.dataset.fbetaald));
@@ -1675,7 +1676,7 @@ function renderFactuurPagina(id){
    </div></div>`;
   const sluit=()=>{FACT_OPEN=null;renderFacturen()};
   const toonAdres=()=>{const k=f.klant;const kl=f.klantId?DB.get('klanten',f.klantId):null;const mail=(kl&&kl.email)||(k&&k.email)||'';
-    $('fe_kladres').innerHTML=k?[esc(k.adres||''),esc([k.postcode,k.plaats].filter(Boolean).join(' ')),k.btwnummer?'btw-nr '+esc(k.btwnummer):'',mail?'<span style="color:#2f6b45;font-weight:500">'+esc(mail)+'</span>':'<span style="color:#8a5a12">nog geen e-mailadres</span>'].filter(Boolean).join('<br>'):'Nog geen klant gekozen'};
+    $('fe_kladres').innerHTML=k?[esc(k.adres||''),esc([k.postcode,k.plaats].filter(Boolean).join(' ')),k.btwnummer?'btw-nr '+esc(k.btwnummer):'',mail?'<span style="color:#2f6b45;font-weight:500">'+esc(mail)+'</span>':'<span style="color:#8a5a12">nog geen e-mailadres</span>',kl?'<button type="button" id="feKlantOv" style="font:inherit;font-size:13px;font-weight:500;color:#2f6b45;background:none;border:0;padding:0;margin-top:4px;cursor:pointer">Klantoverzicht →</button>':''].filter(Boolean).join('<br>'):'Nog geen klant gekozen';if($('feKlantOv'))$('feKlantOv').onclick=()=>{if(concept&&!confirm('Naar het klantoverzicht? Niet-opgeslagen wijzigingen in dit concept gaan verloren.'))return;openKlantOverzicht(kl.id)}};
   const openKlussenVanKlant=()=>{if(!f.klantId)return [];const al=new Set(f.klusIds.map(x=>x.klusId));return alleKlussen().filter(k=>k.klantId===f.klantId&&!k.gefactureerd&&!al.has(k.id))};
   const tekenRegels=()=>{
     $('fe_regels').innerHTML=f.regels.length?f.regels.map((r,i)=>`<tr data-ri="${i}" style="border-top:1px solid #eceee9;vertical-align:top">
@@ -2199,8 +2200,99 @@ async function werkbonPdfBlob(klussen){
 }
 
 // === BEHEER: CRUD VIEWS ===
+// === KLANTOVERZICHT (per klant: facturen, openstaand, betaalgedrag, omzet, klussen) ===
+let KLANT_OPEN=null;
+function openKlantOverzicht(id){
+  KLANT_OPEN=id;
+  if(currentMode!=='beheer'||currentBeheerTab!=='klanten')switchTab('klanten');else renderKlanten();
+  try{window.scrollTo(0,0)}catch(e){}
+}
+function renderKlantPagina(id){
+  const k=DB.get('klanten',id);if(!k){KLANT_OPEN=null;return renderKlanten()}
+  const fact=DB.list('facturen').filter(f=>f.klantId===id).sort((a,b)=>(b.factuurdatum||'').localeCompare(a.factuurdatum||'')||String(b.nummer||'~').localeCompare(String(a.nummer||'~')));
+  const def=fact.filter(f=>f.status!=='concept');
+  const jaar=vandaagIso().slice(0,4);
+  const st=fact.map(f=>({f,s:factuurStatus(f)}));
+  const open=st.filter(o=>o.s==='open'||o.s==='verlopen');
+  const verl=st.filter(o=>o.s==='verlopen');
+  const som=(arr,v)=>arr.reduce((x,o)=>x+(Number((o.f||o)[v||'totaalIncl'])||0),0);
+  const omzetJaar=def.filter(f=>(f.factuurdatum||'').slice(0,4)===jaar).reduce((x,f)=>x+(Number(f.totaalExcl)||0),0);
+  // betaalgedrag: dagen tussen factuurdatum en betaling
+  const betaald=def.filter(f=>f.status==='betaald'&&f.betaaldOp&&f.factuurdatum&&f.soort!=='credit');
+  const dagenTussen=(a,b)=>Math.round((new Date(b+'T12:00:00')-new Date(a+'T12:00:00'))/86400000);
+  const gem=betaald.length?Math.round(betaald.reduce((x,f)=>x+dagenTussen(f.factuurdatum,f.betaaldOp),0)/betaald.length):null;
+  const telaat=betaald.filter(f=>f.vervaldatum&&f.betaaldOp>f.vervaldatum).length;
+  // omzet per jaar (excl. btw, definitieve facturen en creditnota's)
+  const perJaar={};def.forEach(f=>{const j=(f.factuurdatum||'').slice(0,4);if(j)perJaar[j]=(perJaar[j]||0)+(Number(f.totaalExcl)||0)});
+  const jaren=Object.keys(perJaar).sort().reverse().slice(0,5);
+  const maxJ=Math.max(1,...jaren.map(j=>Math.abs(perJaar[j])));
+  const klussen=alleKlussen().filter(x=>x.klantId===id);
+  const openKl=klussen.filter(x=>!x.gefactureerd);
+  const openUren=openKl.filter(x=>x.eenheid==='uur').reduce((t,x)=>t+(Number(x.aantal)||0),0);
+  const kaart=(label,waarde,sub,kleur)=>`<div class="zk-kaart" style="padding:18px 20px"><div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:13px;color:#5a655e;font-weight:500">${label}</span><span style="width:8px;height:8px;border-radius:50%;background:${kleur}"></span></div><div style="font-size:24px;font-weight:600;margin-top:10px;letter-spacing:-.01em">${waarde}</div><div style="font-size:13px;color:#5a655e;margin-top:4px">${sub}</div></div>`;
+  $('main').innerHTML=`<div class="max-w-full mx-auto" style="padding:4px 8px 32px">
+   <div style="font-size:13px;color:#5a655e;margin-bottom:8px"><a href="#" id="koTerug" style="color:#2f6b45;text-decoration:none;font-weight:500">Klanten</a> <span aria-hidden="true">/</span> ${esc(k.naam)}</div>
+   <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h1 style="margin:0;font-size:28px;font-weight:600;letter-spacing:-.01em">${esc(k.naam)}</h1>${k.klantcode?`<span class="zk-pil" style="background:#eceeea;color:#3e4842">${esc(k.klantcode)}</span>`:''}${k.actief===false?'<span class="zk-pil" style="background:#fdecea;color:#b42318">Niet actief</span>':''}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px"><button type="button" id="koWijzig" class="zk-knop">Gegevens wijzigen</button><button type="button" id="koFactuur" class="zk-hoofd">+ Nieuwe factuur${openKl.length?' ('+openKl.length+' open klus'+(openKl.length===1?'':'sen')+')':''}</button></div>
+   </div>
+   <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
+    <div style="flex:999 1 560px;min-width:0;display:flex;flex-direction:column;gap:20px">
+     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px">
+      ${kaart('Omzet '+jaar,eurF(omzetJaar),'excl. btw','#2f6b45')}
+      ${kaart('Openstaand',eurF(som(open)),open.length+' factu'+(open.length===1?'ur':'ren'),'#1d4ed8')}
+      ${kaart('Verlopen',eurF(som(verl)),verl.length?verl.length+' te laat':'niets te laat','#b42318')}
+      ${kaart('Betaalt gemiddeld na',gem===null?'—':gem+' dagen',betaald.length?betaald.length+' betaald · '+telaat+' te laat':'nog geen betalingen','#5a655e')}
+     </div>
+     <section class="zk-kaart" style="overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:18px 24px 12px"><h2 style="margin:0;font-size:15px;font-weight:600">Facturen</h2><span style="font-size:13px;color:#5a655e">${fact.length} in totaal</span></div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px;min-width:640px">
+       <thead><tr style="background:#fafbf9">${['Nummer','Datum','Vervaldatum','Bedrag','Status'].map((h,i)=>`<th class="zk-th" style="text-align:${i===3?'right':'left'};padding:10px 16px${i===0?' 10px 24px':''}">${h}</th>`).join('')}</tr></thead>
+       <tbody>${st.length?st.map(({f,s})=>`<tr style="border-top:1px solid #eceee9;cursor:pointer" data-kofact="${f.id}"><td style="padding:12px 16px 12px 24px;font-weight:600"><button type="button" data-kofact="${f.id}" style="font:inherit;font-weight:600;background:none;border:0;padding:0;color:inherit;cursor:pointer;text-decoration:underline;text-decoration-color:#c9d3cc">${f.nummer?esc(f.nummer):'Concept'}</button></td><td style="padding:12px 16px;color:#3e4842">${esc(datumNL(f.factuurdatum))}</td><td style="padding:12px 16px;color:#3e4842">${f.soort==='credit'?'—':esc(datumNL(f.vervaldatum))}</td><td style="padding:12px 16px;text-align:right;font-weight:600">${eurF(f.totaalIncl)}</td><td style="padding:12px 16px">${fPil(s)}${f.status==='betaald'&&f.betaaldOp?`<span style="font-size:12px;color:#5a655e;margin-left:6px">${esc(datumNL(f.betaaldOp))}</span>`:''}</td></tr>`).join('')
+        :'<tr><td colspan="5" style="padding:28px 24px;text-align:center;color:#5a655e">Nog geen facturen voor deze klant.</td></tr>'}</tbody></table></div>
+     </section>
+     <section class="zk-kaart" style="overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:18px 24px 12px"><h2 style="margin:0;font-size:15px;font-weight:600">Laatste klussen</h2><span style="font-size:13px;color:#5a655e">${openKl.length} nog te factureren${openUren?' · '+fmtNum(openUren).replace('.',',')+' uur':''}</span></div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px;min-width:640px">
+       <thead><tr style="background:#fafbf9">${['Datum','Medewerker','Werkzaamheden','Aantal','Facturatie'].map((h,i)=>`<th class="zk-th" style="text-align:${i===3?'right':'left'};padding:10px 16px${i===0?' 10px 24px':''}">${h}</th>`).join('')}</tr></thead>
+       <tbody>${klussen.length?klussen.slice(0,12).map(x=>`<tr style="border-top:1px solid #eceee9"><td style="padding:12px 16px 12px 24px;white-space:nowrap">${datumMetDag(x.datum)}</td><td style="padding:12px 16px">${esc(x.medewerkerNaam||'')}</td><td style="padding:12px 16px"><div style="font-weight:500">${esc(x.dienst?x.dienst.naam:'')}</div><div style="font-size:12px;color:#5a655e">${esc([x.kenteken,x.omschrijving].filter(Boolean).join(' · '))}</div></td><td style="padding:12px 16px;text-align:right;white-space:nowrap">${esc(String(x.aantal))} ${esc(eenhLabel(x.eenheid))}</td><td style="padding:12px 16px">${x.gefactureerd?`<span class="zk-pil" style="${F_PIL.betaald}">Gefactureerd${x.factuurnummer?' · '+esc(x.factuurnummer):''}</span>`:`<span class="zk-pil" style="background:#fdf1dd;color:#8a5a12">Te factureren</span>`}</td></tr>`).join('')
+        :'<tr><td colspan="5" style="padding:28px 24px;text-align:center;color:#5a655e">Nog geen klussen voor deze klant.</td></tr>'}</tbody></table></div>
+      ${klussen.length>12?`<div style="padding:12px 24px;border-top:1px solid #eceee9;font-size:13px;color:#5a655e">${klussen.length-12} oudere klussen staan bij Klussen.</div>`:''}
+     </section>
+    </div>
+    <aside style="flex:1 1 300px;max-width:400px;display:flex;flex-direction:column;gap:20px">
+     <section class="zk-kaart" style="padding:20px 22px">
+      <h2 style="margin:0 0 12px;font-size:15px;font-weight:600">Gegevens</h2>
+      <div style="font-size:14px;line-height:1.6;color:#3e4842">${[esc(k.adres||''),esc([k.postcode,k.plaats].filter(Boolean).join(' '))].filter(Boolean).join('<br>')||'<span style="color:#5a655e">Geen adres bekend</span>'}</div>
+      <dl style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:14px 0 0;font-size:13px">
+       <dt style="color:#5a655e">Contact</dt><dd style="margin:0">${esc(k.contact||'—')}</dd>
+       <dt style="color:#5a655e">E-mail</dt><dd style="margin:0;word-break:break-all">${k.email?`<a href="mailto:${esc(k.email)}">${esc(k.email)}</a>`:'<span style="color:#8a5a12">nog niet ingevuld</span>'}</dd>
+       <dt style="color:#5a655e">Telefoon</dt><dd style="margin:0">${k.telefoon?`<a href="tel:${esc(k.telefoon)}">${esc(k.telefoon)}</a>`:'—'}</dd>
+       <dt style="color:#5a655e">Btw-nr</dt><dd style="margin:0">${esc(k.btwnummer||'—')}</dd>
+      </dl>
+     </section>
+     <section class="zk-kaart" style="padding:20px 22px">
+      <h2 style="margin:0 0 12px;font-size:15px;font-weight:600">Omzet per jaar</h2>
+      ${jaren.length?jaren.map(j=>`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:13px"><span>${j}</span><span style="font-weight:600">${eurF(perJaar[j])}</span></div><div style="height:8px;background:#eef0ec;border-radius:4px;margin-top:4px;overflow:hidden"><div style="height:8px;border-radius:4px;background:#2f6b45;width:${(Math.abs(perJaar[j])/maxJ*100).toFixed(0)}%"></div></div></div>`).join('')+'<div style="font-size:12px;color:#5a655e">Excl. btw, op basis van de facturen in deze app.</div>'
+        :'<p style="margin:0;font-size:13px;color:#5a655e">Nog geen facturen in deze app.</p>'}
+     </section>
+    </aside>
+   </div></div>`;
+  $('koTerug').onclick=e=>{e.preventDefault();KLANT_OPEN=null;renderKlanten()};
+  $('koWijzig').onclick=()=>openKlantEditor(id,DB.list('klanten'));
+  $('koFactuur').onclick=()=>{
+    if(openKl.length){factureerKlussen(openKl.map(x=>({dagId:x.dagId,klusId:x.id})));return}
+    const b=bedrijf(),datum=vandaagIso();
+    const f=DB.insert('facturen',{nummer:null,soort:'factuur',status:'concept',klantId:k.id,klant:klantSnapshot(k),factuurdatum:datum,vervaldatum:plusDagen(datum,b.termijn),regels:[],opmerking:'',klusIds:[],bijlagen:[],totaalExcl:0,totaalBtw:0,totaalIncl:0});
+    openFactuurEditor(f.id);
+  };
+  document.querySelectorAll('[data-kofact]').forEach(el=>el.onclick=e=>{e.stopPropagation();openFactuurEditor(el.dataset.kofact)});
+}
+
 const KLQ={q:''};
 function renderKlanten(){
+  if(KLANT_OPEN&&DB.get('klanten',KLANT_OPEN))return renderKlantPagina(KLANT_OPEN);
+  KLANT_OPEN=null;
   const items=DB.list('klanten');
   const q=KLQ.q.trim().toLowerCase();
   const zichtbaar=q?items.filter(k=>[k.klantcode,k.naam,k.adres,k.postcode,k.plaats,k.contact,k.email,k.telefoon].join(' ').toLowerCase().includes(q)):items;
@@ -2215,11 +2307,12 @@ function renderKlanten(){
   <table class="w-full text-xs md:text-[13px] min-w-[600px] md:min-w-0"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
   <th class="px-3 py-2 text-left">Code</th><th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2 text-left">Adres</th><th class="px-3 py-2 text-left">Plaats</th><th class="px-3 py-2 text-left">Contact</th><th class="px-3 py-2 text-left">Email</th><th class="px-3 py-2 text-left">Telefoon</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th>
   </tr></thead><tbody>${zichtbaar.length?'':'<tr><td colspan="9" class="px-3 py-8 text-center text-gray-400">Geen klanten gevonden</td></tr>'}${zichtbaar.map(k=>`<tr class="border-t border-gray-100 dark:border-gray-700">
-  <td class="px-3 py-2 whitespace-nowrap text-gray-500">${esc(k.klantcode)}</td><td class="px-3 py-2">${esc(k.naam)}</td><td class="px-3 py-2">${esc(k.adres)}${k.postcode?'<br><span class="text-xs text-gray-500">'+esc(k.postcode)+'</span>':''}</td><td class="px-3 py-2">${esc(k.plaats)}</td><td class="px-3 py-2">${esc(k.contact)}</td><td class="px-3 py-2">${esc(k.email)}</td><td class="px-3 py-2">${esc(k.telefoon)}</td>
+  <td class="px-3 py-2 whitespace-nowrap text-gray-500">${esc(k.klantcode)}</td><td class="px-3 py-2"><button type="button" data-klant-open="${k.id}" class="font-medium underline decoration-gray-300 hover:text-emerald-700 text-left" style="min-height:32px">${esc(k.naam)}</button></td><td class="px-3 py-2">${esc(k.adres)}${k.postcode?'<br><span class="text-xs text-gray-500">'+esc(k.postcode)+'</span>':''}</td><td class="px-3 py-2">${esc(k.plaats)}</td><td class="px-3 py-2">${esc(k.contact)}</td><td class="px-3 py-2">${esc(k.email)}</td><td class="px-3 py-2">${esc(k.telefoon)}</td>
   <td class="px-3 py-2 text-center">${k.actief!==false?'<span class="text-emerald-700 dark:text-emerald-400 font-medium">Ja</span>':'<span class="text-gray-400">Nee</span>'}</td>
   <td class="px-3 py-2"><button data-edit-klant="${k.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">Wijzig</button><button data-del-klant="${k.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">Verwijder</button></td></tr>`).join('')}
   </tbody></table></div></div>`;
   bindKlantenCRUD(items);
+  document.querySelectorAll('[data-klant-open]').forEach(b=>b.onclick=()=>openKlantOverzicht(b.dataset.klantOpen));
   $('klantZoek').oninput=e=>{KLQ.q=e.target.value;const p=e.target.selectionStart;renderKlanten();const z=$('klantZoek');z.focus();try{z.setSelectionRange(p,p)}catch(x){}};
 }
 function bindKlantenCRUD(items){
@@ -3619,7 +3712,7 @@ function initPWA(){
 function bindChrome(){
   $('modeToggle').onchange=e=>{currentMode=e.target.value;navPush();renderBottomNav();renderCurrentView();zetTabMarkering()};
   document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{switchView(b.dataset.view);document.querySelectorAll('[data-view]').forEach(x=>{x.classList.toggle('text-emerald-700',x.dataset.view===currentView);x.classList.toggle('text-gray-500',x.dataset.view!==currentView)})});
-  document.querySelectorAll('.tab-btn').forEach(b=>b.onclick=()=>{if(b.dataset.tab==='facturen')FACT_OPEN=null;switchTab(b.dataset.tab)});
+  document.querySelectorAll('.tab-btn').forEach(b=>b.onclick=()=>{if(b.dataset.tab==='facturen')FACT_OPEN=null;if(b.dataset.tab==='klanten')KLANT_OPEN=null;switchTab(b.dataset.tab)});
   const uit=$('logoutBtn');
   if(uit)uit.onclick=()=>{ if(confirm('Weet je zeker dat je wilt uitloggen?')) uitloggen() };
 }
