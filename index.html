@@ -645,7 +645,7 @@ function renderInvoer(){
     $('aant_'+kid).value=uren;if($('een_'+kid))$('een_'+kid).value='uur';
     if(hint)hint.textContent='Berekend: '+fmtNum(uren)+' uur ('+Math.floor(m/60)+' u '+String(m%60).padStart(2,'0')+' min'+(p?', na '+p+' min pauze':'')+')'+(nacht?', over middernacht':'');
   };
-  $('main').oninput=e=>{if(e.target.id&&e.target.id.startsWith('kpauze_')){const kid=e.target.id.slice(7);klusTijdRekenen(kid);const som=ds.klussen.reduce((t,k)=>t+(+(($('kpauze_'+k.id)||{}).value)||0),0);if($('inPauze'))$('inPauze').value=som;saveConcept();calcAndRender();return}
+  $('main').oninput=e=>{if(e.target.id&&e.target.id.startsWith('kpauze_')){const kid=e.target.id.slice(7);klusTijdRekenen(kid);const som=ds.klussen.reduce((t,k)=>t+(+(($('kpauze_'+k.id)||{}).value)||0),0);if($('inPauze')&&som>(+$('inPauze').value||0))$('inPauze').value=som;   /* alleen ophogen: een grotere dagpauze (ook pauze tussen klussen door) blijft staan */saveConcept();calcAndRender();return}
     if(e.target.id&&(e.target.id.startsWith('kbeg_')||e.target.id.startsWith('keind_'))){klusTijdRekenen(e.target.id.slice(e.target.id.indexOf('_')+1));saveConcept();calcAndRender();return}
     if(['inDatum','inMedew','inStart','inEind','inPauze'].includes(e.target.id)){saveConcept();calcAndRender()}if(e.target.id.startsWith('klant_')||e.target.id.startsWith('dienst_')||e.target.id.startsWith('ket_')||e.target.id.startsWith('oms_')||e.target.id.startsWith('aant_')||e.target.id.startsWith('een_')){saveConcept();calcAndRender()}};
   $('main').onchange=async e=>{
