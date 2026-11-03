@@ -153,7 +153,7 @@ textarea.zk-invoer{padding:10px 12px}
 <option value="medewerker">Medewerker</option>
 <option value="beheer">Beheer</option>
 </select>
-<button id="darkToggle" class="px-3 h-10 text-sm flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Wissel tussen donker en licht">Donker</button>
+<label for="darkToggle" class="sr-only">Thema</label><select id="darkToggle" class="text-sm border rounded-lg px-2 py-2 bg-white dark:bg-gray-700 dark:border-gray-600" title="Thema"><option value="licht">Thema: Licht</option><option value="donker">Thema: Donker</option><option value="roze">Thema: Roze</option><option value="panter">Thema: Panterprint</option></select>
 <span id="netChip" class="hidden"></span>
 <span id="userChip" class="hidden md:inline text-xs text-gray-500 dark:text-gray-400"></span>
 <button id="pwBtn" class="hidden text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 min-h-[44px]">Wachtwoord</button>
@@ -411,8 +411,8 @@ function zetThema(t){
   const h=document.documentElement;
   THEMAS.forEach(x=>{if(x!=='licht')h.classList.toggle(x==='donker'?'dark':x,t===x)});
   try{localStorage.setItem('uren_thema',t);localStorage.setItem('uren_dark',t==='donker'?'1':'0')}catch(e){}
-  const volgende=THEMAS[(THEMAS.indexOf(t)+1)%THEMAS.length];
-  const knop=$('darkToggle');if(knop){knop.textContent=THEMA_NAAM[volgende];knop.setAttribute('aria-label','Wissel naar thema '+THEMA_NAAM[volgende])}
+  // De keuzelijst toont het thema dat NU aan staat
+  const knop=$('darkToggle');if(knop)knop.value=t;
   const mc=document.querySelector('meta[name="theme-color"]');if(mc)mc.setAttribute('content',THEMA_KLEUR[t]);
 }
 function initDarkMode(){
@@ -420,8 +420,8 @@ function initDarkMode(){
   try{t=localStorage.getItem('uren_thema')||(localStorage.getItem('uren_dark')==='1'?'donker':'licht')}catch(e){}
   if(!THEMAS.includes(t))t='licht';
   zetThema(t);
-  $('darkToggle').onclick=()=>{
-    zetThema(THEMAS[(THEMAS.indexOf(THEMA_NU)+1)%THEMAS.length]);
+  $('darkToggle').onchange=e=>{
+    zetThema(THEMAS.includes(e.target.value)?e.target.value:'licht');
     renderCurrentView();
   };
 }
