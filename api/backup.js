@@ -9,7 +9,9 @@
 
 const URL_SB = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const TABELLEN = ['werknemers', 'klanten', 'diensten', 'diensten_tarief', 'materieel', 'dagstaten', 'profiles'];
+const TABELLEN = ['werknemers', 'klanten', 'diensten', 'diensten_tarief', 'materieel', 'dagstaten', 'profiles',
+  'orders', 'planningen', 'vervaldata', 'klus_notities', 'producten', 'facturen', 'instellingen', 'factuur_teller'];
+const MAG_ONTBREKEN = new Set(['materieel', 'orders', 'planningen', 'vervaldata', 'klus_notities', 'producten', 'facturen', 'instellingen', 'factuur_teller']);
 const BEWAAR = 30;
 
 const kop = extra => Object.assign({ apikey: SERVICE, Authorization: 'Bearer ' + SERVICE }, extra || {});
@@ -35,7 +37,7 @@ module.exports = async (req, res) => {
     const data = { gemaakt: new Date().toISOString() };
     for (const t of TABELLEN) {
       try { data[t] = await haalTabel(t) }
-      catch (e) { if (t === 'materieel') data[t] = []; else throw e }   // materieel mag ontbreken tot de tabel bestaat
+      catch (e) { if (MAG_ONTBREKEN.has(t)) data[t] = []; else throw e }   // nieuwere tabellen mogen ontbreken tot ze bestaan
     }
 
     const naam = 'backup-' + new Date().toISOString().slice(0, 10) + '.json';
@@ -53,7 +55,7 @@ module.exports = async (req, res) => {
       const weg = namen.slice(BEWAAR);
       if (weg.length) await fetch(`${URL_SB}/storage/v1/object/backups`, { method: 'DELETE', headers: kop({ 'Content-Type': 'application/json' }), body: JSON.stringify({ prefixes: weg }) });
     }
-    res.status(200).json({ ok: true, bestand: naam, rijen: TABELLEN.reduce((s, t) => s + data[t].length, 0) });
+    res.status(200).json({ ok: true, bestand: naam, rijen: TABELLEN.reduce((s, t) => s + (data[t] || []).length, 0) });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }

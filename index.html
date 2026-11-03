@@ -91,6 +91,8 @@ input,select,textarea{min-height:48px;font-size:16px}
 <nav id="beheerNav" class="hidden bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 overflow-x-auto whitespace-nowrap">
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="dashboard">Dashboard</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="klussen">Klussen</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="facturen">Facturen</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="producten">Producten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="orders">Orders</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="klanten">Klanten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="diensten">Diensten</button>
@@ -1105,6 +1107,7 @@ function renderKlussenBeheer(){
   <div class="flex flex-wrap gap-2 mb-3">
     <button id="btnKlusBulk" class="px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 min-h-[48px] font-medium opacity-40" disabled>Geselecteerde afvinken</button>
     <button id="btnKlusAlles" class="px-3 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800 min-h-[48px] font-medium">Alle ${open.length} open in filter afvinken</button>
+    <button id="btnKlusFactureer" class="px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 min-h-[48px] font-medium">Factureer selectie</button>
     <button id="btnKlusWerkbon" class="px-3 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800 min-h-[48px] font-medium">Werkbon van selectie</button>
     <button id="btnKlusVerwijder" class="px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 min-h-[48px] font-medium">Geselecteerde verwijderen</button>
     <button id="btnKlusSelectieWeg" class="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 rounded-lg min-h-[48px] font-medium">Selectie wissen</button>
@@ -1177,6 +1180,7 @@ function renderKlussenBeheer(){
   };
   document.querySelectorAll('[data-notitie]').forEach(b=>b.onclick=()=>openKlusNotitie(b.dataset.notitie));
   document.querySelectorAll('[data-werkbon]').forEach(b=>b.onclick=()=>openWerkbon([{dagId:b.dataset.dag,klusId:b.dataset.werkbon}]));
+  $('btnKlusFactureer').onclick=()=>{const paren=[...klusSelectie].map(id=>{const r=alle.find(x=>x.id===id);return r&&{dagId:r.dagId,klusId:id}}).filter(Boolean);if(!paren.length){toast('Vink eerst één of meer klussen aan','error');return}factureerKlussen(paren);klusSelectie=new Set()};
   $('btnKlusWerkbon').onclick=()=>{const paren=[...klusSelectie].map(id=>{const r=alle.find(x=>x.id===id);return r&&{dagId:r.dagId,klusId:id}}).filter(Boolean);if(!paren.length){toast('Vink eerst één of meer klussen aan','error');return}openWerkbon(paren)};
   document.querySelectorAll('[data-edit-klus]').forEach(b=>b.onclick=()=>openKlusWijzigen(b.dataset.dag,b.dataset.editKlus));
   document.querySelectorAll('[data-mono]').forEach(b=>b.onclick=()=>{
@@ -1240,6 +1244,491 @@ function exportKlussenCSV(rows){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download='facturatielijst_'+today()+'.csv';a.click();URL.revokeObjectURL(a.href);
   toast('Facturatielijst geëxporteerd ('+rows.length+' regels)','success');
+}
+
+// === FACTUREN (alleen beheer) ===
+// Facturen worden hier gemaakt (los of uit klussen), als concept bewaard en pas bij "Definitief maken"
+// krijgen ze een doorlopend nummer uit de database. Een definitieve factuur wijzig je niet meer:
+// correcties gaan via een creditnota. De pdf wordt in de browser gemaakt (pdfmake, eigen kopie in /vendor).
+const FACT_GROEN='#2f6b45',FACT_GROEN2='#7fb08b',FACT_TINT='#eef5f0',FACT_SUB='#cfe5d5';
+const BEDRIJF_STANDAARD={naam:'Cas Wempe',onderNaam:'Mesthandel & Transport',adres:'Slikkerdijk 6',postcode:'1766 GK',plaats:'Wieringerwaard',telefoon:'06-28064945',email:'caswempe@hotmail.com',iban:'NL48 ABNA 0870 2146 32',tenaamstelling:'Cas Wempe',kvk:'75382423',btw:'NL002406334B63',termijn:30};
+const BTW_OPTIES=[['21','21%'],['9','9%'],['0','0%'],['verlegd','Verlegd']];
+const EENHEDEN_F=[['uur','uur'],['ton','ton'],['m3','m³'],['ha','ha'],['ritten','ritten'],['km','km'],['stuk','stuk'],['stukken','stuks'],['dag','dag'],['vracht','vracht']];
+const eenhLabel=e=>(EENHEDEN_F.find(x=>x[0]===e)||[e,e||''])[1];
+// Afronden op centen, ook bij negatieve bedragen (creditnota) symmetrisch: -19,125 wordt -19,13
+const r2=n=>{n=Number(n)||0;const t=n<0?-1:1;return t*Math.round((Math.abs(n)+Number.EPSILON)*100)/100};
+const EUR=new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR'});
+const eurF=n=>EUR.format(r2(n||0)).replace(/ /g,' ');
+const NUM2=new Intl.NumberFormat('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:2});
+const num2=n=>NUM2.format(Number(n)||0);
+const datumLangNL=iso=>{if(!iso)return '';const d=new Date(iso+'T12:00:00');return isNaN(d)?iso:d.toLocaleDateString('nl-NL',{day:'numeric',month:'long',year:'numeric'})};
+const plusDagen=(iso,n)=>{const d=new Date(iso+'T12:00:00');d.setDate(d.getDate()+(Number(n)||0));return iso_(d)};
+const iso_=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const vandaagIso=()=>iso_(new Date());
+
+function bedrijf(){const r=DB.get('instellingen','bedrijf');return {...BEDRIJF_STANDAARD,...((r&&r.waarde)||{})}}
+function factuurTotalen(regels){
+  const groepen={};let excl=0;
+  (regels||[]).forEach(r=>{const t=r2(getal(r.aantal)*getal(r.prijs));excl+=t;const k=r.btw||'21';groepen[k]=r2((groepen[k]||0)+t)});
+  const btwPer={};let totBtw=0;
+  Object.keys(groepen).forEach(k=>{const p=k==='21'?21:k==='9'?9:0;btwPer[k]=r2(groepen[k]*p/100);totBtw+=btwPer[k]});
+  return {excl:r2(excl),btw:r2(totBtw),incl:r2(excl+totBtw),groepen,btwPer};
+}
+// Status zoals je hem ziet: concept / open / verlopen / betaald / gecrediteerd
+function factuurStatus(f){
+  if(f.status==='concept')return 'concept';
+  if(f.status==='betaald')return 'betaald';
+  if(f.status==='gecrediteerd')return 'gecrediteerd';
+  if(f.soort==='credit')return 'credit';
+  if(f.vervaldatum&&f.vervaldatum<vandaagIso())return 'verlopen';
+  return 'open';
+}
+const F_STATUS={concept:['Concept','bg-gray-200 text-gray-800'],open:['Open','bg-blue-100 text-blue-800'],verlopen:['Verlopen','bg-red-100 text-red-800'],betaald:['Betaald','bg-emerald-100 text-emerald-800'],gecrediteerd:['Gecrediteerd','bg-purple-100 text-purple-800'],credit:['Creditnota','bg-purple-100 text-purple-800']};
+const klantSnapshot=k=>k?{naam:k.naam||'',adres:k.adres||'',postcode:k.postcode||'',plaats:k.plaats||'',klantcode:k.klantcode||'',btwnummer:k.btwnummer||'',email:k.email||''}:null;
+
+// ---- Regels maken uit klussen ----
+function regelUitKlus(k){
+  const dienst=k.dienst||DB.get('diensten',k.dienstId);
+  const prod=dienst?DB.list('producten').find(p=>p.actief!==false&&(p.naam||'').trim().toLowerCase()===(dienst.naam||'').trim().toLowerCase()):null;
+  const delen=[datumNL(k.datum)];if(k.kenteken)delen.push('kenteken '+k.kenteken);if(k.omschrijving)delen.push(k.omschrijving);
+  return {id:uid(),omschrijving:prod?prod.naam:(dienst?dienst.naam:'Werkzaamheden'),detail:delen.join(' · '),aantal:Number(k.aantal)||0,eenheid:k.eenheid||(prod&&prod.eenheid)||'uur',
+    prijs:prod?Number(prod.prijs)||0:(dienst&&dienst.tarief!=null?Number(dienst.tarief)||0:0),btw:prod?(prod.btw||'21'):'21',klusId:k.id,dagId:k.dagId};
+}
+// Een of meer klussen in één keer factureren: per klant één concept.
+function factureerKlussen(paren){
+  const alle=alleKlussen();
+  const ks=paren.map(p=>alle.find(k=>k.id===p.klusId)).filter(Boolean);
+  if(!ks.length){toast('Geen klussen gekozen','error');return}
+  const alGefact=ks.filter(k=>k.gefactureerd);
+  if(alGefact.length&&!confirm(alGefact.length+' van de gekozen klussen staan al op gefactureerd. Toch op een factuur zetten?'))return;
+  const perKlant={};ks.forEach(k=>{(perKlant[k.klantId||'_']=perKlant[k.klantId||'_']||[]).push(k)});
+  const b=bedrijf();let laatste=null,n=0;
+  Object.keys(perKlant).forEach(kid=>{
+    const lijst=perKlant[kid].sort((a,b2)=>(a.datum||'').localeCompare(b2.datum||'')||(a.startTijd||'').localeCompare(b2.startTijd||''));
+    const kl=DB.get('klanten',kid);
+    const datum=vandaagIso();
+    laatste=DB.insert('facturen',{nummer:null,soort:'factuur',status:'concept',klantId:kl?kl.id:null,klant:klantSnapshot(kl),factuurdatum:datum,vervaldatum:plusDagen(datum,b.termijn),regels:lijst.map(regelUitKlus),opmerking:'',klusIds:lijst.map(k=>({dagId:k.dagId,klusId:k.id})),...(()=>{const t=factuurTotalen(lijst.map(regelUitKlus));return {totaalExcl:t.excl,totaalBtw:t.btw,totaalIncl:t.incl}})()});
+    n++;
+  });
+  toast(n===1?'Conceptfactuur gemaakt':n+' conceptfacturen gemaakt (één per klant)','success');
+  switchTab('facturen');
+  if(n===1&&laatste)openFactuurEditor(laatste.id);
+}
+
+// ---- Overzicht ----
+const FFILT={status:'',q:'',jaar:''};
+function renderFacturen(){
+  const alle=DB.list('facturen').slice().sort((a,b)=>(b.factuurdatum||'').localeCompare(a.factuurdatum||'')||String(b.nummer||'~').localeCompare(String(a.nummer||'~')));
+  const st=alle.map(f=>({f,s:factuurStatus(f)}));
+  const som=(arr)=>arr.reduce((x,o)=>x+(Number(o.f.totaalIncl)||0),0);
+  const open=st.filter(o=>o.s==='open'),verl=st.filter(o=>o.s==='verlopen'),conc=st.filter(o=>o.s==='concept');
+  const maand=vandaagIso().slice(0,7);
+  const betaaldMaand=st.filter(o=>o.s==='betaald'&&(o.f.betaaldOp||'').slice(0,7)===maand);
+  const jaren=[...new Set(alle.map(f=>(f.factuurdatum||'').slice(0,4)).filter(Boolean))].sort().reverse();
+  const q=FFILT.q.trim().toLowerCase();
+  const lijst=st.filter(o=>{
+    if(FFILT.status==='openverlopen'){if(!(o.s==='open'||o.s==='verlopen'))return false}
+    else if(FFILT.status&&o.s!==FFILT.status)return false;
+    if(FFILT.jaar&&(o.f.factuurdatum||'').slice(0,4)!==FFILT.jaar)return false;
+    if(q&&!([o.f.nummer,o.f.klant&&o.f.klant.naam,o.f.klant&&o.f.klant.klantcode,o.f.opmerking].join(' ').toLowerCase().includes(q)))return false;
+    return true;
+  });
+  const kaart=(t,w,sub,kleur,filt)=>`<button data-ffilt="${filt}" class="text-left bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border ${FFILT.status===filt?'border-gray-800 dark:border-gray-200':'border-gray-100 dark:border-gray-700'}"><div class="text-xs text-gray-500">${t}</div><div class="text-2xl font-bold ${kleur}">${w}</div><div class="text-xs text-gray-500 mt-0.5">${sub}</div></button>`;
+  const chips=[['','Alles'],['openverlopen','Open + verlopen'],['concept','Concept'],['open','Open'],['verlopen','Verlopen'],['betaald','Betaald'],['credit','Creditnota'],['gecrediteerd','Gecrediteerd']];
+  $('main').innerHTML=`<div class="max-w-full mx-auto">
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-4"><h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">Facturen</h2>
+   <div class="flex flex-wrap gap-2"><button id="fNieuw" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuwe factuur</button>
+   <button id="fBedrijf" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">Bedrijfsgegevens &amp; nummering</button></div></div>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+   ${kaart('Open',open.length,eurF(som(open)),'text-blue-700 dark:text-blue-300','open')}
+   ${kaart('Verlopen',verl.length,eurF(som(verl)),'text-red-600','verlopen')}
+   ${kaart('Concepten',conc.length,eurF(som(conc))+' (nog niet verstuurd)','text-gray-700 dark:text-gray-200','concept')}
+   ${kaart('Betaald deze maand',betaaldMaand.length,eurF(som(betaaldMaand)),'text-emerald-700 dark:text-emerald-400','betaald')}
+  </div>
+  <div class="flex flex-wrap gap-2 mb-3">${chips.map(([k,t])=>`<button data-ffilt="${k}" class="px-3 py-2 rounded-full text-sm min-h-[40px] border ${FFILT.status===k?'bg-black text-white border-black dark:bg-white dark:text-black':'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600'}">${t}</button>`).join('')}</div>
+  <div class="flex flex-wrap gap-2 mb-4"><input id="fZoek" value="${esc(FFILT.q)}" placeholder="Zoek op nummer of klant" class="flex-1 min-w-[200px] border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600">
+   <select id="fJaar" class="border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"><option value="">Alle jaren</option>${jaren.map(j=>`<option ${FFILT.jaar===j?'selected':''}>${j}</option>`).join('')}</select></div>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x"><table class="w-full text-sm min-w-[820px]"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
+   <th class="px-3 py-2 text-left">Nummer</th><th class="px-3 py-2 text-left">Datum</th><th class="px-3 py-2 text-left">Klant</th><th class="px-3 py-2 text-right">Bedrag</th><th class="px-3 py-2 text-left">Vervaldatum</th><th class="px-3 py-2 text-left">Status</th><th class="px-3 py-2">Acties</th></tr></thead><tbody>
+   ${lijst.length?lijst.map(({f,s})=>`<tr class="border-t border-gray-100 dark:border-gray-700">
+    <td class="px-3 py-2 font-medium whitespace-nowrap">${f.nummer?esc(f.nummer):'<span class="text-gray-400">—</span>'}${f.soort==='credit'?' <span class="text-xs text-purple-700">credit</span>':''}</td>
+    <td class="px-3 py-2 whitespace-nowrap">${esc(datumNL(f.factuurdatum))}</td>
+    <td class="px-3 py-2">${esc(f.klant?f.klant.naam:'—')}</td>
+    <td class="px-3 py-2 text-right whitespace-nowrap font-medium">${eurF(f.totaalIncl)}</td>
+    <td class="px-3 py-2 whitespace-nowrap ${s==='verlopen'?'text-red-600 font-medium':''}">${f.soort==='credit'?'—':esc(datumNL(f.vervaldatum))}${s==='verlopen'?' <span class="text-xs">('+(-dagenTot(f.vervaldatum))+' d te laat)</span>':''}</td>
+    <td class="px-3 py-2 whitespace-nowrap"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${F_STATUS[s][1]}">${F_STATUS[s][0]}</span>${f.status==='betaald'&&f.betaaldOp?'<div class="text-[11px] text-gray-500">'+esc(datumNL(f.betaaldOp))+'</div>':''}</td>
+    <td class="px-3 py-2 whitespace-nowrap"><button data-fopen="${f.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[44px]">${s==='concept'?'Bewerken':'Bekijken'}</button><button data-fpdf="${f.id}" class="text-gray-700 dark:text-gray-200 underline text-xs mr-2 min-h-[44px]">PDF</button>${(s==='open'||s==='verlopen')?`<button data-fbetaald="${f.id}" class="text-emerald-700 dark:text-emerald-400 underline text-xs min-h-[44px]">Betaald</button>`:''}</td></tr>`).join(''):'<tr><td colspan="7" class="px-3 py-8 text-center text-gray-400">Nog geen facturen in deze selectie.</td></tr>'}
+  </tbody></table></div>
+  <p class="text-xs text-gray-400 mt-3">Tip: bij Klussen kun je klussen aanvinken en op "Factureer selectie" drukken; dan staat de conceptfactuur meteen klaar.</p></div>`;
+  document.querySelectorAll('[data-ffilt]').forEach(b=>b.onclick=()=>{FFILT.status=FFILT.status===b.dataset.ffilt&&b.dataset.ffilt!==''?'':b.dataset.ffilt;renderFacturen()});
+  $('fZoek').oninput=e=>{FFILT.q=e.target.value;const p=e.target.selectionStart;renderFacturen();const z=$('fZoek');z.focus();try{z.setSelectionRange(p,p)}catch(x){}};
+  $('fJaar').onchange=e=>{FFILT.jaar=e.target.value;renderFacturen()};
+  $('fNieuw').onclick=openNieuweFactuur;
+  $('fBedrijf').onclick=openBedrijfsgegevens;
+  document.querySelectorAll('[data-fopen]').forEach(b=>b.onclick=()=>openFactuurEditor(b.dataset.fopen));
+  document.querySelectorAll('[data-fpdf]').forEach(b=>b.onclick=()=>factuurPdf(b.dataset.fpdf,'open'));
+  document.querySelectorAll('[data-fbetaald]').forEach(b=>b.onclick=()=>markeerBetaald(b.dataset.fbetaald));
+}
+function markeerBetaald(id){
+  const f=DB.get('facturen',id);if(!f)return;
+  const d=prompt('Betaald op (dd-mm-jjjj):',datumNL(vandaagIso()));if(d===null)return;
+  const m=/^(\d{1,2})-(\d{1,2})-(\d{4})$/.exec(d.trim());
+  if(!m){toast('Gebruik de vorm dd-mm-jjjj','error');return}
+  const iso=m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  DB.update('facturen',id,{...f,status:'betaald',betaaldOp:iso});toast('Factuur '+f.nummer+' staat op betaald','success');renderCurrentView();
+}
+
+// ---- Nieuwe factuur: klant kiezen, eventueel open klussen erbij ----
+function openNieuweFactuur(){
+  const klanten=DB.list('klanten').filter(k=>k.actief!==false).sort((a,b)=>(a.naam||'').localeCompare(b.naam||''));
+  const label=k=>k.naam+(k.plaats?' ('+k.plaats+')':'');
+  const m=document.createElement('div');m.id='fNieuwM';m.className='fixed inset-0 bg-black/50 z-30 overflow-auto p-3';
+  m.innerHTML=`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 w-full max-w-2xl mx-auto my-4">
+   <h3 class="font-bold mb-3">Nieuwe factuur</h3>
+   <label class="block text-sm font-medium mb-1" for="nf_klant">Klant</label>
+   <input id="nf_klant" list="nf_kl" placeholder="Zoek op naam" class="w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600" autocomplete="off">
+   <datalist id="nf_kl">${klanten.map(k=>`<option value="${esc(label(k))}"></option>`).join('')}</datalist>
+   <div id="nf_klussen" class="mb-3"></div>
+   <div class="flex flex-wrap gap-2"><button id="nfMaak" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Factuur maken</button><button id="nfX" class="px-4 bg-gray-200 dark:bg-gray-700 rounded-xl min-h-[48px]">Annuleren</button></div></div>`;
+  document.body.appendChild(m);
+  let klant=null;
+  const toonKlussen=()=>{
+    const t=$('nf_klant').value.trim().toLowerCase();
+    klant=klanten.find(k=>label(k).toLowerCase()===t)||klanten.find(k=>(k.naam||'').toLowerCase()===t)||null;
+    if(!klant){$('nf_klussen').innerHTML='<p class="text-sm text-gray-500">Kies een klant om zijn open klussen te zien.</p>';return}
+    const open=alleKlussen().filter(k=>k.klantId===klant.id&&!k.gefactureerd).sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
+    $('nf_klussen').innerHTML=open.length?`<div class="flex items-center justify-between mb-1"><div class="text-sm font-medium">Open klussen (${open.length})</div><label class="text-sm flex items-center gap-2"><input type="checkbox" id="nf_alle" checked style="min-height:auto"> alles</label></div>
+      <div class="max-h-72 overflow-auto border border-gray-200 dark:border-gray-700 rounded-xl divide-y divide-gray-100 dark:divide-gray-700">${open.map(k=>`<label class="flex items-start gap-3 p-2 text-sm cursor-pointer"><input type="checkbox" data-nfk="${k.id}" data-dag="${k.dagId}" checked style="min-height:auto" class="mt-1"><span class="flex-1">${datumMetDag(k.datum)} · ${esc(k.dienst?k.dienst.naam:'')} · ${esc(String(k.aantal))} ${esc(eenhLabel(k.eenheid))}${k.kenteken?' · '+esc(k.kenteken):''}<br><span class="text-xs text-gray-500">${esc(k.medewerkerNaam||'')}${k.omschrijving?' · '+esc(k.omschrijving):''}</span></span></label>`).join('')}</div>`
+      :'<p class="text-sm text-gray-500">Geen open klussen voor deze klant. Je kunt een lege factuur maken en zelf regels toevoegen.</p>';
+    if($('nf_alle'))$('nf_alle').onchange=e=>m.querySelectorAll('[data-nfk]').forEach(c=>c.checked=e.target.checked);
+  };
+  $('nf_klant').oninput=toonKlussen;$('nf_klant').onchange=toonKlussen;toonKlussen();
+  $('nfX').onclick=()=>m.remove();
+  $('nfMaak').onclick=()=>{
+    if(!klant){toast('Kies eerst een klant uit de lijst','error');return}
+    const paren=[...m.querySelectorAll('[data-nfk]')].filter(c=>c.checked).map(c=>({dagId:c.dataset.dag,klusId:c.dataset.nfk}));
+    m.remove();
+    if(paren.length){factureerKlussen(paren);return}
+    const b=bedrijf(),datum=vandaagIso();
+    const f=DB.insert('facturen',{nummer:null,soort:'factuur',status:'concept',klantId:klant.id,klant:klantSnapshot(klant),factuurdatum:datum,vervaldatum:plusDagen(datum,b.termijn),regels:[],opmerking:'',klusIds:[],totaalExcl:0,totaalBtw:0,totaalIncl:0});
+    renderCurrentView();openFactuurEditor(f.id);
+  };
+}
+
+// ---- Factuur bewerken (concept) of bekijken (definitief) ----
+function openFactuurEditor(id){
+  const f0=DB.get('facturen',id);if(!f0)return;
+  const concept=f0.status==='concept';
+  const f=JSON.parse(JSON.stringify(f0));f.regels=(f.regels||[]).map(r=>({...r,id:r.id||uid()}));
+  const producten=DB.list('producten').filter(p=>p.actief!==false).sort((a,b)=>(a.naam||'').localeCompare(b.naam||''));
+  const klanten=DB.list('klanten').slice().sort((a,b)=>(a.naam||'').localeCompare(b.naam||''));
+  const label=k=>k.naam+(k.plaats?' ('+k.plaats+')':'');
+  const cls='w-full border rounded-lg px-2 py-2 bg-white dark:bg-gray-700 dark:border-gray-600 text-sm';
+  const m=document.createElement('div');m.id='fEditor';m.className='fixed inset-0 bg-black/50 z-30 overflow-auto p-2 md:p-4';
+  const s=factuurStatus(f);
+  m.innerHTML=`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-4 md:p-6 w-full max-w-5xl mx-auto my-2">
+   <div class="flex flex-wrap items-start justify-between gap-2 mb-4"><div><h3 class="font-bold text-lg">${f.soort==='credit'?'Creditnota':'Factuur'} ${f.nummer?esc(f.nummer):'(concept)'}</h3>
+    <span class="px-2 py-0.5 rounded-full text-xs font-medium ${F_STATUS[s][1]}">${F_STATUS[s][0]}</span>${f.creditVan?` <span class="text-xs text-gray-500">creditering van factuur ${esc((DB.get('facturen',f.creditVan)||{}).nummer||'')}</span>`:''}</div>
+    <button id="feX" class="px-3 min-h-[44px] text-gray-500" aria-label="Sluiten">✕</button></div>
+   ${concept?'':'<p class="text-sm bg-gray-50 dark:bg-gray-900 rounded-xl p-3 mb-4">Deze factuur is definitief en kan niet meer worden gewijzigd. Klopt er iets niet? Maak dan een creditnota en daarna een nieuwe factuur.</p>'}
+   <div class="grid md:grid-cols-4 gap-3 mb-4">
+    <div class="md:col-span-2"><label class="block text-xs font-medium mb-1" for="fe_klant">Klant</label><input id="fe_klant" list="fe_kl" value="${esc(f.klant?f.klant.naam+(f.klant.plaats?' ('+f.klant.plaats+')':''):'')}" class="${cls}" ${concept?'':'disabled'} autocomplete="off"><datalist id="fe_kl">${klanten.map(k=>`<option value="${esc(label(k))}"></option>`).join('')}</datalist>
+     <div id="fe_kladres" class="text-[11px] text-gray-500 mt-1"></div></div>
+    <div><label class="block text-xs font-medium mb-1" for="fe_datum">Factuurdatum</label><input type="date" id="fe_datum" value="${esc(f.factuurdatum||'')}" class="${cls}" ${concept?'':'disabled'}></div>
+    <div><label class="block text-xs font-medium mb-1" for="fe_verval">Vervaldatum</label><input type="date" id="fe_verval" value="${esc(f.vervaldatum||'')}" class="${cls}" ${concept&&f.soort!=='credit'?'':'disabled'}></div>
+   </div>
+   <div class="scroll-x"><table class="w-full text-sm min-w-[760px]"><thead><tr class="text-xs text-gray-500 text-left"><th class="py-1 pr-2 w-[34%]">Omschrijving</th><th class="py-1 pr-2">Aantal</th><th class="py-1 pr-2">Eenheid</th><th class="py-1 pr-2">Prijs</th><th class="py-1 pr-2">Btw</th><th class="py-1 pr-2 text-right">Totaal</th><th></th></tr></thead><tbody id="fe_regels"></tbody></table></div>
+   ${concept?`<div class="flex flex-wrap gap-2 mt-2 mb-4"><button id="feRegel" class="px-3 py-2 rounded-xl bg-gray-200 dark:bg-gray-700 text-sm min-h-[44px]">+ Lege regel</button>
+     <select id="feProduct" class="border rounded-xl px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:border-gray-600 min-h-[44px]"><option value="">+ Product toevoegen…</option>${producten.map(p=>`<option value="${p.id}">${esc(p.naam)} – ${eurF(p.prijs)} / ${esc(eenhLabel(p.eenheid))}</option>`).join('')}</select></div>`:'<div class="mb-4"></div>'}
+   <div class="grid md:grid-cols-2 gap-4 items-start">
+    <div><label class="block text-xs font-medium mb-1" for="fe_opm">Opmerking op de factuur (optioneel)</label><textarea id="fe_opm" rows="3" class="${cls}" style="min-height:0" ${concept?'':'disabled'}>${esc(f.opmerking||'')}</textarea>
+     <div id="fe_waarsch" class="text-xs text-amber-700 mt-2"></div></div>
+    <div id="fe_tot" class="bg-gray-50 dark:bg-gray-900 rounded-xl p-4 text-sm"></div>
+   </div>
+   <div class="flex flex-wrap gap-2 mt-5">
+    ${concept?`<button id="feSave" class="px-4 py-2 bg-gray-700 text-white rounded-xl min-h-[48px] font-medium">Concept opslaan</button>
+      <button id="fePdf" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">Voorbeeld (PDF)</button>
+      <button id="feDef" class="px-4 py-2 bg-emerald-600 text-white rounded-xl min-h-[48px] font-medium">Definitief maken</button>
+      <button id="feDel" class="px-4 py-2 text-red-600 min-h-[48px] ml-auto">Concept verwijderen</button>`
+     :`<button id="fePdf" class="px-4 py-2 bg-emerald-600 text-white rounded-xl min-h-[48px] font-medium">PDF openen</button>
+      <button id="fePdfDl" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">PDF downloaden</button>
+      ${(s==='open'||s==='verlopen')?'<button id="feBetaald" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">Markeer als betaald</button>':''}
+      ${s==='betaald'?'<button id="feOnbetaald" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">Toch niet betaald</button>':''}
+      ${f.soort!=='credit'&&f.status!=='gecrediteerd'?'<button id="feCredit" class="px-4 py-2 text-purple-700 dark:text-purple-300 min-h-[48px] ml-auto">Creditnota maken</button>':''}`}
+   </div></div>`;
+  document.body.appendChild(m);
+  const sluit=()=>{m.remove();renderCurrentView()};
+  const dis=concept?'':'disabled';
+  const toonAdres=()=>{const k=f.klant;$('fe_kladres').textContent=k?[k.adres,[k.postcode,k.plaats].filter(Boolean).join(' '),k.btwnummer?'btw-nr '+k.btwnummer:''].filter(Boolean).join(', '):'Nog geen klant gekozen'};
+  const tekenRegels=()=>{
+    $('fe_regels').innerHTML=f.regels.length?f.regels.map((r,i)=>`<tr data-ri="${i}" class="border-t border-gray-100 dark:border-gray-700 align-top">
+      <td class="py-1 pr-2"><input data-rf="omschrijving" value="${esc(r.omschrijving||'')}" class="${cls}" ${dis}><input data-rf="detail" value="${esc(r.detail||'')}" placeholder="Detail (datum, kenteken…)" class="${cls} mt-1 text-xs text-gray-600" ${dis}></td>
+      <td class="py-1 pr-2 w-24"><input data-rf="aantal" inputmode="decimal" value="${esc(String(r.aantal??'').replace('.',','))}" class="${cls}" ${dis}></td>
+      <td class="py-1 pr-2 w-24"><select data-rf="eenheid" class="${cls}" ${dis}>${EENHEDEN_F.concat(EENHEDEN_F.some(x=>x[0]===r.eenheid)||!r.eenheid?[]:[[r.eenheid,r.eenheid]]).map(([v,l])=>`<option value="${v}" ${(r.eenheid||'uur')===v?'selected':''}>${l}</option>`).join('')}</select></td>
+      <td class="py-1 pr-2 w-28"><input data-rf="prijs" inputmode="decimal" value="${esc(String(r.prijs??'').replace('.',','))}" class="${cls}" ${dis}></td>
+      <td class="py-1 pr-2 w-24"><select data-rf="btw" class="${cls}" ${dis}>${BTW_OPTIES.map(([v,l])=>`<option value="${v}" ${(r.btw||'21')===v?'selected':''}>${l}</option>`).join('')}</select></td>
+      <td class="py-1 pr-2 text-right whitespace-nowrap pt-3" data-rtot>${eurF(r2(getal(r.aantal)*getal(r.prijs)))}</td>
+      <td class="py-1 whitespace-nowrap">${concept?`<button data-rup="${i}" class="px-1 text-gray-500 min-h-[36px]" aria-label="Omhoog">↑</button><button data-rdown="${i}" class="px-1 text-gray-500 min-h-[36px]" aria-label="Omlaag">↓</button><button data-rdel="${i}" class="px-2 text-red-500 min-h-[36px]" aria-label="Regel verwijderen">✕</button>`:''}</td></tr>`).join('')
+      :'<tr><td colspan="7" class="py-6 text-center text-gray-400">Nog geen regels. Voeg een lege regel of een product toe.</td></tr>';
+    tekenTotaal();
+  };
+  const tekenTotaal=()=>{
+    const t=factuurTotalen(f.regels);
+    const btwRegels=Object.keys(t.groepen).sort().map(k=>k==='verlegd'?`<div class="flex justify-between"><span>Btw verlegd (over ${eurF(t.groepen[k])})</span><span>—</span></div>`:`<div class="flex justify-between"><span>Btw ${k}% (over ${eurF(t.groepen[k])})</span><span>${eurF(t.btwPer[k])}</span></div>`).join('');
+    $('fe_tot').innerHTML=`<div class="flex justify-between"><span>Totaal excl. btw</span><span>${eurF(t.excl)}</span></div>${btwRegels}<div class="flex justify-between border-t border-gray-300 dark:border-gray-600 mt-2 pt-2 text-base font-bold"><span>${f.soort==='credit'?'Creditbedrag':'Te betalen'}</span><span>${eurF(t.incl)}</span></div>`;
+    const w=[];
+    if(f.regels.some(r=>r.btw==='verlegd')&&!(f.klant&&f.klant.btwnummer))w.push('Btw verlegd: vul bij de klant een btw-nummer in (Klanten → Wijzig), dat moet op de factuur.');
+    if(f.regels.some(r=>!(getal(r.prijs))))w.push('Er staat een regel zonder prijs.');
+    if(f.regels.some(r=>!(r.omschrijving||'').trim()))w.push('Er staat een regel zonder omschrijving.');
+    $('fe_waarsch').innerHTML=w.map(x=>'• '+esc(x)).join('<br>');
+  };
+  toonAdres();tekenRegels();
+  $('feX').onclick=sluit;
+  if(concept){
+    const leesKlant=()=>{const t=$('fe_klant').value.trim().toLowerCase();const k=klanten.find(x=>label(x).toLowerCase()===t)||klanten.find(x=>(x.naam||'').toLowerCase()===t);if(k){f.klantId=k.id;f.klant=klantSnapshot(k)}toonAdres();tekenTotaal()};
+    $('fe_klant').onchange=leesKlant;
+    $('fe_datum').onchange=e=>{const oud=f.factuurdatum;f.factuurdatum=e.target.value;if(f.soort!=='credit'&&(!f.vervaldatum||f.vervaldatum===plusDagen(oud,bedrijf().termijn))){f.vervaldatum=plusDagen(f.factuurdatum,bedrijf().termijn);$('fe_verval').value=f.vervaldatum}};
+    $('fe_verval').onchange=e=>{f.vervaldatum=e.target.value};
+    $('fe_opm').oninput=e=>{f.opmerking=e.target.value};
+    $('fe_regels').oninput=e=>{const tr=e.target.closest('[data-ri]');if(!tr)return;const r=f.regels[+tr.dataset.ri];const k=e.target.dataset.rf;if(!k)return;r[k]=e.target.value;if(k==='aantal'||k==='prijs'){tr.querySelector('[data-rtot]').textContent=eurF(r2(getal(r.aantal)*getal(r.prijs)))}tekenTotaal()};
+    $('fe_regels').onchange=e=>{const tr=e.target.closest('[data-ri]');if(!tr)return;const k=e.target.dataset.rf;if(k==='btw'||k==='eenheid'){f.regels[+tr.dataset.ri][k]=e.target.value;tekenTotaal()}};
+    $('fe_regels').onclick=e=>{const t=e.target;
+      if(t.dataset.rdel!==undefined){f.regels.splice(+t.dataset.rdel,1);tekenRegels();return}
+      if(t.dataset.rup!==undefined){const i=+t.dataset.rup;if(i>0){[f.regels[i-1],f.regels[i]]=[f.regels[i],f.regels[i-1]];tekenRegels()}return}
+      if(t.dataset.rdown!==undefined){const i=+t.dataset.rdown;if(i<f.regels.length-1){[f.regels[i+1],f.regels[i]]=[f.regels[i],f.regels[i+1]];tekenRegels()}return}};
+    $('feRegel').onclick=()=>{f.regels.push({id:uid(),omschrijving:'',detail:'',aantal:1,eenheid:'stuk',prijs:0,btw:'21'});tekenRegels()};
+    $('feProduct').onchange=e=>{const p=producten.find(x=>x.id===e.target.value);e.target.value='';if(!p)return;f.regels.push({id:uid(),omschrijving:p.naam,detail:p.omschrijving||'',aantal:1,eenheid:p.eenheid||'stuk',prijs:Number(p.prijs)||0,btw:p.btw||'21'});tekenRegels()};
+    const bewaar=(stil)=>{
+      const t=factuurTotalen(f.regels);
+      const data={...f,regels:f.regels.map(r=>({...r,aantal:getal(r.aantal),prijs:getal(r.prijs)})),totaalExcl:t.excl,totaalBtw:t.btw,totaalIncl:t.incl};
+      delete data.id;DB.update('facturen',f.id,data);if(!stil)toast('Concept opgeslagen','success');return data;
+    };
+    $('feSave').onclick=()=>{bewaar();sluit()};
+    $('fePdf').onclick=()=>{bewaar(true);factuurPdf(f.id,'open')};
+    $('feDel').onclick=()=>{if(confirm('Dit concept verwijderen? (De klussen blijven gewoon op "te factureren" staan.)')){DB.remove('facturen',f.id);m.remove();renderCurrentView()}};
+    $('feDef').onclick=async()=>{
+      if(!f.klant){toast('Kies eerst een klant','error');return}
+      if(!f.regels.length){toast('De factuur heeft nog geen regels','error');return}
+      if(f.regels.some(r=>!(r.omschrijving||'').trim())){toast('Er staat een regel zonder omschrijving','error');return}
+      if(!f.factuurdatum){toast('Vul een factuurdatum in','error');return}
+      if(f.regels.some(r=>r.btw==='verlegd')&&!(f.klant&&f.klant.btwnummer)){toast('Bij btw verlegd moet de klant een btw-nummer hebben (Klanten → Wijzig)','error');return}
+      const t=factuurTotalen(f.regels);
+      if(!confirm((f.soort==='credit'?'Creditnota':'Factuur')+' voor '+f.klant.naam+' van '+eurF(t.incl)+' definitief maken?\n\nDaarna krijgt hij een vast nummer en kun je hem niet meer wijzigen.'))return;
+      const knop=$('feDef');knop.disabled=true;knop.textContent='Bezig…';
+      try{
+        const nr=await volgendFactuurnummer();
+        const data=bewaar(true);
+        DB.update('facturen',f.id,{...data,nummer:String(nr),status:'open'});
+        if(f.soort==='credit'&&f.creditVan){const org=DB.get('facturen',f.creditVan);if(org)DB.update('facturen',org.id,{...org,status:'gecrediteerd'});
+          const kl=(org&&org.klusIds)||[];if(kl.length&&confirm('De klussen van factuur '+org.nummer+' weer op "te factureren" zetten?'))zetFactuurOpKlussen(kl,null)}
+        else if((f.klusIds||[]).length)zetFactuurOpKlussen(f.klusIds,String(nr));
+        toast((f.soort==='credit'?'Creditnota ':'Factuur ')+nr+' is definitief','success');
+        m.remove();renderCurrentView();openFactuurEditor(f.id);
+      }catch(e){toast('Definitief maken mislukt: '+e.message,'error');knop.disabled=false;knop.textContent='Definitief maken'}
+    };
+  } else {
+    $('fePdf').onclick=()=>factuurPdf(f.id,'open');
+    $('fePdfDl').onclick=()=>factuurPdf(f.id,'download');
+    if($('feBetaald'))$('feBetaald').onclick=()=>{m.remove();markeerBetaald(f.id)};
+    if($('feOnbetaald'))$('feOnbetaald').onclick=()=>{DB.update('facturen',f.id,{...f0,status:'open',betaaldOp:null});m.remove();renderCurrentView();openFactuurEditor(f.id)};
+    if($('feCredit'))$('feCredit').onclick=()=>{
+      if(!confirm('Een creditnota maken voor factuur '+f.nummer+'? Je krijgt eerst een concept dat je kunt nakijken.'))return;
+      const datum=vandaagIso();
+      const c=DB.insert('facturen',{nummer:null,soort:'credit',status:'concept',klantId:f.klantId,klant:f.klant,factuurdatum:datum,vervaldatum:datum,creditVan:f.id,regels:(f.regels||[]).map(r=>({...r,id:uid(),aantal:-Math.abs(getal(r.aantal))})),opmerking:'Creditering van factuur '+f.nummer+'.',klusIds:[],totaalExcl:-Math.abs(f.totaalExcl||0),totaalBtw:-Math.abs(f.totaalBtw||0),totaalIncl:-Math.abs(f.totaalIncl||0)});
+      m.remove();renderCurrentView();openFactuurEditor(c.id);
+    };
+  }
+}
+// Klussen koppelen aan een factuurnummer (of loskoppelen met nr=null)
+function zetFactuurOpKlussen(paren,nr){
+  const perDag={};(paren||[]).forEach(p=>{(perDag[p.dagId]=perDag[p.dagId]||[]).push(p.klusId)});
+  Object.keys(perDag).forEach(dagId=>{
+    const d=DB.get('dagstaten',dagId);if(!d)return;const ids=perDag[dagId];
+    DB.update('dagstaten',dagId,{...d,klussen:(d.klussen||[]).map(k=>ids.includes(k.id)?{...k,gefactureerd:!!nr,factuurdatum:nr?today():'',factuurnummer:nr||''}:k)});
+  });
+}
+// Doorlopend nummer uit de database (in één keer opgehaald en opgehoogd, zodat er nooit dubbele nummers zijn)
+async function volgendFactuurnummer(){
+  if(CONFIG.MODE!=='supabase'){
+    const r=DB.get('factuur_teller','1');if(!r||!r.volgend)throw new Error('Stel eerst het volgende factuurnummer in (Bedrijfsgegevens & nummering)');
+    DB.update('factuur_teller','1',{volgend:Number(r.volgend)+1});return Number(r.volgend);
+  }
+  if(navigator.onLine===false)throw new Error('Geen internet: definitief maken kan alleen online');
+  const n=await sbREST('/rest/v1/rpc/volgend_factuurnummer',{method:'POST',body:{}});
+  if(n===null||n===undefined)throw new Error('Stel eerst het volgende factuurnummer in (Bedrijfsgegevens & nummering)');
+  try{const t=await sbREST('/rest/v1/factuur_teller?select=*');CACHE.factuur_teller=Array.isArray(t)?t.map(x=>({...x,id:String(x.id)})):[]}catch(e){}
+  return n;
+}
+
+// ---- Bedrijfsgegevens en nummering ----
+function openBedrijfsgegevens(){
+  const b=bedrijf();
+  const teller=DB.get('factuur_teller','1');
+  const velden=[['naam','Bedrijfsnaam'],['onderNaam','Onder de naam (bijv. Mesthandel & Transport)'],['adres','Adres'],['postcode','Postcode'],['plaats','Plaats'],['telefoon','Telefoon'],['email','E-mail (komt op de factuur)'],['iban','IBAN'],['tenaamstelling','Ten name van'],['kvk','KvK-nummer'],['btw','Btw-nummer'],['termijn','Betalingstermijn (dagen)']];
+  const m=document.createElement('div');m.id='fBedrijfM';m.className='fixed inset-0 bg-black/50 z-30 overflow-auto p-3';
+  m.innerHTML=`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 w-full max-w-lg mx-auto my-4">
+   <h3 class="font-bold mb-3">Bedrijfsgegevens op de factuur</h3>
+   <div class="grid grid-cols-2 gap-x-3">${velden.map(([k,l])=>`<div class="${['naam','onderNaam','adres','email','iban','tenaamstelling'].includes(k)?'col-span-2':''}"><label class="block text-xs font-medium mb-1" for="bg_${k}">${l}</label><input id="bg_${k}" value="${esc(String(b[k]??''))}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div>`).join('')}</div>
+   <div class="border-t border-gray-200 dark:border-gray-700 mt-2 pt-3">
+    <label class="block text-sm font-medium mb-1" for="bg_nr">Volgende factuurnummer</label>
+    <input id="bg_nr" inputmode="numeric" value="${esc(teller&&teller.volgend?String(teller.volgend):'')}" placeholder="bijv. 2026350" class="w-full border rounded-xl px-3 py-2 mb-1 bg-white dark:bg-gray-700 dark:border-gray-600">
+    <p class="text-xs text-gray-500 mb-3">Zet dit op het eerstvolgende nummer na je laatste SnelStart-factuur, zodat de nummering doorloopt zonder gaten of dubbele nummers. Pas het alleen aan als dat echt nodig is (bijv. bij een nieuw jaar).</p></div>
+   <div class="flex gap-2"><button id="bgSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button><button id="bgX" class="px-4 bg-gray-200 dark:bg-gray-700 rounded-xl min-h-[48px]">Annuleren</button></div></div>`;
+  document.body.appendChild(m);
+  $('bgX').onclick=()=>m.remove();
+  $('bgSave').onclick=async()=>{
+    const w={};velden.forEach(([k])=>{w[k]=$('bg_'+k).value.trim()});w.termijn=parseInt(w.termijn,10)||30;
+    if(DB.get('instellingen','bedrijf'))DB.update('instellingen','bedrijf',{waarde:w});else DB.insert('instellingen',{id:'bedrijf',waarde:w});
+    const nr=$('bg_nr').value.replace(/\D/g,'');
+    if(nr&&String(teller&&teller.volgend||'')!==nr){
+      const hoogste=DB.list('facturen').map(x=>parseInt(x.nummer,10)).filter(x=>!isNaN(x)).sort((a,b)=>b-a)[0];
+      if(hoogste&&Number(nr)<=hoogste){toast('Dit nummer is al gebruikt (hoogste factuurnummer is '+hoogste+')','error');return}
+      if(teller&&teller.volgend&&!confirm('Het volgende factuurnummer wijzigen van '+teller.volgend+' naar '+nr+'?'))return;
+      if(teller)DB.update('factuur_teller','1',{volgend:Number(nr)});else DB.insert('factuur_teller',{id:'1',volgend:Number(nr)});
+    }
+    m.remove();toast('Opgeslagen','success');renderCurrentView();
+  };
+}
+
+// ---- Producten ----
+function renderProducten(){
+  const items=DB.list('producten').slice().sort((a,b)=>(a.naam||'').localeCompare(b.naam||''));
+  $('main').innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">Producten</h2>
+  <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Producten en diensten die je op een factuur kunt zetten, met prijs, eenheid en btw. Heeft een product dezelfde naam als een dienst, dan gebruikt een factuur uit klussen de prijs en btw van het product.</p>
+  <div class="flex flex-wrap gap-2 mb-4"><button id="pNieuw" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuw product</button>
+   <button id="pUitDiensten" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">Diensten overnemen als product</button></div>
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x"><table class="w-full text-sm"><thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2 text-left">Detail op factuur</th><th class="px-3 py-2 text-right">Prijs</th><th class="px-3 py-2 text-left">Eenheid</th><th class="px-3 py-2 text-left">Btw</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th></tr></thead><tbody>
+  ${items.length?items.map(p=>`<tr class="border-t border-gray-100 dark:border-gray-700"><td class="px-3 py-2 font-medium">${esc(p.naam)}</td><td class="px-3 py-2 text-gray-500">${esc(p.omschrijving||'')}</td><td class="px-3 py-2 text-right whitespace-nowrap">${eurF(p.prijs)}</td><td class="px-3 py-2">${esc(eenhLabel(p.eenheid))}</td><td class="px-3 py-2">${esc((BTW_OPTIES.find(x=>x[0]===p.btw)||['','21%'])[1])}</td><td class="px-3 py-2 text-center">${p.actief!==false?'Ja':'<span class="text-gray-400">Nee</span>'}</td>
+  <td class="px-3 py-2 whitespace-nowrap"><button data-pedit="${p.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[44px]">Wijzig</button><button data-pdel="${p.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[44px]">Verwijder</button></td></tr>`).join(''):'<tr><td colspan="7" class="px-3 py-8 text-center text-gray-400">Nog geen producten.</td></tr>'}</tbody></table></div></div>`;
+  $('pNieuw').onclick=()=>openProductEditor(null);
+  $('pUitDiensten').onclick=()=>{
+    const bestaand=new Set(DB.list('producten').map(p=>(p.naam||'').trim().toLowerCase()));let n=0;
+    DB.list('diensten').forEach(d=>{const k=(d.naam||'').trim().toLowerCase();if(!k||bestaand.has(k))return;DB.insert('producten',{naam:d.naam,omschrijving:'',eenheid:d.eenheid||'uur',prijs:Number(d.tarief)||0,btw:'21',actief:d.actief!==false});bestaand.add(k);n++});
+    toast(n?n+' diensten overgenomen (controleer de btw)':'Alle diensten staan er al','success');renderProducten();
+  };
+  document.querySelectorAll('[data-pedit]').forEach(b=>b.onclick=()=>openProductEditor(b.dataset.pedit));
+  document.querySelectorAll('[data-pdel]').forEach(b=>b.onclick=()=>{if(confirm('Product verwijderen? Bestaande facturen blijven zoals ze zijn.')){DB.remove('producten',b.dataset.pdel);renderProducten()}});
+}
+function openProductEditor(id){
+  const p=id?DB.get('producten',id):null;
+  const cls='w-full border rounded-xl px-3 py-2 mb-3 bg-white dark:bg-gray-700 dark:border-gray-600';
+  const m=document.createElement('div');m.id='pEditor';m.className='fixed inset-0 bg-black/50 z-30 overflow-auto p-3';
+  m.innerHTML=`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 w-full max-w-md mx-auto my-4"><h3 class="font-bold mb-3">${p?'Product wijzigen':'Nieuw product'}</h3>
+   <label class="block text-sm font-medium mb-1" for="pr_naam">Naam (zoals op de factuur)</label><input id="pr_naam" value="${esc(p?p.naam||'':'')}" placeholder="bijv. Mest afgevoerd (vloeibaar), per ton" class="${cls}">
+   <label class="block text-sm font-medium mb-1" for="pr_oms">Detail onder de regel (optioneel)</label><input id="pr_oms" value="${esc(p?p.omschrijving||'':'')}" class="${cls}">
+   <div class="grid grid-cols-3 gap-2"><div><label class="block text-sm font-medium mb-1" for="pr_prijs">Prijs</label><input id="pr_prijs" inputmode="decimal" value="${esc(p?String(p.prijs??'').replace('.',','):'')}" class="${cls}"></div>
+   <div><label class="block text-sm font-medium mb-1" for="pr_een">Eenheid</label><select id="pr_een" class="${cls}">${EENHEDEN_F.map(([v,l])=>`<option value="${v}" ${(p?p.eenheid:'ton')===v?'selected':''}>${l}</option>`).join('')}</select></div>
+   <div><label class="block text-sm font-medium mb-1" for="pr_btw">Btw</label><select id="pr_btw" class="${cls}">${BTW_OPTIES.map(([v,l])=>`<option value="${v}" ${(p?p.btw:'21')===v?'selected':''}>${l}</option>`).join('')}</select></div></div>
+   <label class="flex items-center gap-2 mb-4"><input type="checkbox" id="pr_act" ${!p||p.actief!==false?'checked':''} style="min-height:auto"> Actief</label>
+   <div class="flex gap-2"><button id="prSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button><button id="prX" class="px-4 bg-gray-200 dark:bg-gray-700 rounded-xl min-h-[48px]">Annuleren</button></div></div>`;
+  document.body.appendChild(m);
+  $('prX').onclick=()=>m.remove();
+  $('prSave').onclick=()=>{
+    const naam=$('pr_naam').value.trim();if(!naam){toast('Naam is verplicht','error');return}
+    const data={naam,omschrijving:$('pr_oms').value.trim(),prijs:getal($('pr_prijs').value),eenheid:$('pr_een').value,btw:$('pr_btw').value,actief:$('pr_act').checked};
+    if(p)DB.update('producten',p.id,data);else DB.insert('producten',data);
+    m.remove();renderCurrentView();
+  };
+}
+
+// ---- PDF ----
+let PDF_KLAAR=null;
+function laadScript(src){return new Promise((ok,nok)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>nok(new Error('Kon '+src+' niet laden'));document.head.appendChild(s)})}
+async function naarDataUrl(url){const r=await fetch(url);if(!r.ok)throw new Error('Kon '+url+' niet laden');const b=await r.blob();return await new Promise(ok=>{const fr=new FileReader();fr.onload=()=>ok(fr.result);fr.readAsDataURL(b)})}
+function pdfKlaarmaken(){
+  if(!PDF_KLAAR)PDF_KLAAR=(async()=>{
+    if(!window.pdfMake)await laadScript('/vendor/pdfmake.min.js');
+    if(!window.FACTUUR_VFS)await laadScript('/vendor/factuur-fonts.js');
+    pdfMake.vfs=window.FACTUUR_VFS;
+    pdfMake.fonts={Inter:{normal:'Inter-Regular.otf',bold:'Inter-SemiBold.otf',italics:'Inter-Italic.otf',bolditalics:'Inter-SemiBold.otf'},InterLicht:{normal:'InterDisplay-ExtraLight.otf',bold:'InterDisplay-SemiBold.otf',italics:'InterDisplay-ExtraLight.otf',bolditalics:'InterDisplay-SemiBold.otf'}};
+    const [banner,logo]=await Promise.all([naarDataUrl('/factuur-banner.jpg'),naarDataUrl('/logo-wit.png')]);
+    return {banner,logo};
+  })().catch(e=>{PDF_KLAAR=null;throw e});
+  return PDF_KLAAR;
+}
+function factuurPdfDef(f,b,img){
+  const credit=f.soort==='credit';
+  const t=factuurTotalen(f.regels);
+  const kl=f.klant||{};
+  const grijs='#6b6b6b',lijn='#e4e1da',inkt='#111111';
+  const titel=credit?'CREDITNOTA':'FACTUUR';
+  const kop=('Nr. '+(f.nummer||'concept')+'   ·   '+datumLangNL(f.factuurdatum)).toUpperCase();
+  const lab=tx=>({text:tx.toUpperCase(),fontSize:6.6,bold:true,color:FACT_GROEN,characterSpacing:1.2,margin:[0,0,0,5]});
+  const th=(tx,al)=>({text:tx.toUpperCase(),fontSize:6.4,bold:true,color:grijs,characterSpacing:1.1,alignment:al||'left',margin:[0,0,0,2]});
+  const verlegd=(t.groepen.verlegd||0)!==0||(f.regels||[]).some(r=>r.btw==='verlegd');
+  const rijen=(f.regels||[]).map(r=>[
+    {stack:[{text:r.omschrijving||''},r.detail?{text:r.detail,fontSize:7.6,color:grijs,margin:[0,1.5,0,0]}:{text:''}]},
+    {text:num2(r.aantal)+' '+eenhLabel(r.eenheid),alignment:'right',noWrap:true},
+    {text:eurF(r.prijs),alignment:'right',noWrap:true},
+    {text:r.btw==='verlegd'?'verlegd':(r.btw||'21')+'%',alignment:'center',noWrap:true},
+    {text:eurF(r2(getal(r.aantal)*getal(r.prijs))),alignment:'right',noWrap:true}
+  ]);
+  const btwKeys=Object.keys(t.groepen).sort((a,c)=>(a==='verlegd')-(c==='verlegd')||Number(c)-Number(a));
+  const btwTabel={table:{widths:['auto','auto','auto'],body:[[{text:'Btw',bold:true},{text:'Grondslag',bold:true,alignment:'right'},{text:'Bedrag',bold:true,alignment:'right'}],...btwKeys.map(k=>[k==='verlegd'?'Verlegd':k+'%',{text:eurF(t.groepen[k]),alignment:'right'},{text:k==='verlegd'?'—':eurF(t.btwPer[k]),alignment:'right'}])]},
+    layout:{hLineWidth:i=>i===1?0.5:0,vLineWidth:()=>0,hLineColor:()=>lijn,paddingLeft:i=>i===0?0:10,paddingRight:()=>0,paddingTop:()=>2,paddingBottom:()=>2},fontSize:7.6,color:grijs};
+  const totRij=(a,c,o)=>({columns:[{text:a},{text:c,alignment:'right',width:'auto'}],margin:[0,2,0,2],...(o||{})});
+  const totalen={width:200,stack:[
+    totRij('Totaal excl. btw',eurF(t.excl)),
+    ...btwKeys.map(k=>k==='verlegd'?totRij('Btw verlegd','—'):totRij('Btw '+k+'%',eurF(t.btwPer[k]))),
+    {canvas:[{type:'line',x1:0,y1:0,x2:200,y2:0,lineWidth:1.2,lineColor:inkt}],margin:[0,6,0,6]},
+    {columns:[{text:(credit?'Creditbedrag':'Te betalen').toUpperCase(),fontSize:7,bold:true,characterSpacing:1.3,margin:[0,7,0,0]},{text:eurF(t.incl),font:'InterLicht',bold:true,fontSize:18,alignment:'right',width:'auto'}]}
+  ]};
+  const betaal=credit?{text:'Dit bedrag wordt verrekend met openstaande facturen of aan u terugbetaald.',fontSize:8.6,color:grijs,margin:[0,22,0,0]}:{
+    margin:[0,26,0,0],
+    table:{widths:[3.4,'*','auto'],body:[[{text:'',fillColor:FACT_GROEN},
+      {stack:[{text:['Graag ontvangen wij het bedrag vóór ',{text:datumLangNL(f.vervaldatum),bold:true},' op']},{text:[{text:b.iban,bold:true},' t.n.v. ',{text:b.tenaamstelling||b.naam,bold:true},', o.v.v. ',{text:'factuur '+(f.nummer||''),bold:true},'.']},{text:'Betalingstermijn '+(b.termijn||30)+' dagen.',fontSize:7.6,color:grijs,margin:[0,2,0,0]}],fillColor:FACT_TINT,margin:[10,10,6,10],fontSize:8.8},
+      {text:eurF(t.incl),font:'InterLicht',bold:true,fontSize:14,fillColor:FACT_TINT,margin:[6,16,12,10],noWrap:true}]]},
+    layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>0,paddingRight:()=>0,paddingTop:()=>0,paddingBottom:()=>0}};
+  const voetRegels=[[b.naam,b.onderNaam,b.adres+', '+b.postcode+' '+b.plaats].filter(Boolean).join(' · '),['T '+b.telefoon,b.email].filter(x=>x&&x!=='T ').join(' · '),['IBAN '+b.iban,'KvK '+b.kvk,'Btw '+b.btw].join(' · ')];
+  return {
+    pageSize:'A4',pageMargins:[45,50,45,72],
+    info:{title:(credit?'Creditnota ':'Factuur ')+(f.nummer||'concept')+' – '+(kl.naam||''),author:b.naam,subject:(credit?'Creditnota ':'Factuur ')+(f.nummer||'')},
+    defaultStyle:{font:'Inter',fontSize:9,color:inkt,lineHeight:1.2},
+    background:(page)=>page!==1?null:[
+      {image:img.banner,width:595.28,height:209.8,absolutePosition:{x:0,y:0}},
+      {canvas:[{type:'rect',x:0,y:0,w:595.28,h:3.4,color:FACT_GROEN}],absolutePosition:{x:0,y:209.8}},
+      {image:img.logo,width:176,absolutePosition:{x:45,y:42}},
+      {text:titel,font:'InterLicht',fontSize:credit?23:29,characterSpacing:credit?3.6:5.6,color:'#ffffff',absolutePosition:{x:45,y:credit?127:122}},
+      {text:kop,fontSize:8.2,characterSpacing:1.6,color:FACT_SUB,absolutePosition:{x:45,y:163}}
+    ],
+    header:(page)=>page===1?null:{text:[{text:(b.naam||'').toUpperCase(),bold:true},'   ·   '+(credit?'Creditnota ':'Factuur ')+(f.nummer||'')+' (vervolg)'],fontSize:7,characterSpacing:1,color:FACT_GROEN,margin:[45,28,45,0]},
+    footer:(page,aantal)=>({margin:[45,18,45,0],stack:[
+      {canvas:[{type:'line',x1:0,y1:0,x2:505.28,y2:0,lineWidth:0.5,lineColor:lijn}],margin:[0,0,0,6]},
+      {columns:[{stack:voetRegels.map(x=>({text:x})),fontSize:6.8,color:'#7a7a7a',lineHeight:1.25},{text:'Pagina '+page+' van '+aantal,fontSize:6.8,color:'#7a7a7a',alignment:'right',width:90}]}]}),
+    content:[
+      {text:'',margin:[0,175,0,0]},
+      {columns:[
+        {width:'*',stack:[lab(credit?'Creditnota aan':'Factuur aan'),{text:kl.naam||'',bold:true,fontSize:11},kl.adres?{text:kl.adres}:'',(kl.postcode||kl.plaats)?{text:[kl.postcode,kl.plaats].filter(Boolean).join('  ')}:'',kl.btwnummer?{text:'Btw-nr '+kl.btwnummer,fontSize:8,color:grijs,margin:[0,3,0,0]}:'']},
+        {width:'auto',table:{body:[
+          ...[[credit?'Creditnotanummer':'Factuurnummer',f.nummer||'concept'],[credit?'Datum':'Factuurdatum',datumNL(f.factuurdatum)],...(credit?[]:[['Vervaldatum',datumNL(f.vervaldatum)]]),...(f.creditVan?[['Betreft factuur',(DB.get('facturen',f.creditVan)||{}).nummer||'']]:[]),...(kl.klantcode?[['Klantnummer',kl.klantcode]]:[])]
+            .map(([a,c])=>[{text:a,color:grijs},{text:c,bold:true,alignment:'right'}])]},layout:'noBorders',fontSize:8.8}
+      ]},
+      {margin:[0,26,0,0],table:{headerRows:1,dontBreakRows:true,keepWithHeaderRows:1,widths:['*',66,62,40,72],
+        body:[[th('Omschrijving'),th('Aantal','right'),th('Prijs','right'),th('Btw','center'),th('Totaal','right')],...rijen]},
+        layout:{hLineWidth:(i,node)=>i===0?0:(i===1?1.2:0.5),hLineColor:i=>i===1?inkt:lijn,vLineWidth:()=>0,paddingLeft:i=>i===0?0:6,paddingRight:(i,node)=>i===node.table.widths.length-1?0:6,paddingTop:i=>6,paddingBottom:()=>6}},
+      f.opmerking?{text:f.opmerking,fontSize:8.6,color:grijs,italics:true,margin:[0,12,0,0]}:'',
+      {unbreakable:true,stack:[
+        {margin:[0,18,0,0],columns:[{width:'*',stack:[btwTabel,verlegd?{text:'Btw verlegd'+(kl.btwnummer?' naar afnemer, btw-nr '+kl.btwnummer:'')+'.',fontSize:7.6,color:grijs,margin:[0,8,0,0]}:'']},totalen]},
+        betaal,
+        {text:'Bedankt voor uw opdracht.',italics:true,fontSize:8.4,color:grijs,margin:[0,18,0,0]}
+      ]}
+    ]
+  };
+}
+async function factuurPdf(id,actie){
+  const f=DB.get('facturen',id);if(!f)return;
+  // Venster meteen openen (anders blokkeert de browser het), daarna vullen
+  const w=actie==='open'?window.open('','_blank'):null;
+  if(w)w.document.write('<p style="font-family:sans-serif;padding:20px">PDF wordt gemaakt…</p>');
+  try{
+    const img=await pdfKlaarmaken();
+    const def=factuurPdfDef(f,bedrijf(),img);
+    const naam=((f.soort==='credit'?'Creditnota ':'Factuur ')+(f.nummer||'concept')+' - '+((f.klant&&f.klant.naam)||'')).replace(/[\\/:*?"<>|]/g,'').trim()+'.pdf';
+    const doc=pdfMake.createPdf(def);
+    if(actie==='blob')return await new Promise(ok=>doc.getBlob(ok));
+    if(actie==='download'){doc.download(naam);return}
+    doc.getBlob(b=>{const u=URL.createObjectURL(b);if(w)w.location.href=u;else window.open(u,'_blank')});
+  }catch(e){if(w)w.close();toast('PDF maken mislukt: '+e.message,'error')}
 }
 
 // === BEHEER: CRUD VIEWS ===
@@ -1397,16 +1886,16 @@ function openKlantImport(){
 }
 function openKlantEditor(id,items){
   const existing=id?items.find(k=>k.id===id):null;
-  const fields=['klantcode','naam','adres','postcode','plaats','contact','email','telefoon'];
-  const labels=['Klantcode','Naam','Adres (straat + nr)','Postcode','Plaats','Contactpersoon','E-mail','Telefoon'];
+  const fields=['klantcode','naam','adres','postcode','plaats','contact','email','telefoon','btwnummer'];
+  const labels=['Klantcode','Naam','Adres (straat + nr)','Postcode','Plaats','Contactpersoon','E-mail (facturen gaan hierheen)','Telefoon','Btw-nummer (nodig bij btw verlegd)'];
   const values=existing?fields.map(f=>existing[f]||''):fields.map(f=>f==='klantcode'?nieuweKlantcode():'');
   const actief=existing?existing.actief!==false:true;
-  const html=`<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-30" id="klantEditor"><div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-md mx-4"><h3 class="font-bold mb-4">${existing?'Klant bewerken':'Nieuwe klant'}</h3>
+  const html=`<div class="fixed inset-0 bg-black/50 z-30 overflow-auto p-3" id="klantEditor"><div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-md mx-auto my-4"><h3 class="font-bold mb-4">${existing?'Klant bewerken':'Nieuwe klant'}</h3>
   ${fields.map((f,i)=>`<label class="block text-sm font-medium mb-1">${labels[i]}</label><input id="kl_${f}" value="${esc(values[i])}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">`).join('')}
   <label class="flex items-center gap-2 mb-4"><input type="checkbox" id="kl_actief" ${actief?'checked':''}> Actief</label>
   <div class="flex gap-2"><button id="klSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button><button id="klCancel" class="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
-  $('klSave').onclick=()=>{const data={klantcode:$('kl_klantcode').value.trim(),naam:$('kl_naam').value,adres:$('kl_adres').value,postcode:$('kl_postcode').value,plaats:$('kl_plaats').value,contact:$('kl_contact').value,email:$('kl_email').value,telefoon:$('kl_telefoon').value,actief:$('kl_actief').checked};if(!data.naam){toast('Naam is verplicht','error');return}if(!data.klantcode)data.klantcode=nieuweKlantcode();if(DB.list('klanten').some(k=>k.klantcode===data.klantcode&&k.id!==id)){toast('Deze klantcode bestaat al','error');return}if(existing)DB.update('klanten',id,data);else DB.insert('klanten',data);toast('Klant opgeslagen','success');document.getElementById('klantEditor').remove();renderCurrentView()};
+  $('klSave').onclick=()=>{const data={klantcode:$('kl_klantcode').value.trim(),naam:$('kl_naam').value,adres:$('kl_adres').value,postcode:$('kl_postcode').value,plaats:$('kl_plaats').value,contact:$('kl_contact').value,email:$('kl_email').value,telefoon:$('kl_telefoon').value,btwnummer:$('kl_btwnummer').value.trim(),actief:$('kl_actief').checked};if(!data.naam){toast('Naam is verplicht','error');return}if(!data.klantcode)data.klantcode=nieuweKlantcode();if(DB.list('klanten').some(k=>k.klantcode===data.klantcode&&k.id!==id)){toast('Deze klantcode bestaat al','error');return}if(existing)DB.update('klanten',id,data);else DB.insert('klanten',data);toast('Klant opgeslagen','success');document.getElementById('klantEditor').remove();renderCurrentView()};
   $('klCancel').onclick=()=>document.getElementById('klantEditor').remove();
 }
 
@@ -2281,10 +2770,10 @@ async function laadAlles(){
   }
   // Planning-archief en vervaldata: alleen beheer; mogen ontbreken zolang de tabellen niet zijn aangemaakt.
   if (isBeheer()) {
-    for (const t of ['planningen', 'vervaldata', 'klus_notities']) {
+    for (const t of ['planningen', 'vervaldata', 'klus_notities', 'producten', 'facturen', 'instellingen', 'factuur_teller']) {
       try {
         const o = await sbREST('/rest/v1/' + t + '?select=*&limit=1000');
-        CACHE[t] = Array.isArray(o) ? o : [];
+        CACHE[t] = Array.isArray(o) ? (t === 'factuur_teller' ? o.map(x => Object.assign({}, x, { id: String(x.id) })) : o) : [];
       } catch (e) { CACHE[t] = CACHE[t] || [] }
     }
   }
@@ -2589,6 +3078,8 @@ function renderCurrentView(){
       case 'dashboard':renderDashboard();break;
       case 'klussen':renderKlussenBeheer();break;
       case 'orders':renderOrders();break;
+      case 'facturen':renderFacturen();break;
+      case 'producten':renderProducten();break;
       case 'klanten':renderKlanten();break;
       case 'diensten':renderDiensten();break;
       case 'materieel':renderMaterieel();break;
@@ -2611,8 +3102,8 @@ function renderBottomNav(){
 // Na elke render de rolregels toepassen (medewerker = alleen eigen uren)
 function naRender(){ try{pasRolToe()}catch(e){} }
 // Terugknop van de browser: elke pagina (tabblad) krijgt een eigen plek in de browsergeschiedenis.
-const BEHEER_TABS=['dashboard','klussen','orders','klanten','diensten','materieel','keuringen','werknemers','planning','planarchief','uren','export','accounts'];
-const BEHEER_ALLEEN=['accounts','orders','planarchief','keuringen'];
+const BEHEER_TABS=['dashboard','klussen','facturen','producten','orders','klanten','diensten','materieel','keuringen','werknemers','planning','planarchief','uren','export','accounts'];
+const BEHEER_ALLEEN=['accounts','orders','planarchief','keuringen','facturen','producten'];
 function navStaat(){return {m:currentMode,v:currentView,t:currentBeheerTab}}
 function navPush(vervang){
   try{
@@ -2632,7 +3123,7 @@ window.addEventListener('popstate',e=>{
 });
 function switchView(view){currentView=view;navPush();renderCurrentView()}
 function switchTab(tab){
-  if((tab==='accounts'||tab==='orders'||tab==='planarchief'||tab==='keuringen')&&!isBeheer()){toast('Alleen voor beheerders','error');return}
+  if(BEHEER_ALLEEN.includes(tab)&&!isBeheer()){toast('Alleen voor beheerders','error');return}
   // Een beheertabblad aanklikken betekent ook echt naar de beheermodus.
   currentMode='beheer';
   const mt=$('modeToggle');if(mt)mt.value='beheer';
