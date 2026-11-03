@@ -1072,7 +1072,7 @@ function renderKlussenBeheer(){
   const perKlant={};
   rows.forEach(k=>{
     const key=k.klantId||'_';
-    const g=perKlant[key]=perKlant[key]||{naam:k.klant?(k.klant.klantcode?k.klant.klantcode+' ':'')+k.klant.naam:'Onbekende klant',adres:k.klant?klantAdres(k.klant):'',aantal:0,uren:0,open:0,openBedrag:0};
+    const g=perKlant[key]=perKlant[key]||{key,naam:k.klant?(k.klant.klantcode?k.klant.klantcode+' ':'')+k.klant.naam:'Onbekende klant',adres:k.klant?klantAdres(k.klant):'',aantal:0,uren:0,open:0,openBedrag:0};
     g.aantal++;if(k.eenheid==='uur')g.uren+=Number(k.aantal)||0;
     if(!k.gefactureerd){g.open++;g.openBedrag+=klusBedrag(k)}
   });
@@ -1139,7 +1139,7 @@ function renderKlussenBeheer(){
         <td class="px-3 py-2 text-center">${k.wegenMonsteren?'<span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium text-xs">Ja</span>':'<span class="text-xs text-gray-400">Nee</span>'}<div class="mt-1"><button data-mono="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.wegenMonsteren?'text-gray-500':'text-blue-700 dark:text-blue-400'}">${k.wegenMonsteren?'uitzetten':'aanvinken'}</button></div></td>
         <td class="px-3 py-2 min-w-[160px] max-w-[240px]">${klusNotitieCel(k.id)}</td>
         <td class="px-3 py-2 text-center">${statusBadge(k)}<div class="mt-1"><button data-toggle="${k.id}" data-dag="${k.dagId}" class="text-xs font-medium underline ${k.gefactureerd?'text-gray-500':'text-emerald-700 dark:text-emerald-400'}">${k.gefactureerd?'terugdraaien':'afvinken'}</button></div>${k.factuurdatum?`<div class="text-[11px] text-gray-500 mt-0.5">${k.factuurdatum}</div>`:''}</td>
-        <td class="px-3 py-2 text-xs text-gray-500">${k.dagStatus==='goedgekeurd'?'Goedgekeurd':k.dagStatus==='verwerkt'?'Verwerkt':'In afwachting'}<div><button data-edit-klus="${k.id}" data-dag="${k.dagId}" class="text-xs text-blue-600 hover:text-blue-800 underline min-h-[40px] mr-2">Wijzig</button><button data-werkbon="${k.id}" data-dag="${k.dagId}" class="text-xs text-gray-700 dark:text-gray-200 hover:text-black underline min-h-[40px] mr-2">Werkbon</button><button data-del-klus="${k.id}" data-dag="${k.dagId}" class="text-xs text-red-500 hover:text-red-700 underline min-h-[40px]">Verwijder</button></div></td>
+        <td class="px-3 py-2 text-xs text-gray-500">${k.dagStatus==='goedgekeurd'?'Goedgekeurd':k.dagStatus==='verwerkt'?'Verwerkt':'In afwachting'}<div><button data-edit-klus="${k.id}" data-dag="${k.dagId}" class="text-xs text-blue-600 hover:text-blue-800 underline min-h-[40px] mr-2">Wijzig</button>${k.gefactureerd?'':`<button data-fklus="${k.id}" data-dag="${k.dagId}" class="text-xs text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 underline min-h-[40px] mr-2">Factuur</button>`}<button data-werkbon="${k.id}" data-dag="${k.dagId}" class="text-xs text-gray-700 dark:text-gray-200 hover:text-black underline min-h-[40px] mr-2">Werkbon</button><button data-del-klus="${k.id}" data-dag="${k.dagId}" class="text-xs text-red-500 hover:text-red-700 underline min-h-[40px]">Verwijder</button></div></td>
       </tr>`).join(''):'<tr><td colspan="13" class="px-3 py-8 text-center text-gray-400">Geen klussen in deze selectie</td></tr>'}</tbody>
     </table></div>
   </div>
@@ -1150,13 +1150,14 @@ function renderKlussenBeheer(){
       <thead class="bg-gray-50 dark:bg-gray-700"><tr>
         <th class="px-3 py-2 text-left">Klant</th><th class="px-3 py-2 text-left">Adres</th>
         <th class="px-3 py-2 text-right">Klussen</th><th class="px-3 py-2 text-right">Uren</th>
-        <th class="px-3 py-2 text-right">Open</th><th class="px-3 py-2 text-right">Indicatief open</th>
+        <th class="px-3 py-2 text-right">Open</th><th class="px-3 py-2 text-right">Indicatief open</th><th class="px-3 py-2"></th>
       </tr></thead>
       <tbody>${klantRijen.length?klantRijen.map(g=>`<tr class="border-t border-gray-100 dark:border-gray-700">
         <td class="px-3 py-2 font-medium">${esc(g.naam)}</td><td class="px-3 py-2 text-xs text-gray-500">${esc(g.adres||'—')}</td>
         <td class="px-3 py-2 text-right">${g.aantal}</td><td class="px-3 py-2 text-right">${fmtNum(g.uren)}</td>
         <td class="px-3 py-2 text-right">${g.open}</td><td class="px-3 py-2 text-right">${euro(g.openBedrag)}</td>
-      </tr>`).join(''):'<tr><td colspan="6" class="px-3 py-6 text-center text-gray-400">Geen gegevens</td></tr>'}</tbody>
+        <td class="px-3 py-2 text-right whitespace-nowrap">${g.open&&g.key!=='_'?`<button data-fklant="${esc(g.key)}" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-medium min-h-[40px]">Factuur maken (${g.open})</button>`:''}</td>
+      </tr>`).join(''):'<tr><td colspan="7" class="px-3 py-6 text-center text-gray-400">Geen gegevens</td></tr>'}</tbody>
     </table></div>
   </div>
   <p class="text-xs text-gray-400 mt-3">Het indicatieve bedrag is aantal &times; het uurtarief van de dienst. Controleer dit altijd tegen je eigen tarieven.</p>
@@ -1180,6 +1181,8 @@ function renderKlussenBeheer(){
   };
   document.querySelectorAll('[data-notitie]').forEach(b=>b.onclick=()=>openKlusNotitie(b.dataset.notitie));
   document.querySelectorAll('[data-werkbon]').forEach(b=>b.onclick=()=>openWerkbon([{dagId:b.dataset.dag,klusId:b.dataset.werkbon}]));
+  document.querySelectorAll('[data-fklant]').forEach(b=>b.onclick=()=>{const paren=rows.filter(k=>(k.klantId||'_')===b.dataset.fklant&&!k.gefactureerd).map(k=>({dagId:k.dagId,klusId:k.id}));factureerKlussen(paren)});
+  document.querySelectorAll('[data-fklus]').forEach(b=>b.onclick=()=>factureerKlussen([{dagId:b.dataset.dag,klusId:b.dataset.fklus}]));
   $('btnKlusFactureer').onclick=()=>{const paren=[...klusSelectie].map(id=>{const r=alle.find(x=>x.id===id);return r&&{dagId:r.dagId,klusId:id}}).filter(Boolean);if(!paren.length){toast('Vink eerst één of meer klussen aan','error');return}factureerKlussen(paren);klusSelectie=new Set()};
   $('btnKlusWerkbon').onclick=()=>{const paren=[...klusSelectie].map(id=>{const r=alle.find(x=>x.id===id);return r&&{dagId:r.dagId,klusId:id}}).filter(Boolean);if(!paren.length){toast('Vink eerst één of meer klussen aan','error');return}openWerkbon(paren)};
   document.querySelectorAll('[data-edit-klus]').forEach(b=>b.onclick=()=>openKlusWijzigen(b.dataset.dag,b.dataset.editKlus));
