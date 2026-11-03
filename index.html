@@ -1547,6 +1547,19 @@ function openNieuweFactuur(){
   };
 }
 
+// Sleepvlak: bestanden uit de verkenner/Finder erop slepen. Buiten een sleepvlak opent de browser het bestand niet.
+function maakSleepZone(el,opBestanden){
+  if(!el)return;
+  let teller=0;const orig=el.style.background;
+  const aan=on=>{el.style.outline=on?'2px dashed #2f6b45':'';el.style.outlineOffset=on?'-6px':'';el.style.background=on?'#eef5f0':orig};
+  const isBestand=e=>e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files');
+  el.addEventListener('dragenter',e=>{if(!isBestand(e))return;e.preventDefault();teller++;aan(true)});
+  el.addEventListener('dragover',e=>{if(!isBestand(e))return;e.preventDefault();e.dataTransfer.dropEffect='copy'});
+  el.addEventListener('dragleave',()=>{teller=Math.max(0,teller-1);if(!teller)aan(false)});
+  el.addEventListener('drop',e=>{if(!isBestand(e))return;e.preventDefault();e.stopPropagation();teller=0;aan(false);const f=[...e.dataTransfer.files];if(f.length)opBestanden(f)});
+}
+['dragover','drop'].forEach(t=>window.addEventListener(t,e=>{if(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files'))e.preventDefault()}));
+
 // ---- Bijlagen bij een factuur: eigen bestanden (bijv. overzicht uit de mestboekhouding) en foto's bij de klussen ----
 // Bewaard in factuur.bijlagen als [{pad, naam, grootte, bron:'upload'|'klus', mee:true|false}]
 function factuurKlusFotos(f){
@@ -1639,7 +1652,9 @@ function renderFactuurPagina(id){
       <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:4px"><h2 id="h-bijl" style="margin:0;font-size:15px;font-weight:600">Bijlagen bij deze factuur</h2><span id="fe_bijlmaat" style="font-size:13px;color:#5a655e"></span></div>
       <p style="margin:0 0 14px;font-size:13px;color:#5a655e">Wat hier aangevinkt staat, gaat standaard mee als je de factuur verstuurt. Bijvoorbeeld het overzicht uit je mestboekhouding, of de foto van een weegbon die bij de klus is gemaakt.</p>
       <div id="fe_bijl"></div>
-      <label class="zk-stippel" style="display:inline-flex;align-items:center;margin-top:6px">+ Bestand toevoegen (pdf, foto, Excel…)<input type="file" id="fe_bijlIn" multiple class="sr-only"></label>
+      <label for="fe_bijlIn" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;margin-top:6px;padding:18px;border:1.5px dashed #b9c1b8;border-radius:12px;cursor:pointer;text-align:center">
+       <span style="font-size:14px;font-weight:600">Sleep bestanden hierheen</span><span style="font-size:13px;color:#5a655e">of klik om te kiezen (pdf, foto, Excel…)</span>
+       <input type="file" id="fe_bijlIn" multiple class="sr-only"></label>
      </section>
     </div>
     <aside aria-label="Totaal en controle" style="flex:1 1 320px;max-width:420px;display:flex;flex-direction:column;gap:20px">
@@ -1723,8 +1738,7 @@ function renderFactuurPagina(id){
     if(b2.dataset.bijlzie!==undefined){toonFotos([bijl[+b2.dataset.bijlzie].pad]);return}
     if(b2.dataset.bijldel!==undefined){const x=bijl[+b2.dataset.bijldel];if(!confirm('Bijlage "'+x.naam+'" verwijderen?'))return;bijl.splice(+b2.dataset.bijldel,1);bewaarFactuurBijlagen(f.id,bijl);opslagVerwijder(x.pad);tekenBijlagen()}};
   $('fe_bijl').onchange=e=>{if(e.target.dataset.bijlmee===undefined)return;bijl[+e.target.dataset.bijlmee].mee=e.target.checked;bewaarFactuurBijlagen(f.id,bijl);tekenBijlagen()};
-  $('fe_bijlIn').onchange=async e=>{
-    const files=[...e.target.files];e.target.value='';
+  const voegBijlagenToe=async files=>{
     for(const file of files){
       try{
         let blob=file,naam=file.name;
@@ -1737,6 +1751,8 @@ function renderFactuurPagina(id){
       }catch(err){toast('Toevoegen mislukt: '+err.message,'error')}
     }
   };
+  $('fe_bijlIn').onchange=e=>{const files=[...e.target.files];e.target.value='';voegBijlagenToe(files)};
+  maakSleepZone($('h-bijl').closest('section'),voegBijlagenToe);
   $('feX').onclick=e=>{e.preventDefault();sluit()};
   const voorbeeld=()=>{if(concept)bewaar(true);factuurPdf(f.id,'open')};
   $('feGroot').onclick=voorbeeld;$('feMini').onclick=voorbeeld;
@@ -2054,7 +2070,7 @@ function openFactuurVersturen(id,soort){
       <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:#fff;border:1px solid #e3e6e0;border-radius:10px;margin-bottom:8px"><span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;font-size:11px;font-weight:700;background:#2f6b45;color:#fff;flex:none">PDF</span><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((f.soort==='credit'?'Creditnota ':'Factuur ')+f.nummer)}.pdf</div><div id="fm_pdfmaat" style="font-size:12px;color:#5a655e">wordt gemaakt…</div></div><span class="zk-pil" style="font-size:11px;padding:3px 8px;background:#e6f2ea;color:#245a39">altijd</span></div>
       <div id="fm_vast"></div>
       <div id="fm_extra"></div>
-      <label style="display:flex;align-items:center;justify-content:center;width:100%;height:44px;border-radius:10px;border:1px dashed #b9c1b8;background:#fff;font-size:13px;font-weight:500;cursor:pointer;margin-top:4px">+ Bijlage toevoegen<input type="file" id="fm_file" multiple class="sr-only"></label></div>
+      <label id="fm_sleep" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:100%;padding:14px;border-radius:10px;border:1.5px dashed #b9c1b8;background:#fff;cursor:pointer;margin-top:4px;text-align:center"><span style="font-size:13px;font-weight:600">+ Bijlage toevoegen</span><span style="font-size:12px;color:#5a655e">of sleep een bestand hierheen</span><input type="file" id="fm_file" multiple class="sr-only"></label></div>
      <div style="display:flex;flex-direction:column;gap:10px">
       ${klussen.length?`<label for="fm_wb" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;background:#fff;border:1px solid #e3e6e0;border-radius:10px;font-size:13px;cursor:pointer"><span><span style="font-weight:600;display:block">Werkbon meesturen</span><span style="color:#5a655e">${klussen.length} klus${klussen.length===1?'':'sen'}, als PDF</span></span><input type="checkbox" id="fm_wb" style="width:20px;height:20px;min-height:auto;accent-color:#2f6b45"></label>`:''}
       ${herinnering?'<div style="padding:12px;background:#fff;border:1px solid #e3e6e0;border-radius:10px;font-size:13px;color:#5a655e">Bij een herinnering gaat er <b>geen</b> kopie naar Yuki; de factuur staat daar al.</div><input type="checkbox" id="fm_yuki" class="sr-only" disabled>':`      <label for="fm_yuki" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;background:#fff;border:1px solid #e3e6e0;border-radius:10px;font-size:13px;cursor:pointer"><span><span style="font-weight:600;display:block">Kopie naar Yuki</span><span style="color:#5a655e">${b.yukiEmail?'Alleen de factuur-pdf, aparte mail naar '+esc(b.yukiEmail):'Stel eerst het Yuki-adres in bij Bedrijfsgegevens'}</span></span><input type="checkbox" id="fm_yuki" ${b.yukiEmail?'checked':'disabled'} style="width:20px;height:20px;min-height:auto;accent-color:#2f6b45"></label>`}
@@ -2091,15 +2107,17 @@ function openFactuurVersturen(id,soort){
   // echte grootte van de factuur-pdf alvast bepalen
   factuurPdf(f.id,'blob').then(bl=>{if(bl){pdfMaat=bl.size;if($('fm_pdfmaat'))$('fm_pdfmaat').textContent=mbF(bl.size);tekenMaat()}}).catch(()=>{if($('fm_pdfmaat'))$('fm_pdfmaat').textContent='kon niet worden gemaakt'});
   if($('fm_wb'))$('fm_wb').onchange=async()=>{tekenMaat();if($('fm_wb').checked&&!wbMaat){try{const bl=await werkbonPdfBlob(klussen);wbMaat=bl.size;tekenMaat()}catch(e){}}};
-  $('fm_file').onchange=async e=>{
-    for(const file of [...e.target.files]){
+  const verzendBestanden=async files=>{
+    for(const file of files){
       let blob=file,naam=file.name;
       // Foto's groter dan 1 MB verkleinen we (zoals bij de klussen); pdf's en andere bestanden blijven zoals ze zijn.
       if(/^image\//.test(file.type)&&file.size>1024*1024){try{blob=await fotoVerkleinen(file);naam=naam.replace(/\.[^.]+$/,'')+'.jpg'}catch(x){}}
       extra.push({naam,blob});
     }
-    e.target.value='';tekenExtra();
+    tekenExtra();
   };
+  $('fm_file').onchange=e=>{const files=[...e.target.files];e.target.value='';verzendBestanden(files)};
+  maakSleepZone(m.querySelector('[role=dialog]'),verzendBestanden);
   const sluit=()=>m.remove();
   $('fmX').onclick=sluit;$('fmCancel').onclick=sluit;
   $('fmSend').onclick=async()=>{
