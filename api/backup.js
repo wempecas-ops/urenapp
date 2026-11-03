@@ -15,6 +15,47 @@ const MAG_ONTBREKEN = new Set(['materieel', 'orders', 'planningen', 'vervaldata'
 const BEWAAR = 30;
 
 const kop = extra => Object.assign({ apikey: SERVICE, Authorization: 'Bearer ' + SERVICE }, extra || {});
+const pad = p => p.split('/').map(encodeURIComponent).join('/');
+
+// Alle bestanden in een bucket (mappen worden doorlopen). Geeft [{naam, grootte}]
+async function lijstAlles(bucket, prefix) {
+  const uit = [];
+  for (let offset = 0; ; offset += 1000) {
+    const r = await fetch(`${URL_SB}/storage/v1/object/list/${bucket}`, { method: 'POST', headers: kop({ 'Content-Type': 'application/json' }), body: JSON.stringify({ prefix: prefix || '', limit: 1000, offset, sortBy: { column: 'name', order: 'asc' } }) });
+    if (!r.ok) throw new Error('Lijst ' + bucket + ': ' + r.status);
+    const items = await r.json();
+    for (const it of items) {
+      const vol = (prefix ? prefix + '/' : '') + it.name;
+      if (it.id === null || it.id === undefined) uit.push(...await lijstAlles(bucket, vol));   // map
+      else uit.push({ naam: vol, grootte: (it.metadata && it.metadata.size) || 0 });
+    }
+    if (items.length < 1000) break;
+  }
+  return uit;
+}
+
+// Bijlagen (foto's van klussen, bijlagen en pdf's van facturen) kopiëren naar de backup-bucket,
+// onder backups/bijlagen/... Alleen nieuwe bestanden; wat eenmaal gekopieerd is blijft bewaard,
+// ook als het origineel later wordt verwijderd. Per nacht maximaal ~45 seconden werk; de rest volgt de nacht erna.
+async function spiegelBijlagen(start) {
+  const bron = await lijstAlles('bijlagen', '');
+  let al = new Set();
+  try { al = new Set((await lijstAlles('backups', 'bijlagen')).map(x => x.naam.replace(/^bijlagen\//, ''))) } catch (e) {}
+  const nieuw = bron.filter(x => !al.has(x.naam));
+  let gekopieerd = 0, mislukt = 0;
+  for (const x of nieuw) {
+    if (Date.now() - start > 45000) break;
+    try {
+      const d = await fetch(`${URL_SB}/storage/v1/object/bijlagen/${pad(x.naam)}`, { headers: kop() });
+      if (!d.ok) throw new Error('ophalen ' + d.status);
+      const buf = Buffer.from(await d.arrayBuffer());
+      const u = await fetch(`${URL_SB}/storage/v1/object/backups/bijlagen/${pad(x.naam)}`, { method: 'POST', headers: kop({ 'Content-Type': d.headers.get('content-type') || 'application/octet-stream', 'x-upsert': 'true' }), body: buf });
+      if (!u.ok) throw new Error('opslaan ' + u.status);
+      gekopieerd++;
+    } catch (e) { mislukt++ }
+  }
+  return { totaal: bron.length, alInBackup: bron.length - nieuw.length, gekopieerd, mislukt, nogTeGaan: Math.max(0, nieuw.length - gekopieerd - mislukt) };
+}
 
 async function haalTabel(t) {
   let alles = [], van = 0;
@@ -34,6 +75,7 @@ module.exports = async (req, res) => {
     if (!URL_SB || !SERVICE) return res.status(500).json({ error: 'Omgevingsvariabelen ontbreken' });
     if (process.env.CRON_SECRET && req.headers.authorization !== 'Bearer ' + process.env.CRON_SECRET) return res.status(401).json({ error: 'Niet toegestaan' });
 
+    const start = Date.now();
     const data = { gemaakt: new Date().toISOString() };
     for (const t of TABELLEN) {
       try { data[t] = await haalTabel(t) }
@@ -55,7 +97,9 @@ module.exports = async (req, res) => {
       const weg = namen.slice(BEWAAR);
       if (weg.length) await fetch(`${URL_SB}/storage/v1/object/backups`, { method: 'DELETE', headers: kop({ 'Content-Type': 'application/json' }), body: JSON.stringify({ prefixes: weg }) });
     }
-    res.status(200).json({ ok: true, bestand: naam, rijen: TABELLEN.reduce((s, t) => s + (data[t] || []).length, 0) });
+    let bijlagen = null;
+    try { bijlagen = await spiegelBijlagen(start) } catch (e) { bijlagen = { fout: String(e.message || e) } }
+    res.status(200).json({ ok: true, bestand: naam, rijen: TABELLEN.reduce((s, t) => s + (data[t] || []).length, 0), bijlagen });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }

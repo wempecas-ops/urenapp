@@ -3086,6 +3086,41 @@ function renderUrenOverzicht(){
     const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='uren_per_medewerker_'+URENOV.van+'_tot_'+URENOV.tot+'.csv';a.click();URL.revokeObjectURL(a.href);
   };
 }
+// Volledige back-up: gegevens + bestanden + facturen als pdf, in één zip
+async function downloadVolledigeBackup(knop){
+  if(CONFIG.MODE!=='supabase'){toast('Werkt alleen met de database','error');return}
+  if(navigator.onLine===false){toast('Geen internet','error');return}
+  const oud=knop.textContent;knop.disabled=true;
+  const stand=t=>{knop.textContent=t};
+  try{
+    stand('Voorbereiden…');
+    if(!window.JSZip)await laadScript('/vendor/jszip.min.js');
+    const zip=new JSZip();
+    const nu=vandaagIso();
+    zip.file('gegevens.json',JSON.stringify({gemaakt:new Date().toISOString(),gegevens:CACHE},null,1));
+    // alle bekende bestanden: foto's bij klussen en orders, bijlagen bij facturen
+    const paden=new Set();
+    DB.list('dagstaten').forEach(d=>(d.klussen||[]).forEach(k=>(k.fotos||[]).forEach(p=>paden.add(p))));
+    DB.list('orders').forEach(o=>(o.fotos||[]).forEach(p=>paden.add(p)));
+    DB.list('facturen').forEach(f=>(f.bijlagen||[]).forEach(b=>{if(b.bron!=='klus'&&b.pad)paden.add(b.pad)}));
+    const lijst=[...paden];let i=0,mis=0;
+    for(const p of lijst){
+      i++;stand('Bestanden '+i+' van '+lijst.length+'…');
+      try{const r=await fetch(await fotoUrl(p));if(!r.ok)throw new Error();zip.file('bestanden/'+p,await r.blob())}catch(e){mis++}
+    }
+    const def=DB.list('facturen').filter(f=>f.status!=='concept'&&f.nummer);
+    let j=0;
+    for(const f of def){
+      j++;stand('Facturen '+j+' van '+def.length+'…');
+      try{const bl=await factuurPdf(f.id,'blob');const naam=((f.soort==='credit'?'Creditnota ':'Factuur ')+f.nummer+' - '+((f.klant&&f.klant.naam)||'')).replace(/[\\/:*?"<>|]/g,'').trim()+'.pdf';zip.file('facturen/'+(f.factuurdatum||'').slice(0,4)+'/'+naam,bl)}catch(e){mis++}
+    }
+    stand('Zip maken…');
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='wempe-op-pad-backup-'+nu+'.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),60000);
+    toast('Back-up gedownload ('+mbF(blob.size)+')'+(mis?' — '+mis+' bestand(en) konden niet worden opgehaald':''),mis?'error':'success');
+  }catch(e){toast('Back-up mislukt: '+e.message,'error')}
+  finally{knop.disabled=false;knop.textContent=oud}
+}
 function renderExports(){
   const dagstaten=DB.list('dagstaten');
   const werknemers=DB.list('werknemers');
@@ -3095,12 +3130,18 @@ function renderExports(){
   <div class="space-y-3">
   <button id="btnExportCSV" class="w-full px-4 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 font-medium min-h-[48px]">Exporteren voor loonadministratie (CSV)</button>
   <button id="btnExportJSON" class="w-full px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium min-h-[48px]">JSON backup exporteren</button>
+  <div class="zk-kaart" style="padding:18px 20px">
+   <div style="font-size:15px;font-weight:600;margin-bottom:4px">Volledige back-up downloaden</div>
+   <p style="font-size:13px;color:#5a655e;margin:0 0 12px">Eén zip-bestand voor op je eigen computer of een usb-stick: alle gegevens, alle foto's en bijlagen, en elke definitieve factuur als pdf. Handig om bijvoorbeeld eens per maand te doen. (Daarnaast maakt de app elke nacht zelf een back-up in de database, ook van de foto's en bijlagen.)</p>
+   <button id="btnVolledigeBackup" class="zk-hoofd">Back-up downloaden (zip)</button>
+  </div>
   <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-6 text-center">
   <p class="text-sm text-gray-500 mb-2">JSON backup importeren</p>
   <label class="inline-block px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl cursor-pointer min-h-[48px] flex items-center gap-2"><span>Kies bestand</span><input type="file" id="importJSON" accept=".json" class="hidden"></label>
   </div>
   </div></div>`;
   $('btnExportCSV').onclick=()=>exportCSV(dagstaten,werknemers,klanten,diensten);
+  if($('btnVolledigeBackup'))$('btnVolledigeBackup').onclick=e=>downloadVolledigeBackup(e.currentTarget);
   $('btnExportJSON').onclick=()=>exportJSON();
   $('importJSON').onchange=e=>importJSON(e);
 }

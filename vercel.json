@@ -1,6 +1,17 @@
 {
-  "crons": [{ "path": "/api/backup", "schedule": "0 2 * * *" }],
+  "crons": [
+    {
+      "path": "/api/backup",
+      "schedule": "0 2 * * *"
+    }
+  ],
   "functions": {
-    "api/factuur-mail.js": { "maxDuration": 60, "memory": 1024 }
+    "api/factuur-mail.js": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "api/backup.js": {
+      "maxDuration": 60
+    }
   }
 }
