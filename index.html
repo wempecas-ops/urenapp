@@ -1478,9 +1478,10 @@ function renderFacturen(){
        <td style="padding:14px 16px;color:#3e4842;white-space:nowrap">${f.soort==='credit'?'—':esc(datumNL(f.vervaldatum))}${laat?`<div style="font-size:12px;color:#b42318;font-weight:500">${laat} dag${laat===1?'':'en'} te laat</div>`:''}</td>
        <td style="padding:14px 16px;text-align:right;font-weight:600;white-space:nowrap">${eurF(f.totaalIncl)}</td>
        <td style="padding:14px 16px">${fPil(s)}${f.status==='betaald'&&f.betaaldOp?`<div style="font-size:12px;color:#5a655e;margin-top:3px">op ${esc(datumNL(f.betaaldOp))}</div>`:''}</td>
-       <td style="padding:14px 16px;font-size:13px;color:#3e4842;white-space:nowrap">${s==='concept'?'—':v?'✓ '+esc(datumNL(String(v.op).slice(0,10)).slice(0,5))+(v.yuki?' · klant + Yuki':' · klant'):'<span style="color:#8a5a12;font-weight:500">Nog niet</span>'}</td>
+       <td style="padding:14px 16px;font-size:13px;color:#3e4842;white-space:nowrap">${s==='concept'?'—':v?(v.soort==='herinnering'?'<span style="color:#b42318;font-weight:500">herinnerd '+esc(datumNL(String(v.op).slice(0,10)).slice(0,5))+'</span>':'✓ '+esc(datumNL(String(v.op).slice(0,10)).slice(0,5))+(v.yuki?' · klant + Yuki':' · klant')):'<span style="color:#8a5a12;font-weight:500">Nog niet</span>'}</td>
        <td style="padding:8px 16px;text-align:right;white-space:nowrap">
         ${s!=='concept'&&!v?`<button type="button" data-fmail="${f.id}" class="zk-knop" style="height:36px;font-size:13px;padding:0 12px;border-color:#9cc2a8;color:#245a39;background:#f2f8f4">Versturen</button>`:''}
+        ${s==='verlopen'?`<button type="button" data-fherinner="${f.id}" class="zk-knop" style="height:36px;font-size:13px;padding:0 12px;border-color:#e8b4ad;color:#b42318;background:#fdf3f2">Herinnering</button>`:''}
         ${(s==='open'||s==='verlopen')?`<button type="button" data-fbetaald="${f.id}" class="zk-knop" style="height:36px;font-size:13px;padding:0 12px">Betaald</button>`:''}
         <button type="button" data-fopen="${f.id}" class="zk-knop" style="height:36px;font-size:13px;padding:0 12px">${s==='concept'?'Bewerken':'Bekijken'}</button>
         <button type="button" data-fpdf="${f.id}" class="zk-knop" style="height:36px;font-size:13px;padding:0 10px" aria-label="PDF openen">PDF</button></td></tr>`}).join('')
@@ -1496,6 +1497,7 @@ function renderFacturen(){
   $('fBedrijf').onclick=openBedrijfsgegevens;
   document.querySelectorAll('[data-fopen]').forEach(b=>b.onclick=()=>openFactuurEditor(b.dataset.fopen));
   document.querySelectorAll('[data-fmail]').forEach(b=>b.onclick=()=>openFactuurVersturen(b.dataset.fmail));
+  document.querySelectorAll('[data-fherinner]').forEach(b=>b.onclick=()=>openFactuurVersturen(b.dataset.fherinner,'herinnering'));
   document.querySelectorAll('[data-fpdf]').forEach(b=>b.onclick=()=>factuurPdf(b.dataset.fpdf,'open'));
   document.querySelectorAll('[data-fbetaald]').forEach(b=>b.onclick=()=>markeerBetaald(b.dataset.fbetaald));
 }
@@ -1577,6 +1579,7 @@ function renderFactuurPagina(id){
        <button type="button" id="feSave" class="zk-knop">Concept opslaan</button>
        <button type="button" id="feDef" class="zk-hoofd">Definitief maken</button>`
      :`${f.soort!=='credit'&&f.status!=='gecrediteerd'?'<button type="button" id="feCredit" class="zk-knop" style="color:#6b2fa8">Creditnota maken</button>':''}
+       ${(s==='open'||s==='verlopen')&&f.soort!=='credit'?'<button type="button" id="feHerinner" class="zk-knop" style="color:#b42318">Herinnering sturen</button>':''}
        ${(s==='open'||s==='verlopen')?'<button type="button" id="feBetaald" class="zk-knop">Markeer als betaald</button>':''}
        ${s==='betaald'?'<button type="button" id="feOnbetaald" class="zk-knop">Toch niet betaald</button>':''}
        <button type="button" id="fePdfDl" class="zk-knop">Downloaden</button>
@@ -1615,7 +1618,7 @@ function renderFactuurPagina(id){
     <aside aria-label="Totaal en controle" style="flex:1 1 320px;max-width:420px;display:flex;flex-direction:column;gap:20px">
      <section id="fe_tot" style="background:#101513;color:#e7ece9;border-radius:14px;padding:22px 24px"></section>
      ${concept?`<section aria-labelledby="h-check" class="zk-kaart" style="padding:18px 20px"><h2 id="h-check" style="margin:0 0 8px;font-size:15px;font-weight:600">Controle voor je definitief maakt</h2><div id="fe_checks"></div></section>`:''}
-     ${(f.verzendingen||[]).length?`<section class="zk-kaart" style="padding:18px 20px"><h2 style="margin:0 0 8px;font-size:15px;font-weight:600">Verstuurd</h2>${f.verzendingen.slice().reverse().map(v=>`<div style="font-size:13px;color:#3e4842;padding:6px 0;border-top:1px solid #eceee9"><div style="font-weight:500">✉ ${esc(tijdKort(v.op))}</div><div style="color:#5a655e">aan ${esc((v.aan||[]).join(', '))}${(v.cc||[]).length?' · cc '+esc(v.cc.join(', ')):''}</div>${(v.bijlagen||[]).length?`<div style="color:#5a655e">bijlagen: ${esc(v.bijlagen.join(', '))}</div>`:''}${v.yuki?'<div style="color:#245a39">kopie naar Yuki</div>':''}${v.yukiFout?'<div style="color:#b42318">kopie naar Yuki mislukt</div>':''}</div>`).join('')}</section>`:''}
+     ${(f.verzendingen||[]).length?`<section class="zk-kaart" style="padding:18px 20px"><h2 style="margin:0 0 8px;font-size:15px;font-weight:600">Verstuurd</h2>${f.verzendingen.slice().reverse().map(v=>`<div style="font-size:13px;color:#3e4842;padding:6px 0;border-top:1px solid #eceee9"><div style="font-weight:500">${v.soort==='herinnering'?'🔔 Herinnering':'✉ Verstuurd'} · ${esc(tijdKort(v.op))}</div><div style="color:#5a655e">aan ${esc((v.aan||[]).join(', '))}${(v.cc||[]).length?' · cc '+esc(v.cc.join(', ')):''}</div>${(v.bijlagen||[]).length?`<div style="color:#5a655e">bijlagen: ${esc(v.bijlagen.join(', '))}</div>`:''}${v.yuki?'<div style="color:#245a39">kopie naar Yuki</div>':''}${v.yukiFout?'<div style="color:#b42318">kopie naar Yuki mislukt</div>':''}</div>`).join('')}</section>`:''}
      <section class="zk-kaart" style="padding:18px 20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h2 style="margin:0;font-size:15px;font-weight:600">Voorbeeld</h2><button type="button" id="feGroot" style="font:inherit;font-size:13px;font-weight:500;color:#2f6b45;background:none;border:0;cursor:pointer;min-height:36px">Groot openen</button></div>
       <button type="button" id="feMini" aria-label="Voorbeeld groot openen" style="display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch;width:100%;padding:0;border:1px solid #e3e6e0;border-radius:6px;overflow:hidden;box-shadow:0 6px 18px rgba(16,21,19,.08);background:#fff;aspect-ratio:210/297;cursor:pointer;text-align:left">
@@ -1725,6 +1728,7 @@ function renderFactuurPagina(id){
     $('fePdf').onclick=()=>factuurPdf(f.id,'open');
     $('fePdfDl').onclick=()=>factuurPdf(f.id,'download');
     if($('feBetaald'))$('feBetaald').onclick=()=>markeerBetaald(f.id);
+    if($('feHerinner'))$('feHerinner').onclick=()=>openFactuurVersturen(f.id,'herinnering');
     if($('feOnbetaald'))$('feOnbetaald').onclick=()=>{DB.update('facturen',f.id,{...f0,status:'open',betaaldOp:null});renderFacturen()};
     if($('feCredit'))$('feCredit').onclick=()=>{
       if(!confirm('Een creditnota maken voor factuur '+f.nummer+'? Je krijgt eerst een concept dat je kunt nakijken.'))return;
@@ -1948,7 +1952,14 @@ function standaardMailtekst(f,b){
   if(f.soort==='credit')return aanhef+'\n\nIn de bijlage vindt u creditnota '+f.nummer+' van '+datumLangNL(f.factuurdatum)+' voor een bedrag van '+eurF(Math.abs(t.incl))+'.\n\nHeeft u vragen? Neem dan gerust contact met ons op.\n\n'+groet;
   return aanhef+'\n\nIn de bijlage vindt u factuur '+f.nummer+' van '+datumLangNL(f.factuurdatum)+' voor een bedrag van '+eurF(t.incl)+'.\n\nWij verzoeken u dit bedrag vóór '+datumLangNL(f.vervaldatum)+' over te maken op '+b.iban+' t.n.v. '+(b.tenaamstelling||b.naam)+', onder vermelding van factuurnummer '+f.nummer+'.\n\nHeeft u vragen over deze factuur? Neem dan gerust contact met ons op.\n\n'+groet;
 }
-function openFactuurVersturen(id){
+function herinneringstekst(f,b){
+  const kl=f.klantId?DB.get('klanten',f.klantId):null;
+  const aanhef=kl&&kl.contact?'Beste '+kl.contact+',':'Geachte heer/mevrouw,';
+  const t=factuurTotalen(f.regels);
+  return aanhef+'\n\nVolgens onze administratie hebben wij de betaling van factuur '+f.nummer+' van '+datumLangNL(f.factuurdatum)+' voor een bedrag van '+eurF(t.incl)+' nog niet ontvangen. De vervaldatum was '+datumLangNL(f.vervaldatum)+'. Mogelijk is dit aan uw aandacht ontsnapt.\n\nWij verzoeken u het bedrag binnen 7 dagen over te maken op '+b.iban+' t.n.v. '+(b.tenaamstelling||b.naam)+', onder vermelding van factuurnummer '+f.nummer+'. Voor het gemak sturen wij de factuur nogmaals mee.\n\nHeeft u inmiddels betaald? Dan kunt u deze herinnering als niet verzonden beschouwen.\n\n'+['Met vriendelijke groet,','',b.naam,b.onderNaam,b.telefoon].filter(x=>x!==undefined&&x!==null).join('\n');
+}
+function openFactuurVersturen(id,soort){
+  const herinnering=soort==='herinnering';
   const f=DB.get('facturen',id);if(!f)return;
   if(f.status==='concept'){toast('Maak de factuur eerst definitief','error');return}
   const b=bedrijf();
@@ -1962,7 +1973,7 @@ function openFactuurVersturen(id){
   const lab='display:block;font-size:13px;color:#3e4842;font-weight:500;margin-bottom:6px';
   m.innerHTML=`<div role="dialog" aria-modal="true" aria-labelledby="fm_titel" style="max-width:980px;margin:24px auto;background:#fff;border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.35);overflow:hidden;font-family:Inter,system-ui,sans-serif;color:#14181a">
    <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding:22px 28px;background:#101513;color:#fff">
-    <div><div class="zk-label" style="color:#8fb59b">Versturen per mail</div><h2 id="fm_titel" style="margin:4px 0 0;font-size:22px;font-weight:600">${f.soort==='credit'?'Creditnota':'Factuur'} ${esc(f.nummer)} · ${esc(f.klant?f.klant.naam:'')}</h2></div>
+    <div><div class="zk-label" style="color:#8fb59b">${herinnering?'Betalingsherinnering':'Versturen per mail'}</div><h2 id="fm_titel" style="margin:4px 0 0;font-size:22px;font-weight:600">${f.soort==='credit'?'Creditnota':'Factuur'} ${esc(f.nummer)} · ${esc(f.klant?f.klant.naam:'')}</h2></div>
     <div style="display:flex;align-items:center;gap:16px"><div style="text-align:right"><div style="font-size:12px;color:#b9c6be">${f.soort==='credit'?'Creditbedrag':'Te betalen'}</div><div style="font-size:22px;font-weight:600">${eurF(tot.incl)}</div></div>
      <button type="button" id="fmX" aria-label="Sluiten" style="font:inherit;width:44px;height:44px;border-radius:10px;border:1px solid #2a3530;background:transparent;color:#fff;cursor:pointer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></div>
    </div>
@@ -1972,8 +1983,8 @@ function openFactuurVersturen(id){
      <div><label for="fm_aan" style="${lab}">Aan <span style="color:#5a655e;font-weight:400">(meerdere adressen scheiden met een komma)</span></label><input id="fm_aan" value="${esc(naarAdres)}" class="zk-invoer" placeholder="klant@voorbeeld.nl">
       ${naarAdres?'':'<div style="font-size:12px;color:#8a5a12;margin-top:6px">Bij deze klant staat nog geen e-mailadres. Vul het hier in, of zet het vast bij Klanten → Wijzig.</div>'}</div>
      <div><label for="fm_cc" style="${lab}">Cc <span style="color:#5a655e;font-weight:400">(optioneel)</span></label><input id="fm_cc" class="zk-invoer"></div>
-     <div><label for="fm_ond" style="${lab}">Onderwerp</label><input id="fm_ond" value="${esc((f.soort==='credit'?'Creditnota ':'Factuur ')+f.nummer+' – '+[b.naam,b.onderNaam].filter(Boolean).join(' '))}" class="zk-invoer"></div>
-     <div><label for="fm_tekst" style="${lab}">Bericht</label><textarea id="fm_tekst" rows="13" class="zk-invoer" style="line-height:1.55;resize:vertical">${esc(standaardMailtekst(f,b))}</textarea></div>
+     <div><label for="fm_ond" style="${lab}">Onderwerp</label><input id="fm_ond" value="${esc((herinnering?'Herinnering: factuur ':(f.soort==='credit'?'Creditnota ':'Factuur '))+f.nummer+' – '+[b.naam,b.onderNaam].filter(Boolean).join(' '))}" class="zk-invoer"></div>
+     <div><label for="fm_tekst" style="${lab}">Bericht</label><textarea id="fm_tekst" rows="13" class="zk-invoer" style="line-height:1.55;resize:vertical">${esc(herinnering?herinneringstekst(f,b):standaardMailtekst(f,b))}</textarea></div>
     </div>
     <div style="flex:1 1 320px;max-width:400px;padding:24px 28px;background:#fafbf9;display:flex;flex-direction:column;gap:18px">
      <div><div style="font-size:13px;font-weight:600;margin-bottom:10px">Bijlagen</div>
@@ -1982,14 +1993,14 @@ function openFactuurVersturen(id){
       <label style="display:flex;align-items:center;justify-content:center;width:100%;height:44px;border-radius:10px;border:1px dashed #b9c1b8;background:#fff;font-size:13px;font-weight:500;cursor:pointer;margin-top:4px">+ Bijlage toevoegen<input type="file" id="fm_file" multiple class="sr-only"></label></div>
      <div style="display:flex;flex-direction:column;gap:10px">
       ${klussen.length?`<label for="fm_wb" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;background:#fff;border:1px solid #e3e6e0;border-radius:10px;font-size:13px;cursor:pointer"><span><span style="font-weight:600;display:block">Werkbon meesturen</span><span style="color:#5a655e">${klussen.length} klus${klussen.length===1?'':'sen'}, als PDF</span></span><input type="checkbox" id="fm_wb" style="width:20px;height:20px;min-height:auto;accent-color:#2f6b45"></label>`:''}
-      <label for="fm_yuki" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;background:#fff;border:1px solid #e3e6e0;border-radius:10px;font-size:13px;cursor:pointer"><span><span style="font-weight:600;display:block">Kopie naar Yuki</span><span style="color:#5a655e">${b.yukiEmail?'Alleen de factuur-pdf, aparte mail naar '+esc(b.yukiEmail):'Stel eerst het Yuki-adres in bij Bedrijfsgegevens'}</span></span><input type="checkbox" id="fm_yuki" ${b.yukiEmail?'checked':'disabled'} style="width:20px;height:20px;min-height:auto;accent-color:#2f6b45"></label>
+      ${herinnering?'<div style="padding:12px;background:#fff;border:1px solid #e3e6e0;border-radius:10px;font-size:13px;color:#5a655e">Bij een herinnering gaat er <b>geen</b> kopie naar Yuki; de factuur staat daar al.</div><input type="checkbox" id="fm_yuki" class="sr-only" disabled>':`      <label for="fm_yuki" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;background:#fff;border:1px solid #e3e6e0;border-radius:10px;font-size:13px;cursor:pointer"><span><span style="font-weight:600;display:block">Kopie naar Yuki</span><span style="color:#5a655e">${b.yukiEmail?'Alleen de factuur-pdf, aparte mail naar '+esc(b.yukiEmail):'Stel eerst het Yuki-adres in bij Bedrijfsgegevens'}</span></span><input type="checkbox" id="fm_yuki" ${b.yukiEmail?'checked':'disabled'} style="width:20px;height:20px;min-height:auto;accent-color:#2f6b45"></label>`}
      </div>
      <div id="fm_maat" style="padding:14px;background:#fff;border:1px solid #e3e6e0;border-radius:10px"></div>
     </div>
    </div>
    <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:16px 28px;border-top:1px solid #eceee9">
     <span style="font-size:13px;color:#5a655e">Verstuurd vanaf ${esc(b.email||'het ingestelde Gmail-adres')}</span>
-    <div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" id="fmCancel" class="zk-knop">Annuleren</button><button type="button" id="fmSend" class="zk-hoofd">${f.soort==='credit'?'Creditnota':'Factuur'} versturen</button></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" id="fmCancel" class="zk-knop">Annuleren</button><button type="button" id="fmSend" class="zk-hoofd">${herinnering?'Herinnering versturen':(f.soort==='credit'?'Creditnota':'Factuur')+' versturen'}</button></div>
    </div></div>`;
   document.body.appendChild(m);
   let pdfMaat=150*1024,wbMaat=0;   // schatting tot de echte pdf's er zijn
@@ -2039,15 +2050,15 @@ function openFactuurVersturen(id){
       if($('fm_wb')&&$('fm_wb').checked){const wb=await werkbonPdfBlob(klussen);bijlagen.push({pad:await opslagUpload(map+'werkbon.pdf',wb,'application/pdf'),naam:'Werkbon bij '+(f.soort==='credit'?'creditnota ':'factuur ')+f.nummer+'.pdf'})}
       for(let i=0;i<extra.length;i++){const x=extra[i];bijlagen.push({pad:await opslagUpload(map+i+'-'+veiligBestand(x.naam),x.blob,x.blob.type),naam:x.naam})}
       await zorgVoorToken();
-      const r=await fetch('/api/factuur-mail',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+AUTH_TOKEN},body:JSON.stringify({factuurId:f.id,aan,cc:$('fm_cc').value.trim(),onderwerp:$('fm_ond').value,tekst:$('fm_tekst').value,factuurPad,factuurNaam:fnaam,bijlagen,yuki:($('fm_yuki').checked&&b.yukiEmail)?b.yukiEmail:'',afzenderNaam:[b.naam,b.onderNaam].filter(Boolean).join(' ')})});
+      const r=await fetch('/api/factuur-mail',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+AUTH_TOKEN},body:JSON.stringify({factuurId:f.id,aan,cc:$('fm_cc').value.trim(),onderwerp:$('fm_ond').value,tekst:$('fm_tekst').value,factuurPad,factuurNaam:fnaam,bijlagen,yuki:(!herinnering&&$('fm_yuki').checked&&b.yukiEmail)?b.yukiEmail:'',soort:herinnering?'herinnering':'factuur',afzenderNaam:[b.naam,b.onderNaam].filter(Boolean).join(' ')})});
       let j={};try{j=await r.json()}catch(e){}
       if(!r.ok||!j.ok)throw new Error(j.fout||('Fout '+r.status));
       // lokaal bijwerken (de server heeft het al vastgelegd)
-      const rij=DB.get('facturen',f.id);if(rij){rij.verstuurdOp=j.verstuurdOp;rij.pdfPad=factuurPad;rij.verzendingen=[...(rij.verzendingen||[]),j.verzending];cacheBewaar()}
+      const rij=DB.get('facturen',f.id);if(rij){if(!herinnering)rij.verstuurdOp=j.verstuurdOp;rij.pdfPad=factuurPad;rij.verzendingen=[...(rij.verzendingen||[]),j.verzending];cacheBewaar()}
       sluit();
-      toast('Verstuurd naar '+aan+(j.yuki===true?' (en kopie naar Yuki)':'')+(j.yuki===false?' — let op: de kopie naar Yuki is mislukt':''),j.yuki===false?'error':'success');
+      toast((herinnering?'Herinnering verstuurd naar ':'Verstuurd naar ')+aan+(j.yuki===true?' (en kopie naar Yuki)':'')+(j.yuki===false?' — let op: de kopie naar Yuki is mislukt':''),j.yuki===false?'error':'success');
       renderCurrentView();
-    }catch(e){toast('Versturen mislukt: '+e.message,'error');knop.disabled=false;knop.textContent=(f.soort==='credit'?'Creditnota':'Factuur')+' versturen'}
+    }catch(e){toast('Versturen mislukt: '+e.message,'error');knop.disabled=false;knop.textContent=herinnering?'Herinnering versturen':(f.soort==='credit'?'Creditnota':'Factuur')+' versturen'}
   };
 }
 

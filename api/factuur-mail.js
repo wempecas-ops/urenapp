@@ -73,7 +73,8 @@ module.exports = async (req, res) => {
   if (typeof body === 'string') { try { body = JSON.parse(body) } catch (e) { body = null } }
   if (!body || !body.factuurId) return stuur(400, { fout: 'Geen factuur opgegeven' });
   const id = String(body.factuurId);
-  const aan = lijst(body.aan), cc = lijst(body.cc), yuki = lijst(body.yuki);
+  const herinnering = body.soort === 'herinnering';
+  const aan = lijst(body.aan), cc = lijst(body.cc), yuki = herinnering ? [] : lijst(body.yuki);   // een herinnering gaat nooit naar Yuki
   if (!aan.length) return stuur(400, { fout: 'Vul minstens één ontvanger in' });
   const fout = [...aan, ...cc, ...yuki].find(a => !EMAIL_RE.test(a));
   if (fout) return stuur(400, { fout: 'Dit mailadres klopt niet: ' + fout });
@@ -115,7 +116,7 @@ module.exports = async (req, res) => {
     return stuur(502, { fout: 'Versturen mislukt: ' + m });
   }
   const nu = new Date().toISOString();
-  const verzending = { op: nu, aan, cc, bijlagen: bijlagen.slice(1).map(b => b.filename), door: eigen.naam || '' };
+  const verzending = { op: nu, soort: herinnering ? 'herinnering' : 'factuur', aan, cc, bijlagen: bijlagen.slice(1).map(b => b.filename), door: eigen.naam || '' };
 
   // Kopie voor de boekhouding (Yuki): alleen de factuur-pdf, als aparte mail.
   let yukiOk = null;
@@ -129,7 +130,7 @@ module.exports = async (req, res) => {
   // ---- 5. vastleggen bij de factuur ----
   try {
     const oud = Array.isArray(f.verzendingen) ? f.verzendingen : [];
-    await sb('/rest/v1/facturen?id=eq.' + encodeURIComponent(id), { service: true, method: 'PATCH', prefer: 'return=minimal', body: { verstuurd_op: nu, pdf_pad: body.factuurPad, verzendingen: [...oud, verzending] } });
+    await sb('/rest/v1/facturen?id=eq.' + encodeURIComponent(id), { service: true, method: 'PATCH', prefer: 'return=minimal', body: Object.assign(herinnering ? {} : { verstuurd_op: nu, pdf_pad: body.factuurPad }, { verzendingen: [...oud, verzending] }) });
   } catch (e) { /* de mail is wel verstuurd; alleen het vastleggen ging mis */ }
 
   return stuur(200, { ok: true, verstuurdOp: nu, verzending, yuki: yukiOk });
