@@ -3,14 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#2f6b45">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Wempe op Pad</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
 <script src="https://cdn.tailwindcss.com"></script>
-<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{emerald:{50:'#f5f5f5',100:'#e5e5e5',200:'#d4d4d4',400:'#e5e5e5',600:'#171717',700:'#000000',800:'#171717',900:'#262626'}}}}}</script>
+<script>/* Huisstijl: groen als accent; grijstinten licht groenig, in donker thema donkergroen */
+tailwind.config={darkMode:'class',theme:{extend:{colors:{emerald:{50:'#eef5f0',100:'#e6f2ea',200:'#cfe5d5',300:'#a9d1b5',400:'#8fcf9f',500:'#3f8a5a',600:'#2f6b45',700:'#245a39',800:'#1f4a30',900:'#16301f'},gray:{50:'#f6f8f6',100:'#eef2ef',200:'#e1e7e3',300:'#c9d3cc',400:'#8a9a90',500:'#5a6b60',600:'#3f5146',700:'#213529',800:'#16241c',900:'#0f1a14'}}}}}</script>
 <style>
 body{font-family:system-ui,-apple-system,sans-serif}
 .toast-enter{animation:tIn .3s ease forwards}
@@ -34,8 +35,9 @@ input,select,textarea{min-height:48px;font-size:16px}
 
 .logo-img{display:block}
 .dark .logo-img{filter:invert(1)}
-.dark .bg-emerald-600{background-color:#fff;color:#000}
-.dark .hover\:bg-emerald-700:hover{background-color:#e5e5e5}
+.dark .bg-emerald-600{background-color:#3f8a5a;color:#fff}
+.dark .hover\:bg-emerald-700:hover{background-color:#2f6b45}
+.dark .text-emerald-700{color:#8fcf9f}
 /* ===== Beheer: zakelijke uitstraling met zijbalk (alleen beheermodus; de chauffeurs-app blijft zoals hij is) ===== */
 #beheerNav .nav-groep,#beheerNav .nav-logo{display:none}
 body.beheer-modus{font-family:Inter,system-ui,-apple-system,sans-serif;font-feature-settings:'tnum' 1}
@@ -61,22 +63,48 @@ html:not(.dark):not(.roze):not(.panter) body.beheer-modus #main .border-gray-100
 html:not(.dark):not(.roze):not(.panter) body.beheer-modus #main thead.bg-gray-50,html:not(.dark):not(.roze):not(.panter) body.beheer-modus #main .bg-gray-50{background-color:#fafbf9}
 /* gedeelde bouwstenen voor de financiële schermen */
 .zk-kaart{background:#fff;border:1px solid #e3e6e0;border-radius:14px}
-.dark .zk-kaart{background:#1f2937;border-color:#374151}
+.dark .zk-kaart{background:#16241c;border-color:#2b4034}
 .zk-label{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#2f6b45;font-weight:600}
 .dark .zk-label{color:#8fcf9f}
 .zk-th{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#5a655e;font-weight:600}
-.dark .zk-th{color:#9ca3af}
+.dark .zk-th{color:#9db0a3}
 .zk-knop{font:inherit;font-size:14px;padding:0 16px;height:44px;border-radius:10px;border:1px solid #d5d9d3;background:#fff;color:#14181a;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
 .zk-knop:hover{background:#f6f7f4}
-.dark .zk-knop{background:#111827;border-color:#4b5563;color:#e5e7eb}
+.dark .zk-knop{background:#0f1a14;border-color:#3b5244;color:#e3ebe5}
+.dark .zk-knop:hover{background:#1b2c22}
+.dark .zk-hoofd{background:#3f8a5a}.dark .zk-hoofd:hover{background:#2f6b45}
 .zk-hoofd{font:inherit;font-size:14px;font-weight:600;padding:0 20px;height:44px;border-radius:10px;border:0;background:#2f6b45;color:#fff;display:inline-flex;align-items:center;cursor:pointer}
 .zk-hoofd:hover{background:#245a39}.zk-hoofd:disabled{opacity:.5;cursor:not-allowed}
 .zk-stippel{font:inherit;font-size:13px;font-weight:500;height:40px;padding:0 14px;border-radius:9px;border:1px dashed #b9c1b8;background:#fff;color:#14181a;cursor:pointer}
-.dark .zk-stippel{background:#111827;color:#e5e7eb;border-color:#4b5563}
+.dark .zk-stippel{background:#0f1a14;color:#e3ebe5;border-color:#3b5244}
 .zk-invoer{font:inherit;font-size:14px;width:100%;box-sizing:border-box;min-height:44px;padding:0 12px;border:1px solid #d5d9d3;border-radius:9px;background:#fbfbfa;color:#14181a}
 textarea.zk-invoer{padding:10px 12px}
-.dark .zk-invoer{background:#111827;border-color:#4b5563;color:#e5e7eb}
+.dark .zk-invoer{background:#0f1a14;border-color:#3b5244;color:#e3ebe5}
 .zk-pil{display:inline-block;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;white-space:nowrap}
+/* Donker thema: de financiële schermen gebruiken inline kleuren; hier worden ze donkergroen */
+.dark body.beheer-modus #beheerNav{background:#0a120d!important}
+.dark [style*="background:#fafbf9"],.dark [style*="background:#fcfcfb"],.dark [style*="background:#f6f7f4"],.dark [style*="background:#f1f3ef"]{background:#1b2c22!important}
+.dark [style*="background:#fff;"],.dark [style*="background:#fff\""],.dark [style*="background:#ffffff"]{background:#16241c!important}
+.dark [style*="border-top:1px solid #eceee9"],.dark [style*="border-bottom:1px solid #e3e6e0"],.dark [style*="border-top:1px solid #e3e6e0"],.dark [style*="border-right:1px solid #eceee9"]{border-color:#2b4034!important}
+.dark [style*="border:1px solid #e3e6e0"]{border-color:#2b4034!important}
+.dark [style*="color:#14181a"]{color:#e3ebe5!important}
+.dark [style*="color:#3e4842"]{color:#c9d3cc!important}
+.dark [style*="color:#5a655e"]{color:#9db0a3!important}
+.dark #fMail [role=dialog]{background:#16241c!important;color:#e3ebe5!important}
+.dark #fMail [role=dialog] > div:first-child{background:#0a120d!important}
+.dark [style*="background:#eef0ec"],.dark [style*="background:#eceee9"],.dark [style*="background:#eceeea"]{background:#2b4034!important}
+.dark [style*="background:#f2f8f4"],.dark [style*="background:#e6f2ea"]{background:#1f3a2a!important}
+.dark [style*="color:#245a39"]{color:#8fcf9f!important}
+.dark [style*="color:#8a5a12"]{color:#e0b25a!important}
+.dark [style*="color:#2f6b45"]{color:#8fcf9f!important}
+.dark #feMini{background:#fff!important}
+.dark #feMini [style*="color:#14181a"]{color:#14181a!important}
+.dark #feMini [style*="background:#eceee9"]{background:#eceee9!important}
+.dark [style*="color:#b42318"]{color:#ff8a7a!important}
+.dark [style*="background:#fdecea"]{background:#4a1f1a!important}
+.dark [style*="background:#e7eefb"]{background:#1d2c4a!important}
+.dark [style*="color:#1d4ed8"]{color:#9db8ff!important}
+
 
 /* Thema "roze" (zonder dark-klasse): zelfde pagina's, roze accenten */
 .roze body{background-color:#fdf2f8}
@@ -376,7 +404,7 @@ function toast(msg,type='info'){
 // Thema's: licht -> donker -> roze -> panterprint -> licht (per toestel onthouden)
 const THEMAS=['licht','donker','roze','panter'];
 const THEMA_NAAM={licht:'Licht',donker:'Donker',roze:'Roze',panter:'Panterprint'};
-const THEMA_KLEUR={licht:'#000000',donker:'#111827',roze:'#db2777',panter:'#b7791f'};
+const THEMA_KLEUR={licht:'#2f6b45',donker:'#0f1a14',roze:'#db2777',panter:'#b7791f'};
 let THEMA_NU='licht';
 function zetThema(t){
   THEMA_NU=t;
@@ -1398,7 +1426,7 @@ function renderFacturen(){
     if(q&&!([o.f.nummer,o.f.klant&&o.f.klant.naam,o.f.klant&&o.f.klant.plaats,o.f.klant&&o.f.klant.klantcode,o.f.opmerking].join(' ').toLowerCase().includes(q)))return false;
     return true;
   });
-  const kpi=(label,bedrag,sub,kleur,filt)=>`<button type="button" data-ffilt="${filt}" class="zk-kaart" style="text-align:left;padding:18px 20px;cursor:pointer;${filt&&FFILT.status===filt?'outline:2px solid #2f6b45;outline-offset:-1px':''}">
+  const kpi=(label,bedrag,sub,kleur,filt)=>`<button type="button" data-ffilt="${filt}" class="zk-kaart" style="text-align:left;padding:18px 20px;cursor:pointer;color:inherit;font:inherit;width:100%;${filt&&FFILT.status===filt?'outline:2px solid #2f6b45;outline-offset:-1px':''}">
      <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:13px;color:#5a655e;font-weight:500">${label}</span><span style="width:8px;height:8px;border-radius:50%;background:${kleur}"></span></div>
      <div style="font-size:26px;font-weight:600;margin-top:10px;letter-spacing:-.01em">${bedrag}</div><div style="font-size:13px;color:#5a655e;margin-top:4px">${sub}</div></button>`;
   const tabs=[['','Alles',alle.length],['open','Open',telS('open')],['verlopen','Verlopen',telS('verlopen')],['concept','Concept',telS('concept')],['betaald','Betaald',telS('betaald')],['credit','Creditnota',telS('credit')]];
@@ -1598,9 +1626,9 @@ function renderFactuurPagina(id){
        <label class="sr-only" for="rd_${i}">Detail</label><input id="rd_${i}" data-rf="detail" value="${esc(r.detail||'')}" placeholder="Detail (datum, kenteken…)" class="${inv}" style="margin-top:6px;min-height:36px;height:36px;font-size:12px;color:#5a655e" ${dis}>
        ${r.klusId?'<span class="zk-pil" style="margin-top:6px;font-size:11px;padding:2px 8px;background:#e6f2ea;color:#245a39">uit klus</span>':''}</td>
       <td style="padding:10px 8px;width:96px"><label class="sr-only" for="ra_${i}">Aantal</label><input id="ra_${i}" data-rf="aantal" inputmode="decimal" value="${esc(String(r.aantal??'').replace('.',','))}" class="${inv}" style="text-align:right" ${dis}></td>
-      <td style="padding:10px 8px;width:96px"><label class="sr-only" for="re_${i}">Eenheid</label><select id="re_${i}" data-rf="eenheid" class="${inv}" ${dis}>${EENHEDEN_F.concat(EENHEDEN_F.some(x=>x[0]===r.eenheid)||!r.eenheid?[]:[[r.eenheid,r.eenheid]]).map(([v,l])=>`<option value="${v}" ${(r.eenheid||'uur')===v?'selected':''}>${l}</option>`).join('')}</select></td>
+      <td style="padding:10px 8px;width:96px"><label class="sr-only" for="re_${i}">Eenheid</label><select id="re_${i}" data-rf="eenheid" class="${inv}" style="padding:0 6px" ${dis}>${EENHEDEN_F.concat(EENHEDEN_F.some(x=>x[0]===r.eenheid)||!r.eenheid?[]:[[r.eenheid,r.eenheid]]).map(([v,l])=>`<option value="${v}" ${(r.eenheid||'uur')===v?'selected':''}>${l}</option>`).join('')}</select></td>
       <td style="padding:10px 8px;width:110px"><label class="sr-only" for="rp_${i}">Prijs</label><input id="rp_${i}" data-rf="prijs" inputmode="decimal" value="${esc(String(r.prijs??'').replace('.',','))}" class="${inv}" style="text-align:right" ${dis}></td>
-      <td style="padding:10px 8px;width:104px"><label class="sr-only" for="rb_${i}">Btw</label><select id="rb_${i}" data-rf="btw" class="${inv}" ${dis}>${BTW_OPTIES.map(([v,l])=>`<option value="${v}" ${(r.btw||'21')===v?'selected':''}>${l}</option>`).join('')}</select></td>
+      <td style="padding:10px 8px;width:104px"><label class="sr-only" for="rb_${i}">Btw</label><select id="rb_${i}" data-rf="btw" class="${inv}" style="padding:0 6px" ${dis}>${BTW_OPTIES.map(([v,l])=>`<option value="${v}" ${(r.btw||'21')===v?'selected':''}>${l}</option>`).join('')}</select></td>
       <td style="padding:20px 8px 10px;text-align:right;font-weight:600;white-space:nowrap" data-rtot>${eurF(r2(getal(r.aantal)*getal(r.prijs)))}</td>
       <td style="padding:12px 16px 10px 0;white-space:nowrap">${concept?`<button type="button" data-rup="${i}" aria-label="Regel omhoog" style="background:none;border:0;color:#5a655e;min-height:36px;cursor:pointer">↑</button><button type="button" data-rdown="${i}" aria-label="Regel omlaag" style="background:none;border:0;color:#5a655e;min-height:36px;cursor:pointer">↓</button><button type="button" data-rdel="${i}" aria-label="Regel verwijderen" style="background:none;border:0;color:#b42318;min-height:36px;padding:0 6px;cursor:pointer">✕</button>`:''}</td></tr>`).join('')
       :'<tr><td colspan="7" style="padding:32px 24px;text-align:center;color:#5a655e">Nog geen regels. Voeg een lege regel, een product of open klussen toe.</td></tr>';
@@ -3464,7 +3492,7 @@ function switchTab(tab){
 // === PWA ===
 function initPWA(){
   try{
-    const manifest={name:'Wempe op Pad',short_name:'Wempe op Pad',start_url:'.',display:'standalone',theme_color:'#000000',background_color:'#ffffff',icons:[{src:location.origin+'/icon-192.png',sizes:'192x192',type:'image/png',purpose:'any maskable'},{src:location.origin+'/icon-512.png',sizes:'512x512',type:'image/png',purpose:'any maskable'}]};
+    const manifest={name:'Wempe op Pad',short_name:'Wempe op Pad',start_url:'.',display:'standalone',theme_color:'#2f6b45',background_color:'#ffffff',icons:[{src:location.origin+'/icon-192.png',sizes:'192x192',type:'image/png',purpose:'any maskable'},{src:location.origin+'/icon-512.png',sizes:'512x512',type:'image/png',purpose:'any maskable'}]};
     const blob=new Blob([JSON.stringify(manifest)],{type:'application/json'});
     const link=document.createElement('link');link.rel='manifest';link.href=URL.createObjectURL(blob);document.head.appendChild(link);
     // Service worker
