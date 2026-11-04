@@ -2058,6 +2058,8 @@ async function factuurPdf(id,actie){
 // ============================================================================
 const MTS_STANDAARD={naam:'Mts. C.J. Wempe',onderNaam:'Melkveebedrijf Wempe',adres:'Slikkerdijk 6',postcode:'1766 GK',plaats:'Wieringerwaard',email:'mtswempe@hotmail.com',telefoon:'06 55961891 (Giel) · 06 41653143 (Kees)',kvk:'317157226',iban:'NL65 ABNA 0435 0461 36',tenaamstelling:'Mts. C.J. Wempe',btw:'NL817136915B01',termijn:'30',volgendNummer:'2026036'};
 const MTS_GROEN='#4f7d36',MTS_TINT='#eef4e8';
+// Eenheden om uit te kiezen; zelf iets anders typen mag ook
+const MTS_EENHEDEN=['ton','kg','stuk','stuks','uur','dag','m³','ha','km','ritten','vracht','kuub','baal','liter','koe','kalf','pink'];
 let MTS_OPEN=null;
 function mtsGegevens(){const r=DB.get('instellingen','mts');return {...MTS_STANDAARD,...((r&&r.waarde)||{})}}
 function mtsTotalen(f){
@@ -2115,7 +2117,8 @@ function renderMtsEditor(id){
    <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
     <section class="zk-kaart" style="flex:1 1 320px;padding:20px 22px">
      <h2 style="margin:0 0 14px;font-size:15px;font-weight:600">Klant</h2>
-     <label class="zk-label" for="me_kn" style="display:block;margin-bottom:6px">Naam</label><input id="me_kn" list="me_kl" value="${esc(f.klant.naam||'')}" class="${inv}" placeholder="bijv. M. Broers B.V." autocomplete="off">
+     <label class="zk-label" for="me_kn" style="display:block;margin-bottom:6px">Naam</label><input id="me_kn" list="me_kl" value="${esc(f.klant.naam||'')}" class="${inv}" placeholder="bijv. P. Dijkstra Veehandel" autocomplete="off">
+     <datalist id="me_eenh">${MTS_EENHEDEN.map(e=>`<option value="${esc(e)}"></option>`).join('')}</datalist>
      <datalist id="me_kl">${Object.keys(klanten).sort().map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>
      <label class="zk-label" for="me_ka" style="display:block;margin:12px 0 6px">Adres</label><input id="me_ka" value="${esc(f.klant.adres||'')}" class="${inv}">
      <div style="display:grid;grid-template-columns:120px 1fr;gap:10px;margin-top:12px"><div><label class="zk-label" for="me_kp" style="display:block;margin-bottom:6px">Postcode</label><input id="me_kp" value="${esc(f.klant.postcode||'')}" class="${inv}"></div><div><label class="zk-label" for="me_kpl" style="display:block;margin-bottom:6px">Plaats</label><input id="me_kpl" value="${esc(f.klant.plaats||'')}" class="${inv}"></div></div>
@@ -2130,7 +2133,7 @@ function renderMtsEditor(id){
    </div>
    <section class="zk-kaart" style="padding:20px 22px;margin-top:20px">
     <h2 style="margin:0 0 4px;font-size:15px;font-weight:600">Regels</h2>
-    <p style="margin:0 0 12px;font-size:13px;color:#5a655e">Laat <em>Aantal</em> leeg voor een vast bedrag. Een aftrekpost (bijv. weegkosten) vul je in met een min-prijs: 15 × -10.</p>
+    <p style="margin:0 0 12px;font-size:13px;color:#5a655e">Bij <em>Eenheid</em> kies je uit de lijst of typ je zelf iets. Laat <em>Aantal</em> leeg voor een vast bedrag. Een aftrekpost (bijv. weegkosten) vul je in met een min-prijs: 15 × -10.</p>
     <div id="me_regels"></div>
     <button type="button" id="me_plus" class="zk-knop zk-stippel" style="width:100%;margin-top:10px">+ Regel toevoegen</button>
     <label class="zk-label" for="me_opm" style="display:block;margin:16px 0 6px">Opmerking onder de factuur <span style="font-weight:400;text-transform:none;letter-spacing:0">(optioneel)</span></label><textarea id="me_opm" rows="2" class="${inv}" style="height:auto;padding:10px 12px">${esc(f.opmerking||'')}</textarea>
@@ -2140,7 +2143,7 @@ function renderMtsEditor(id){
     $('me_regels').innerHTML=f.regels.map((r,i)=>`<div style="display:grid;grid-template-columns:minmax(180px,3fr) minmax(70px,1fr) minmax(60px,.8fr) minmax(80px,1fr) 100px 36px;gap:8px;align-items:start;padding:10px 0;border-top:${i?'1px solid #eceee9':'0'}">
       <div><input data-r="${r.id}" data-k="omschrijving" value="${esc(r.omschrijving||'')}" class="${inv}" placeholder="Omschrijving, bijv. Snijmais"><input data-r="${r.id}" data-k="detail" value="${esc(r.detail||'')}" class="${inv}" placeholder="Extra regel (optioneel), bijv. 214.860 kg" style="margin-top:6px;font-size:13px;height:36px"></div>
       <input data-r="${r.id}" data-k="aantal" value="${esc(String(r.aantal??''))}" class="${inv}" placeholder="Aantal" inputmode="decimal" aria-label="Aantal">
-      <input data-r="${r.id}" data-k="eenheid" value="${esc(r.eenheid||'')}" class="${inv}" placeholder="ton" aria-label="Eenheid">
+      <input data-r="${r.id}" data-k="eenheid" value="${esc(r.eenheid||'')}" class="${inv}" list="me_eenh" placeholder="Eenheid" aria-label="Eenheid (kies of typ zelf)" autocomplete="off">
       <input data-r="${r.id}" data-k="prijs" value="${esc(String(r.prijs??''))}" class="${inv}" placeholder="Prijs" inputmode="decimal" aria-label="Prijs per eenheid">
       <div data-bedrag="${r.id}" style="text-align:right;font-weight:600;padding-top:12px;white-space:nowrap">${eurF(mtsRegelBedrag(r))}</div>
       <button type="button" data-rdel="${r.id}" aria-label="Regel verwijderen" style="height:44px;border:0;background:none;color:#b42318;font-size:20px;cursor:pointer">×</button></div>`).join('')||'<p style="color:#5a655e;font-size:13px">Nog geen regels.</p>';
