@@ -169,7 +169,7 @@ textarea.zk-invoer{padding:10px 12px}
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="planarchief">Planning-archief</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="orders">Orders</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="uren">Uren</button>
-<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="vrachten">Vrachten</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="vrachten">eVDM</button>
 <div class="nav-groep" aria-hidden="true">Financieel</div>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="facturen">Facturen</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="producten">Producten</button>
@@ -1778,7 +1778,7 @@ function renderFactuurPagina(id){
     const data=(f.klusIds||[]).map(x=>(DB.get('dagstaten',x.dagId)||{}).datum).filter(Boolean).sort();
     let van=data[0],tot=data[data.length-1];
     if(!van){const d=new Date((f.factuurdatum||today())+'T12:00:00');const v=new Date(d.getFullYear(),d.getMonth()-1,1),e=new Date(d.getFullYear(),d.getMonth(),0);van=iso_(v);tot=iso_(e)}
-    if(!DB.list('vrachten').length){toast('Er zijn nog geen vrachten uit eVDM opgehaald (tabblad Vrachten)','error');return}
+    if(!DB.list('vrachten').length){toast('Er zijn nog geen vrachten uit eVDM opgehaald (tabblad eVDM)','error');return}
     openVrachtKeuze({zoek:(f.klant&&f.klant.naam)||'',van,tot},file=>voegBijlagenToe([file]));
   };
   maakSleepZone($('h-bijl').closest('section'),voegBijlagenToe);
@@ -2326,7 +2326,7 @@ function renderVrachten(){
   const namen=[...new Set(alle.flatMap(v=>[v.leverancier,v.afnemer]).filter(Boolean))].sort();
   $('main').innerHTML=`<div class="max-w-full mx-auto" style="padding:4px 8px 32px">
    <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:8px">
-    <div><div class="zk-label">Werk</div><h1 style="margin:6px 0 0;font-size:28px;font-weight:600">Vrachten (eVDM)</h1></div>
+    <div><div class="zk-label">Werk</div><h1 style="margin:6px 0 0;font-size:28px;font-weight:600">eVDM</h1></div>
     <button type="button" id="vrOphalen" class="zk-knop">Nu ophalen uit eVDM</button></div>
    <p id="vrStatus" style="font-size:13px;margin:0 0 16px">${evdmStatusTekst()} <span style="color:#5a655e">Elke nacht om 04:00 automatisch.</span></p>
    <div class="zk-kaart" style="padding:16px 18px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
