@@ -2368,10 +2368,10 @@ async function vrachtenPdfBlob(lijst,titel,van,tot){
     footer:(p,n)=>({margin:[40,16,40,0],columns:[{text:[b.naam,b.onderNaam,'gegevens uit eVDM'].filter(Boolean).join(' · '),fontSize:6.8,color:'#7a7a7a'},{text:'Pagina '+p+' van '+n,fontSize:6.8,color:'#7a7a7a',alignment:'right',width:90}]}),
     content:[
       {columns:[{stack:[{text:'BETREFT',fontSize:6.6,bold:true,color:KLEUR,characterSpacing:1.2,margin:[0,0,0,4]},{text:titel,bold:true,fontSize:11}]},
-        {width:'auto',table:{body:[['Aantal vrachten',String(lijst.length)],['Totaal gewicht',kgF(totaal)+'  ('+tonF(totaal)+')']].map(([a,c])=>[{text:a,color:grijs},{text:c,bold:true,alignment:'right'}])},layout:'noBorders'}]},
-      {margin:[0,16,0,0],table:{headerRows:1,dontBreakRows:true,widths:[58,66,66,50,50,'auto',34,'*','*',58],
+        {width:'auto',table:{body:[['Aantal vrachten',String(lijst.length)],['Totaal gewicht',kgF(totaal)+'  ('+tonF(totaal)+')']].map(([a,c])=>[{text:a,color:grijs,noWrap:true},{text:c,bold:true,alignment:'right',noWrap:true}])},layout:'noBorders'}]},
+      {margin:[0,16,0,0],table:{headerRows:1,dontBreakRows:true,widths:[54,80,80,52,52,'auto',28,'*','*',60],
         body:[[th('VDM-nr'),th('Laden'),th('Lossen'),th('Kenteken'),th('Oplegger'),th('Mestcode'),th('Opm.'),th('Leverancier'),th('Afnemer'),th('Gewicht','right')],
-          ...lijst.map(v=>[v.vdmNummer||'',vTijd(v.laadOp||v.laaddatum),vTijd(v.losOp||v.losdatum),v.kenteken||'',v.oplegger||'',mestKort(v.mestcode),v.opmerkingcode||'',v.leverancier||'',v.afnemer||'',{text:kgF(v.gewichtKg),alignment:'right'}]),
+          ...lijst.map(v=>[v.vdmNummer||'',{text:vTijd(v.laadOp||v.laaddatum),noWrap:true},{text:vTijd(v.losOp||v.losdatum),noWrap:true},{text:v.kenteken||'',noWrap:true},{text:v.oplegger||'',noWrap:true},{text:mestKort(v.mestcode),noWrap:true},v.opmerkingcode||'',v.leverancier||'',v.afnemer||'',{text:kgF(v.gewichtKg),alignment:'right',noWrap:true}]),
           [{text:'Totaal',bold:true,colSpan:9},'','','','','','','','',{text:kgF(totaal),bold:true,alignment:'right'}]]},
        layout:{hLineWidth:(i,node)=>i===0?0:(i===1||i===node.table.body.length-1?1:0.4),hLineColor:(i,node)=>(i===1||i===node.table.body.length-1)?'#111':lijn,vLineWidth:()=>0,paddingLeft:i=>i===0?0:5,paddingRight:()=>5,paddingTop:()=>4,paddingBottom:()=>4}}
     ]};
