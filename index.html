@@ -207,7 +207,8 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const iso=d=>d.toISOString().slice(0,10);
 const lokaalIso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const today=()=>iso(new Date());
-const fmtNum=n=>Number(n).toFixed(1);
+// Uren tonen per kwartier: 7.75 blijft 7.75 (niet afronden naar 7.8)
+const fmtNum=n=>{const x=Math.round((Number(n)||0)*100)/100;return x%1===0?x.toFixed(1):String(x)};
 const weekNum=d=>{const t=new Date(d);t.setHours(0,0,0,0);t.setDate(t.getDate()+4-(t.getDay()||7));return Math.ceil(((t-new Date(t.getFullYear(),0,1))/86400000+1)/7)};
 const weekRange=(y,w)=>{const d=new Date(y,0,1+(w-1)*7);d.setDate(d.getDate()-d.getDay()+4);const s=new Date(d);s.setDate(s.getDate()-6);return{start:iso(s),end:iso(d)}};
 // Datum N dagen terug vanaf vandaag (voor de voorbeelddata)
@@ -293,7 +294,7 @@ function seedData(){
   const dagstaten=[];
   function addDag(wId,wNaam,d,st,et,pauze,status,klussen){
     const netto=Math.max(0,((new Date(`2000-01-01T${et}`)-new Date(`2000-01-01T${st}`))/3600000)-pauze/60);
-    dagstaten.push({id:uid(),medewerkerId:wId,medewerkerNaam:wNaam,datum:d,startTime:st,endTime:et,pauzeMin:pauze,nettoUren:+netto.toFixed(1),status,klussen});
+    dagstaten.push({id:uid(),medewerkerId:wId,medewerkerNaam:wNaam,datum:d,startTime:st,endTime:et,pauzeMin:pauze,nettoUren:Math.round(netto*100)/100,status,klussen});
   }
   const w1=werknemers[0],w2=werknemers[1],w3=werknemers[2];
   addDag('w1','Jan de Boer',dagGeleden(4),'07:00','16:00',30,'in_afwachting',[
@@ -711,13 +712,13 @@ function renderInvoer(){
         if(!oud){toast('Deze dagstaat bestaat niet meer','error');localStorage.removeItem('uren_concept');renderInvoer();return}
         if(oud.status==='verwerkt'){toast('Deze dag is al verwerkt en kan niet meer gewijzigd worden','error');return}
         if(oud.status==='goedgekeurd'&&!confirm('Deze werkdag was al goedgekeurd. Na je wijziging moet de beheerder hem opnieuw goedkeuren. Doorgaan?'))return;
-        DB.update('dagstaten',ds.editId,{...oud,datum,startTime:st,endTime:et,pauzeMin:pauze,vertrek:vertrek||null,nettoUren:+nettoDag.toFixed(1),status:'in_afwachting',klussen:klussen.map(k=>({...k}))});
+        DB.update('dagstaten',ds.editId,{...oud,datum,startTime:st,endTime:et,pauzeMin:pauze,vertrek:vertrek||null,nettoUren:Math.round(nettoDag*100)/100,status:'in_afwachting',klussen:klussen.map(k=>({...k}))});
         localStorage.removeItem('uren_concept');
         toast('Wijziging opgeslagen','success');
         gaNaarMijnUren();
         return;
       }
-      const dag={id:uid(),medewerkerId:wId,medewerkerNaam:w.naam,datum,startTime:st,endTime:et,pauzeMin:pauze,vertrek:vertrek||null,nettoUren:+nettoDag.toFixed(1),status:'in_afwachting',klussen:klussen.map(k=>({...k,gefactureerd:false,factuurdatum:''}))};
+      const dag={id:uid(),medewerkerId:wId,medewerkerNaam:w.naam,datum,startTime:st,endTime:et,pauzeMin:pauze,vertrek:vertrek||null,nettoUren:Math.round(nettoDag*100)/100,status:'in_afwachting',klussen:klussen.map(k=>({...k,gefactureerd:false,factuurdatum:''}))};
       DB.insert('dagstaten',dag);
       localStorage.removeItem('uren_concept');
       toast('Werkdag ingediend!','success');
@@ -3110,11 +3111,12 @@ function renderUrenOverzicht(){
   <table class="w-full text-sm"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
     <th class="px-3 py-2 text-left">Medewerker</th><th class="px-3 py-2 text-right">Dagen</th><th class="px-3 py-2 text-right">Uren</th><th class="px-3 py-2"></th></tr></thead><tbody>
   ${rijen.length?rijen.map(r=>`<tr class="border-t border-gray-100 dark:border-gray-700">
-    <td class="px-3 py-2 font-medium">${esc(r.naam)}</td><td class="px-3 py-2 text-right">${r.dagen.length}</td><td class="px-3 py-2 text-right font-semibold">${f(r.uren)}</td>
+    <td class="px-3 py-2 font-medium">${esc(r.naam)}</td>${URENOV.open[r.id]?'<td></td><td></td>':`<td class="px-3 py-2 text-right">${r.dagen.length}</td><td class="px-3 py-2 text-right font-semibold">${f(r.uren)}</td>`}
     <td class="px-3 py-2 text-right"><button data-uo="${esc(r.id)}" class="text-blue-600 hover:text-blue-800 text-xs min-h-[40px]">${URENOV.open[r.id]?'Verberg dagen':'Toon dagen'}</button></td></tr>
     ${URENOV.open[r.id]?`<tr><td colspan="4" class="px-3 pb-3 bg-gray-50 dark:bg-gray-900"><table class="w-full text-xs"><thead><tr class="text-left text-gray-500"><th class="py-1">Datum</th><th>Start</th><th>Eind</th><th>Pauze</th><th class="text-right">Uren</th><th class="text-right">Status</th></tr></thead><tbody>
       ${r.dagen.map(d=>`<tr class="border-t border-gray-200 dark:border-gray-700"><td class="py-1 whitespace-nowrap">${datumMetDag(d.datum)}</td><td>${esc(d.startTime||'')}</td><td>${esc(d.endTime||'')}</td><td>${esc(String(d.pauzeMin||0))} min${d.vertrek?' · '+esc(d.vertrek):''}</td><td class="text-right">${f(Number(d.nettoUren)||0)}</td><td class="text-right">${esc(statusNaam[d.status]||d.status||'')}</td></tr>`).join('')}
-      </tbody></table></td></tr>`:''}`).join(''):'<tr><td colspan="4" class="px-3 py-6 text-center text-gray-500">Geen uren in deze periode.</td></tr>'}
+      </tbody></table></td></tr>
+    <tr class="bg-emerald-50 dark:bg-gray-900 font-semibold border-b-2 border-gray-300 dark:border-gray-600"><td class="px-3 py-2">Totaal ${esc(r.naam)}</td><td class="px-3 py-2 text-right">${r.dagen.length}</td><td class="px-3 py-2 text-right">${f(r.uren)}</td><td></td></tr>`:''}`).join(''):'<tr><td colspan="4" class="px-3 py-6 text-center text-gray-500">Geen uren in deze periode.</td></tr>'}
   </tbody>${rijen.length?`<tfoot class="bg-gray-50 dark:bg-gray-700 font-semibold"><tr><td class="px-3 py-2">Totaal</td><td class="px-3 py-2 text-right">${dagen.length}</td><td class="px-3 py-2 text-right">${f(totaal)}</td><td></td></tr></tfoot>`:''}
   </table></div></div>`;
   $('uoStatus').value=URENOV.status;
