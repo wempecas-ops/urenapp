@@ -515,6 +515,7 @@ function renderInvoer(){
   const warn=ds.klussen.length>0&&Math.abs(netto-klusSum)>0.5;
   $("main").innerHTML=`
   <div class="max-w-lg mx-auto">
+    ${!bewerken&&SESSIE&&!isBeheer()?begroetingBlok(true):''}
     <h2 class="text-xl font-bold mb-4 text-emerald-700 dark:text-emerald-400">${bewerken?'Werkdag wijzigen':'Werkdag invullen'}</h2>
     ${bewerken?'<div class="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-sm text-amber-900 dark:text-amber-100">Je wijzigt een eerder ingevulde werkdag. Na het opslaan moet de beheerder hem opnieuw goedkeuren. <button type="button" id="btnAnnuleerWijzig" class="underline font-medium ml-1">Annuleren</button></div>':''}
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-5 space-y-4 mb-4">
@@ -816,6 +817,15 @@ function dashGefilterd(){
     .sort((a,b)=>(b.datum||'').localeCompare(a.datum||''));
 }
 // Banner bovenaan het beheer-dashboard: de Volvo met logo en begroeting
+// Korte begroeting met datum (personeel en andere beheerders), in de kleuren van het eigen thema
+function begroetingBlok(compact){
+  if(!SESSIE)return '';
+  const u=new Date().getHours();
+  const groet=u<6?'Goedenacht':u<12?'Goedemorgen':u<18?'Goedemiddag':'Goedenavond';
+  const datum=new Date().toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const vn=String(SESSIE.naam||'').trim().split(/\s+/)[0]||'';
+  return `<div class="${compact?'mb-4 p-4':'mb-5 p-5'} rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow"><div class="${compact?'text-lg':'text-xl'} font-semibold text-emerald-700 dark:text-emerald-400">${esc(groet)}${vn&&vn!=='Beheerder'?', '+esc(vn):''}</div><div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">${esc(datum.charAt(0).toUpperCase()+datum.slice(1))}</div></div>`;
+}
 // Alleen op het account van Cas (profiel "Beheerder")
 const BANNER_ACCOUNTS={'20022ded-f09e-4708-b4b4-2aa28a560189':'Cas'};
 function dashBanner(){
@@ -824,10 +834,7 @@ function dashBanner(){
   const groet=u<6?'Goedenacht':u<12?'Goedemorgen':u<18?'Goedemiddag':'Goedenavond';
   const datum=new Date().toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   // Andere beheerders: alleen de begroeting, in de kleuren van hun eigen thema
-  if(!(SESSIE.id in BANNER_ACCOUNTS)){
-    const vn=String(SESSIE.naam||'').trim().split(/\s+/)[0]||'';
-    return `<div class="mb-5 rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow p-5"><div class="text-xl font-semibold text-emerald-700 dark:text-emerald-400">${esc(groet)}${vn&&vn!=='Beheerder'?', '+esc(vn):''}</div><div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">${esc(datum.charAt(0).toUpperCase()+datum.slice(1))}</div></div>`;
-  }
+  if(!(SESSIE.id in BANNER_ACCOUNTS))return begroetingBlok(false);
   const voornaam=BANNER_ACCOUNTS[SESSIE.id]||'';
   return `<div class="dash-banner" role="img" aria-label="Vrachtwagen van Cas Wempe Mesthandel en Transport" style="position:relative;border-radius:18px;overflow:hidden;margin-bottom:20px;height:250px;background:#0b0b0b url(/factuur-banner.jpg) right center/auto 100% no-repeat">
     <div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(11,11,11,.9) 0%,rgba(11,11,11,.6) 35%,rgba(11,11,11,0) 55%)"></div>
