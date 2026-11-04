@@ -1638,10 +1638,11 @@ function renderFactuurPagina(id){
      <section aria-labelledby="h-regels" class="zk-kaart" style="overflow:hidden">
       <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:18px 24px 14px"><h2 id="h-regels" style="margin:0;font-size:15px;font-weight:600">Factuurregels</h2><span id="fe_telling" style="font-size:13px;color:#5a655e"></span></div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px;min-width:820px">
-       <thead><tr style="background:#fafbf9"><th class="zk-th" style="text-align:left;padding:10px 8px 10px 24px;width:40%">Omschrijving</th><th class="zk-th" style="text-align:left;padding:10px 8px">Aantal</th><th class="zk-th" style="text-align:left;padding:10px 8px">Eenheid</th><th class="zk-th" style="text-align:left;padding:10px 8px">Prijs</th><th class="zk-th" style="text-align:left;padding:10px 8px">Btw</th><th class="zk-th" style="text-align:right;padding:10px 8px">Totaal</th><th style="padding:10px 16px 10px 0"></th></tr></thead>
+       <thead><tr style="background:#fafbf9">${concept?'<th style="width:36px;padding:10px 0 10px 16px"><span class="sr-only">Selecteer</span></th>':''}<th class="zk-th" style="text-align:left;padding:10px 8px 10px ${concept?8:24}px;width:40%">Omschrijving</th><th class="zk-th" style="text-align:left;padding:10px 8px">Aantal</th><th class="zk-th" style="text-align:left;padding:10px 8px">Eenheid</th><th class="zk-th" style="text-align:left;padding:10px 8px">Prijs</th><th class="zk-th" style="text-align:left;padding:10px 8px">Btw</th><th class="zk-th" style="text-align:right;padding:10px 8px">Totaal</th><th style="padding:10px 16px 10px 0"></th></tr></thead>
        <tbody id="fe_regels"></tbody></table></div>
       ${concept?`<div style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 24px 18px;border-top:1px solid #eceee9;background:#fcfcfb">
         <button type="button" id="feRegel" class="zk-stippel">+ Lege regel</button>
+        <button type="button" id="feMerge" class="zk-stippel" title="Vink twee of meer regels aan, bijvoorbeeld een klus die over twee dagen ging">Regels samenvoegen</button>
         <label for="feProduct" class="sr-only">Product toevoegen</label><select id="feProduct" class="zk-stippel" style="padding-right:30px"><option value="">+ Product uit de lijst…</option>${producten.map(p=>`<option value="${p.id}">${esc(p.naam)} – ${eurF(p.prijs)} / ${esc(eenhLabel(p.eenheid))}</option>`).join('')}</select>
         <button type="button" id="feKlussen" class="zk-stippel" style="border-color:#9cc2a8;background:#f2f8f4;color:#245a39"></button></div>`:''}
      </section>
@@ -1677,19 +1678,22 @@ function renderFactuurPagina(id){
   const sluit=()=>{FACT_OPEN=null;renderFacturen()};
   const toonAdres=()=>{const k=f.klant;const kl=f.klantId?DB.get('klanten',f.klantId):null;const mail=(kl&&kl.email)||(k&&k.email)||'';
     $('fe_kladres').innerHTML=k?[esc(k.adres||''),esc([k.postcode,k.plaats].filter(Boolean).join(' ')),k.btwnummer?'btw-nr '+esc(k.btwnummer):'',mail?'<span style="color:#2f6b45;font-weight:500">'+esc(mail)+'</span>':'<span style="color:#8a5a12">nog geen e-mailadres</span>',kl?'<button type="button" id="feKlantOv" style="font:inherit;font-size:13px;font-weight:500;color:#2f6b45;background:none;border:0;padding:0;margin-top:4px;cursor:pointer">Klantoverzicht →</button>':''].filter(Boolean).join('<br>'):'Nog geen klant gekozen';if($('feKlantOv'))$('feKlantOv').onclick=()=>{if(concept&&!confirm('Naar het klantoverzicht? Niet-opgeslagen wijzigingen in dit concept gaan verloren.'))return;openKlantOverzicht(kl.id)}};
+  const sel=new Set();   // geselecteerde regels om samen te voegen
   const openKlussenVanKlant=()=>{if(!f.klantId)return [];const al=new Set(f.klusIds.map(x=>x.klusId));return alleKlussen().filter(k=>k.klantId===f.klantId&&!k.gefactureerd&&!al.has(k.id))};
   const tekenRegels=()=>{
     $('fe_regels').innerHTML=f.regels.length?f.regels.map((r,i)=>`<tr data-ri="${i}" style="border-top:1px solid #eceee9;vertical-align:top">
-      <td style="padding:10px 8px 10px 24px"><label class="sr-only" for="ro_${i}">Omschrijving</label><input id="ro_${i}" data-rf="omschrijving" value="${esc(r.omschrijving||'')}" class="${inv}" style="font-weight:500" ${dis}>
+      ${concept?`<td style="padding:22px 0 10px 16px;vertical-align:top"><input type="checkbox" data-rsel="${i}" ${sel.has(r.id)?'checked':''} aria-label="Regel ${i+1} selecteren om samen te voegen" style="width:18px;height:18px;min-height:auto;accent-color:#2f6b45"></td>`:''}
+      <td style="padding:10px 8px 10px ${concept?8:24}px"><label class="sr-only" for="ro_${i}">Omschrijving</label><input id="ro_${i}" data-rf="omschrijving" value="${esc(r.omschrijving||'')}" class="${inv}" style="font-weight:500" ${dis}>
        <label class="sr-only" for="rd_${i}">Detail</label><input id="rd_${i}" data-rf="detail" value="${esc(r.detail||'')}" placeholder="Detail (datum, kenteken…)" class="${inv}" style="margin-top:6px;min-height:36px;height:36px;font-size:12px;color:#5a655e" ${dis}>
-       ${r.klusId?'<span class="zk-pil" style="margin-top:6px;font-size:11px;padding:2px 8px;background:#e6f2ea;color:#245a39">uit klus</span>':''}</td>
+       ${r.klusId?'<span class="zk-pil" style="margin-top:6px;font-size:11px;padding:2px 8px;background:#e6f2ea;color:#245a39">'+((r.samengevoegd||[]).length>1?r.samengevoegd.length+' klussen samengevoegd':'uit klus')+'</span>':''}</td>
       <td style="padding:10px 8px;width:96px"><label class="sr-only" for="ra_${i}">Aantal</label><input id="ra_${i}" data-rf="aantal" inputmode="decimal" value="${esc(String(r.aantal??'').replace('.',','))}" class="${inv}" style="text-align:right" ${dis}></td>
       <td style="padding:10px 8px;width:96px"><label class="sr-only" for="re_${i}">Eenheid</label><select id="re_${i}" data-rf="eenheid" class="${inv}" style="padding:0 6px" ${dis}>${EENHEDEN_F.concat(EENHEDEN_F.some(x=>x[0]===r.eenheid)||!r.eenheid?[]:[[r.eenheid,r.eenheid]]).map(([v,l])=>`<option value="${v}" ${(r.eenheid||'uur')===v?'selected':''}>${l}</option>`).join('')}</select></td>
       <td style="padding:10px 8px;width:110px"><label class="sr-only" for="rp_${i}">Prijs</label><input id="rp_${i}" data-rf="prijs" inputmode="decimal" value="${esc(String(r.prijs??'').replace('.',','))}" class="${inv}" style="text-align:right" ${dis}></td>
       <td style="padding:10px 8px;width:104px"><label class="sr-only" for="rb_${i}">Btw</label><select id="rb_${i}" data-rf="btw" class="${inv}" style="padding:0 6px" ${dis}>${BTW_OPTIES.map(([v,l])=>`<option value="${v}" ${(r.btw||'21')===v?'selected':''}>${l}</option>`).join('')}</select></td>
       <td style="padding:20px 8px 10px;text-align:right;font-weight:600;white-space:nowrap" data-rtot>${eurF(r2(getal(r.aantal)*getal(r.prijs)))}</td>
       <td style="padding:12px 16px 10px 0;white-space:nowrap">${concept?`<button type="button" data-rup="${i}" aria-label="Regel omhoog" style="background:none;border:0;color:#5a655e;min-height:36px;cursor:pointer">↑</button><button type="button" data-rdown="${i}" aria-label="Regel omlaag" style="background:none;border:0;color:#5a655e;min-height:36px;cursor:pointer">↓</button><button type="button" data-rdel="${i}" aria-label="Regel verwijderen" style="background:none;border:0;color:#b42318;min-height:36px;padding:0 6px;cursor:pointer">✕</button>`:''}</td></tr>`).join('')
-      :'<tr><td colspan="7" style="padding:32px 24px;text-align:center;color:#5a655e">Nog geen regels. Voeg een lege regel, een product of open klussen toe.</td></tr>';
+      :'<tr><td colspan="8" style="padding:32px 24px;text-align:center;color:#5a655e">Nog geen regels. Voeg een lege regel, een product of open klussen toe.</td></tr>';
+    if($('feMerge')){const n=f.regels.filter(r=>sel.has(r.id)).length;$('feMerge').textContent=n>=2?'Samenvoegen ('+n+' regels)':'Regels samenvoegen';$('feMerge').disabled=n<2;$('feMerge').style.opacity=n>=2?'1':'.5'}
     const uitKlus=f.regels.filter(r=>r.klusId).length;
     $('fe_telling').textContent=f.regels.length+' regel'+(f.regels.length===1?'':'s')+(uitKlus?' · '+uitKlus+' uit klussen':'');
     if($('feKlussen')){const n=openKlussenVanKlant().length;$('feKlussen').textContent='+ Open klussen van deze klant ('+n+')';$('feKlussen').disabled=!n;$('feKlussen').style.opacity=n?'1':'.5'}
@@ -1773,9 +1777,26 @@ function renderFactuurPagina(id){
     $('fe_regels').oninput=e=>{const tr=e.target.closest('[data-ri]');if(!tr)return;const r=f.regels[+tr.dataset.ri];const k=e.target.dataset.rf;if(!k)return;r[k]=e.target.value;if(k==='aantal'||k==='prijs')tr.querySelector('[data-rtot]').textContent=eurF(r2(getal(r.aantal)*getal(r.prijs)));tekenTotaal()};
     $('fe_regels').onchange=e=>{const tr=e.target.closest('[data-ri]');if(!tr)return;const k=e.target.dataset.rf;if(k==='btw'||k==='eenheid'){f.regels[+tr.dataset.ri][k]=e.target.value;tekenTotaal()}};
     $('fe_regels').onclick=e=>{const t=e.target.closest('button');if(!t)return;
-      if(t.dataset.rdel!==undefined){const r=f.regels[+t.dataset.rdel];f.regels.splice(+t.dataset.rdel,1);if(r&&r.klusId)f.klusIds=f.klusIds.filter(x=>x.klusId!==r.klusId);tekenRegels();return}
+      if(t.dataset.rdel!==undefined){const r=f.regels[+t.dataset.rdel];f.regels.splice(+t.dataset.rdel,1);if(r&&r.klusId){const weg=(r.samengevoegd&&r.samengevoegd.length)?r.samengevoegd:[r.klusId];f.klusIds=f.klusIds.filter(x=>!weg.includes(x.klusId))}sel.delete(r&&r.id);tekenRegels();return}
       if(t.dataset.rup!==undefined){const i=+t.dataset.rup;if(i>0){[f.regels[i-1],f.regels[i]]=[f.regels[i],f.regels[i-1]];tekenRegels()}return}
       if(t.dataset.rdown!==undefined){const i=+t.dataset.rdown;if(i<f.regels.length-1){[f.regels[i+1],f.regels[i]]=[f.regels[i],f.regels[i+1]];tekenRegels()}return}};
+    $('fe_regels').addEventListener('change',e=>{if(e.target.dataset.rsel===undefined)return;const r=f.regels[+e.target.dataset.rsel];if(!r)return;if(e.target.checked)sel.add(r.id);else sel.delete(r.id);tekenRegels()});
+    $('feMerge').onclick=()=>{
+      const gekozen=f.regels.filter(r=>sel.has(r.id));
+      if(gekozen.length<2){toast('Vink eerst twee of meer regels aan','error');return}
+      const eerste=gekozen[0];
+      if(gekozen.some(r=>(r.eenheid||'')!==(eerste.eenheid||''))){toast('Samenvoegen kan alleen bij dezelfde eenheid (bijv. allemaal uur)','error');return}
+      if(gekozen.some(r=>getal(r.prijs)!==getal(eerste.prijs))){toast('De regels hebben een verschillende prijs; maak die eerst gelijk','error');return}
+      if(gekozen.some(r=>(r.btw||'21')!==(eerste.btw||'21'))){toast('De regels hebben een verschillend btw-tarief','error');return}
+      const aantal=r2(gekozen.reduce((t,r)=>t+getal(r.aantal),0));
+      const details=[...new Set(gekozen.map(r=>(r.detail||'').trim()).filter(Boolean))];
+      const samen=[...new Set(gekozen.flatMap(r=>r.samengevoegd&&r.samengevoegd.length?r.samengevoegd:(r.klusId?[r.klusId]:[])))];
+      const nieuw={...eerste,id:uid(),aantal,detail:details.join(' + '),samengevoegd:samen};
+      const plek=f.regels.indexOf(eerste);
+      f.regels=f.regels.filter(r=>!sel.has(r.id));f.regels.splice(Math.min(plek,f.regels.length),0,nieuw);
+      sel.clear();tekenRegels();
+      toast(gekozen.length+' regels samengevoegd tot één regel van '+num2(aantal)+' '+eenhLabel(eerste.eenheid),'success');
+    };
     $('feRegel').onclick=()=>{f.regels.push({id:uid(),omschrijving:'',detail:'',aantal:1,eenheid:'stuk',prijs:0,btw:'21'});tekenRegels()};
     $('feProduct').onchange=e=>{const p=producten.find(x=>x.id===e.target.value);e.target.value='';if(!p)return;f.regels.push({id:uid(),omschrijving:p.naam,detail:p.omschrijving||'',aantal:1,eenheid:p.eenheid||'stuk',prijs:Number(p.prijs)||0,btw:p.btw||'21'});tekenRegels()};
     $('feKlussen').onclick=()=>{const ks=openKlussenVanKlant().sort((a,c)=>(a.datum||'').localeCompare(c.datum||''));if(!ks.length)return;ks.forEach(k=>{f.regels.push(regelUitKlus(k));f.klusIds.push({dagId:k.dagId,klusId:k.id})});tekenRegels();toast(ks.length+' klus'+(ks.length===1?'':'sen')+' toegevoegd','success')};
