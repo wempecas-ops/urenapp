@@ -17,7 +17,9 @@ const URL_SB = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const ANON = process.env.SUPABASE_ANON_KEY || '';
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const BASIS = 'https://app.evdm.nl';
-const MAX_PAGINAS = 40;
+const MAX_PAGINAS = 60;
+// Vrachten vanaf deze laaddatum (de dag dat de eerste uren in Wempe op Pad stonden); oudere worden overgeslagen
+const VANAF = process.env.EVDM_VANAF || '2026-10-19';
 
 // ---------- Supabase ----------
 const kop = extra => Object.assign({ apikey: SERVICE, Authorization: 'Bearer ' + SERVICE }, extra || {});
@@ -191,9 +193,10 @@ module.exports = async (req, res) => {
     for (let i = 0; i < MAX_PAGINAS && pagina; i++) {
       const rijen = leesTabel(pagina.html);
       if (!rijen) { if (i === 0) throw Object.assign(new Error('Tabel met vrachten niet gevonden'), { html: pagina.html }); break }
-      let nieuw = 0; for (const r of rijen) if (!alle.has(r.id)) { alle.set(r.id, r); nieuw++ }
+      let nieuw = 0, recent = 0;
+      for (const r of rijen) { const d = dt(r.laad).datum; if (d && d < VANAF) continue; recent++; if (!alle.has(r.id)) { alle.set(r.id, r); nieuw++ } }
       const v = volgende(pagina.html, pagina.url);
-      if (!v || !nieuw) break;
+      if (!v || (!nieuw && rijen.length) || (rijen.length && !recent)) break;   // pagina met alleen oudere vrachten: klaar
       pagina = await s.haal(v);
     }
 
