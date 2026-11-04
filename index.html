@@ -1995,16 +1995,16 @@ function factuurPdfDef(f,b,img){
     info:{title:(credit?'Creditnota ':'Factuur ')+(f.nummer||'concept')+' – '+(kl.naam||''),author:b.naam,subject:(credit?'Creditnota ':'Factuur ')+(f.nummer||'')},
     defaultStyle:{font:'Inter',fontSize:9,color:inkt,lineHeight:1.2},
     background:(page)=>page!==1?null:[
-      {canvas:[{type:'rect',x:0,y:0,w:595.28,h:64,color:KLEUR}],absolutePosition:{x:0,y:0}},
-      {image:img.logo,width:150,absolutePosition:{x:45,y:18}},
-      {absolutePosition:{x:45,y:15},columns:[{width:'*',text:''},{width:260,stack:[{text:titel,font:'InterLicht',fontSize:credit?17:20,characterSpacing:credit?2.6:4,color:'#ffffff',alignment:'right'},{text:kop,fontSize:7.4,characterSpacing:1.2,color:SUB,alignment:'right',margin:[0,3,0,0]}]},{width:45,text:''}]}
+      {canvas:[{type:'rect',x:0,y:0,w:595.28,h:80,color:KLEUR}],absolutePosition:{x:0,y:0}},
+      {image:img.logo,width:215,absolutePosition:{x:45,y:20}},
+      {absolutePosition:{x:45,y:22},columns:[{width:'*',text:''},{width:260,stack:[{text:titel,font:'InterLicht',fontSize:credit?17:20,characterSpacing:credit?2.6:4,color:'#ffffff',alignment:'right'},{text:kop,fontSize:7.4,characterSpacing:1.2,color:SUB,alignment:'right',margin:[0,3,0,0]}]},{width:45,text:''}]}
     ],
     header:(page)=>page===1?null:{text:[{text:(b.naam||'').toUpperCase(),bold:true},'   ·   '+(credit?'Creditnota ':'Factuur ')+(f.nummer||'')+' (vervolg)'],fontSize:7,characterSpacing:1,color:KLEUR,margin:[45,28,45,0]},
     footer:(page,aantal)=>({margin:[45,18,45,0],stack:[
       {canvas:[{type:'line',x1:0,y1:0,x2:505.28,y2:0,lineWidth:0.5,lineColor:lijn}],margin:[0,0,0,6]},
       {columns:[{stack:voetRegels.map(x=>({text:x})),fontSize:6.8,color:'#7a7a7a',lineHeight:1.25},{text:'Pagina '+page+' van '+aantal,fontSize:6.8,color:'#7a7a7a',alignment:'right',width:90}]}]}),
     content:[
-      {text:'',margin:[0,36,0,0]},
+      {text:'',margin:[0,50,0,0]},
       {columns:[
         {width:'*',stack:[lab(credit?'Creditnota aan':'Factuur aan'),{text:kl.naam||'',bold:true,fontSize:11},kl.adres?{text:kl.adres}:'',(kl.postcode||kl.plaats)?{text:[kl.postcode,kl.plaats].filter(Boolean).join('  ')}:'',kl.btwnummer?{text:'Btw-nr '+kl.btwnummer,fontSize:8,color:grijs,margin:[0,3,0,0]}:'']},
         {width:'auto',table:{body:[
