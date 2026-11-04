@@ -2317,7 +2317,7 @@ function renderVrachten(){
   if(!VRACHT.van){const n=new Date();const p=x=>String(x).padStart(2,'0');const v=new Date(n.getFullYear(),n.getMonth()-1,1);VRACHT.van=v.getFullYear()+'-'+p(v.getMonth()+1)+'-01';VRACHT.tot=today()}
   const alle=DB.list('vrachten');
   const kentekens=[...new Set(alle.map(v=>v.kenteken).filter(Boolean))].sort();
-  const lijst=vrachtenFilter(VRACHT);
+  const lijst=vrachtenFilter(VRACHT).reverse();   // nieuwste bovenaan
   const gekozen=lijst.filter(v=>VRACHT.sel[v.id]);
   const basis=gekozen.length?gekozen:lijst;
   const tot=basis.reduce((s,v)=>s+(Number(v.gewichtKg)||0),0);
@@ -2336,10 +2336,10 @@ function renderVrachten(){
    <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
     <div style="font-size:14px"><strong>${basis.length}</strong> vracht${basis.length===1?'':'en'}${gekozen.length?' geselecteerd':''} · <strong>${kgF(tot)}</strong> (${tonF(tot)})</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">${gekozen.length?'<button type="button" id="vrLeeg" class="zk-knop">Selectie wissen</button>':''}<button type="button" id="vrPdf" class="zk-hoofd" ${basis.length?'':'disabled'}>Overzicht als pdf${gekozen.length?' (selectie)':''}</button></div></div>
-   <div class="zk-kaart" style="overflow:hidden"><div class="scroll-x"><table style="width:100%;border-collapse:collapse;font-size:14px;min-width:820px">
-    <thead><tr><th class="zk-th" style="padding:10px 12px;width:36px"><input type="checkbox" id="vrAlles" aria-label="Alles selecteren" style="min-height:auto" ${lijst.length&&gekozen.length===lijst.length?'checked':''}></th><th class="zk-th" style="text-align:left;padding:10px 12px">Laden</th><th class="zk-th" style="text-align:left;padding:10px 12px">Lossen</th><th class="zk-th" style="text-align:left;padding:10px 12px">VDM-nummer</th><th class="zk-th" style="text-align:left;padding:10px 12px">Kenteken</th><th class="zk-th" style="text-align:left;padding:10px 12px">Leverancier</th><th class="zk-th" style="text-align:left;padding:10px 12px">Afnemer</th><th class="zk-th" style="text-align:right;padding:10px 12px">Gewicht</th></tr></thead>
-    <tbody>${lijst.length?lijst.map(v=>`<tr style="border-top:1px solid #eceee9"><td style="padding:9px 12px"><input type="checkbox" data-vsel="${esc(v.id)}" ${VRACHT.sel[v.id]?'checked':''} style="min-height:auto" aria-label="Selecteer vracht ${esc(v.vdmNummer||v.id)}"></td><td style="padding:9px 12px;white-space:nowrap">${esc(vTijd(v.laadOp||v.laaddatum))}</td><td style="padding:9px 12px;white-space:nowrap;color:#5a655e">${esc(vTijd(v.losOp||v.losdatum))}</td><td style="padding:9px 12px">${esc(v.vdmNummer||'')}</td><td style="padding:9px 12px;white-space:nowrap">${esc(v.kenteken||'')}</td><td style="padding:9px 12px">${esc(v.leverancier||'')}</td><td style="padding:9px 12px">${esc(v.afnemer||'')}</td><td style="padding:9px 12px;text-align:right;white-space:nowrap">${kgF(v.gewichtKg)}</td></tr>`).join('')
-     :`<tr><td colspan="8" style="padding:28px 12px;text-align:center;color:#5a655e">${alle.length?'Geen vrachten met deze filters.':'Nog geen vrachten opgehaald.'}</td></tr>`}</tbody></table></div></div></div>`;
+   <div class="zk-kaart" style="overflow:hidden"><div class="scroll-x"><table style="width:100%;border-collapse:collapse;font-size:14px;min-width:1100px">
+    <thead><tr><th class="zk-th" style="padding:10px 12px;width:36px"><input type="checkbox" id="vrAlles" aria-label="Alles selecteren" style="min-height:auto" ${lijst.length&&gekozen.length===lijst.length?'checked':''}></th><th class="zk-th" style="text-align:left;padding:10px 12px">Laden</th><th class="zk-th" style="text-align:left;padding:10px 12px">Lossen</th><th class="zk-th" style="text-align:left;padding:10px 12px">VDM-nummer</th><th class="zk-th" style="text-align:left;padding:10px 12px">Kenteken</th><th class="zk-th" style="text-align:left;padding:10px 12px">Oplegger</th><th class="zk-th" style="text-align:left;padding:10px 12px">Mestcode</th><th class="zk-th" style="text-align:left;padding:10px 12px">Opm.code</th><th class="zk-th" style="text-align:left;padding:10px 12px">Leverancier</th><th class="zk-th" style="text-align:left;padding:10px 12px">Afnemer</th><th class="zk-th" style="text-align:right;padding:10px 12px">Gewicht</th></tr></thead>
+    <tbody>${lijst.length?lijst.map(v=>`<tr style="border-top:1px solid #eceee9"><td style="padding:9px 12px"><input type="checkbox" data-vsel="${esc(v.id)}" ${VRACHT.sel[v.id]?'checked':''} style="min-height:auto" aria-label="Selecteer vracht ${esc(v.vdmNummer||v.id)}"></td><td style="padding:9px 12px;white-space:nowrap">${esc(vTijd(v.laadOp||v.laaddatum))}</td><td style="padding:9px 12px;white-space:nowrap;color:#5a655e">${esc(vTijd(v.losOp||v.losdatum))}</td><td style="padding:9px 12px">${esc(v.vdmNummer||'')}</td><td style="padding:9px 12px;white-space:nowrap">${esc(v.kenteken||'')}</td><td style="padding:9px 12px;white-space:nowrap">${esc(v.oplegger||'')}</td><td style="padding:9px 12px">${esc(v.mestcode||'')}</td><td style="padding:9px 12px">${esc(v.opmerkingcode||'')}</td><td style="padding:9px 12px">${esc(v.leverancier||'')}</td><td style="padding:9px 12px">${esc(v.afnemer||'')}</td><td style="padding:9px 12px;text-align:right;white-space:nowrap">${kgF(v.gewichtKg)}</td></tr>`).join('')
+     :`<tr><td colspan="11" style="padding:28px 12px;text-align:center;color:#5a655e">${alle.length?'Geen vrachten met deze filters.':'Nog geen vrachten opgehaald.'}</td></tr>`}</tbody></table></div></div></div>`;
   const her=()=>renderVrachten();
   $('vrVan').onchange=e=>{VRACHT.van=e.target.value;her()};
   $('vrTot').onchange=e=>{VRACHT.tot=e.target.value;her()};
@@ -2349,7 +2349,7 @@ function renderVrachten(){
   $('vrAlles').onchange=e=>{VRACHT.sel={};if(e.target.checked)lijst.forEach(v=>VRACHT.sel[v.id]=true);her()};
   document.querySelectorAll('[data-vsel]').forEach(c=>c.onchange=()=>{if(c.checked)VRACHT.sel[c.dataset.vsel]=true;else delete VRACHT.sel[c.dataset.vsel];her()});
   if($('vrLeeg'))$('vrLeeg').onclick=()=>{VRACHT.sel={};her()};
-  $('vrPdf').onclick=async()=>{try{const titel=vrachtTitel(VRACHT.zoek,basis);const bl=await vrachtenPdfBlob(basis,titel,VRACHT.van,VRACHT.tot);const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download=vrachtPdfNaam(titel,VRACHT.van,VRACHT.tot);a.click();setTimeout(()=>URL.revokeObjectURL(a.href),4000)}catch(e){toast('PDF maken mislukt: '+e.message,'error')}};
+  $('vrPdf').onclick=async()=>{try{const titel=vrachtTitel(VRACHT.zoek,basis);const bl=await vrachtenPdfBlob(basis.slice().reverse(),titel,VRACHT.van,VRACHT.tot);const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download=vrachtPdfNaam(titel,VRACHT.van,VRACHT.tot);a.click();setTimeout(()=>URL.revokeObjectURL(a.href),4000)}catch(e){toast('PDF maken mislukt: '+e.message,'error')}};
 }
 // De echte naam zoals die in eVDM staat (in plaats van wat er getypt is)
 function vrachtTitel(zoek,lijst){const z=vNorm(zoek);if(!z)return 'Alle vrachten';for(const v of lijst){for(const n of [v.afnemer,v.leverancier])if(n&&vNorm(n).includes(z))return n}return zoek}
@@ -2360,17 +2360,17 @@ async function vrachtenPdfBlob(lijst,titel,van,tot){
   const totaal=lijst.reduce((s,v)=>s+(Number(v.gewichtKg)||0),0);
   const th=(t,al)=>({text:t.toUpperCase(),fontSize:6.4,bold:true,color:grijs,characterSpacing:1,alignment:al||'left'});
   const def={pageSize:'A4',pageOrientation:'landscape',pageMargins:[40,90,40,50],
-    defaultStyle:{font:'Inter',fontSize:8.6,color:'#111'},
+    defaultStyle:{font:'Inter',fontSize:7.8,color:'#111'},
     background:()=>[{canvas:[{type:'rect',x:0,y:0,w:841.89,h:64,color:KLEUR}],absolutePosition:{x:0,y:0}},{image:img.logo,width:190,absolutePosition:{x:40,y:15}},
       {absolutePosition:{x:40,y:16},columns:[{width:'*',text:''},{width:320,stack:[{text:'VRACHTENOVERZICHT',font:'InterLicht',fontSize:17,characterSpacing:3,color:'#fff',alignment:'right'},{text:(datumNL(van)+' t/m '+datumNL(tot)).toUpperCase(),fontSize:7.4,characterSpacing:1.2,color:'#d3d6d8',alignment:'right',margin:[0,3,0,0]}]},{width:40,text:''}]}],
     footer:(p,n)=>({margin:[40,16,40,0],columns:[{text:[b.naam,b.onderNaam,'gegevens uit eVDM'].filter(Boolean).join(' · '),fontSize:6.8,color:'#7a7a7a'},{text:'Pagina '+p+' van '+n,fontSize:6.8,color:'#7a7a7a',alignment:'right',width:90}]}),
     content:[
       {columns:[{stack:[{text:'BETREFT',fontSize:6.6,bold:true,color:KLEUR,characterSpacing:1.2,margin:[0,0,0,4]},{text:titel,bold:true,fontSize:11}]},
         {width:'auto',table:{body:[['Aantal vrachten',String(lijst.length)],['Totaal gewicht',kgF(totaal)+'  ('+tonF(totaal)+')']].map(([a,c])=>[{text:a,color:grijs},{text:c,bold:true,alignment:'right'}])},layout:'noBorders'}]},
-      {margin:[0,16,0,0],table:{headerRows:1,dontBreakRows:true,widths:[82,82,72,62,'*','*',70],
-        body:[[th('Laden'),th('Lossen'),th('VDM-nummer'),th('Kenteken'),th('Leverancier'),th('Afnemer'),th('Gewicht','right')],
-          ...lijst.map(v=>[vTijd(v.laadOp||v.laaddatum),vTijd(v.losOp||v.losdatum),v.vdmNummer||'',v.kenteken||'',v.leverancier||'',v.afnemer||'',{text:kgF(v.gewichtKg),alignment:'right'}]),
-          [{text:'Totaal',bold:true,colSpan:6},'','','','','',{text:kgF(totaal),bold:true,alignment:'right'}]]},
+      {margin:[0,16,0,0],table:{headerRows:1,dontBreakRows:true,widths:[66,66,58,50,50,'auto',34,'*','*',58],
+        body:[[th('Laden'),th('Lossen'),th('VDM-nr'),th('Kenteken'),th('Oplegger'),th('Mestcode'),th('Opm.'),th('Leverancier'),th('Afnemer'),th('Gewicht','right')],
+          ...lijst.map(v=>[vTijd(v.laadOp||v.laaddatum),vTijd(v.losOp||v.losdatum),v.vdmNummer||'',v.kenteken||'',v.oplegger||'',v.mestcode||'',v.opmerkingcode||'',v.leverancier||'',v.afnemer||'',{text:kgF(v.gewichtKg),alignment:'right'}]),
+          [{text:'Totaal',bold:true,colSpan:9},'','','','','','','','',{text:kgF(totaal),bold:true,alignment:'right'}]]},
        layout:{hLineWidth:(i,node)=>i===0?0:(i===1||i===node.table.body.length-1?1:0.4),hLineColor:(i,node)=>(i===1||i===node.table.body.length-1)?'#111':lijn,vLineWidth:()=>0,paddingLeft:i=>i===0?0:5,paddingRight:()=>5,paddingTop:()=>4,paddingBottom:()=>4}}
     ]};
   return await new Promise(ok=>pdfMake.createPdf(def).getBlob(ok));

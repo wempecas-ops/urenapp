@@ -99,11 +99,15 @@ function leesTabel(html) {
   const uit = [];
   for (const r of rijen) {
     if (r === kopRij || !/<td/i.test(r)) continue;
-    const c = (r.match(/<td[\s\S]*?<\/td>/gi) || []).map(tekst);
+    const ruw = r.match(/<td[\s\S]*?<\/td>/gi) || [];
+    const c = ruw.map(tekst);
+    // link naar de detailpagina van deze bon (in de Id- of VDM-kolom)
+    let href = null;
+    for (const i of [k.id, k.vdm]) { if (i < 0 || !ruw[i]) continue; const a = ruw[i].match(/<a[^>]*>/i); const h = a && attr(a[0], 'href'); if (h && h !== '#' && !/^javascript/i.test(h)) { href = h; break } }
     const pak = i => (i >= 0 && i < c.length ? c[i] : '');
     const id = pak(k.id) || (pak(k.vdm) ? 'vdm-' + pak(k.vdm) : '');
     if (!id || !/\d/.test(id)) continue;
-    uit.push({ id: id.replace(/\s+/g, ''), vdm: pak(k.vdm), gepland: pak(k.gepland), kenteken: pak(k.kenteken), laad: pak(k.laad), los: pak(k.los), lev: pak(k.lev), afn: pak(k.afn), gew: pak(k.gew) });
+    uit.push({ id: id.replace(/\s+/g, ''), vdm: pak(k.vdm), gepland: pak(k.gepland), kenteken: pak(k.kenteken), laad: pak(k.laad), los: pak(k.los), lev: pak(k.lev), afn: pak(k.afn), gew: pak(k.gew), href });
   }
   return uit;
 }
@@ -113,6 +117,31 @@ function dt(s) {
   if (!m) return { datum: null, op: null };
   const d = m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
   return { datum: d, op: m[4] ? d + 'T' + m[4].padStart(2, '0') + ':' + m[5] : d };
+}
+// Detailpagina van een bon: de tekst in losse stukjes, en daarin zoeken naar het label en de waarde erna
+function stukjes(html) {
+  return String(html || '').replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, '').split(/<[^>]+>/).map(t => ent(t).replace(/\s+/g, ' ').trim()).filter(Boolean);
+}
+const LABELS = {
+  oplegger: /^(kenteken\s*)?(oplegger|aanhanger|aanhangwagen)(\s*kenteken)?\s*:?$/i,
+  mestcode: /^(mestcode|mestsoort(code)?|code\s*mest(soort)?)\s*:?$/i,
+  opmerkingcode: /^opmerking(s)?\s*-?\s*code(s)?\s*:?$/i
+};
+const ALLE_LABELS = /:$|^(kenteken|oplegger|mestcode|mestsoort|opmerking|laaddatum|losdatum|leverancier|afnemer|gewicht|vervoerder|status|vdm)/i;
+function leesDetails(html) {
+  const t = stukjes(html), uit = {};
+  for (const [veld, re] of Object.entries(LABELS)) {
+    for (let i = 0; i < t.length; i++) {
+      const m = /^([^:]{3,40}):\s*(.+)$/.exec(t[i]);          // "Mestcode: 14"
+      if (m && re.test(m[1].trim())) { uit[veld] = m[2].trim(); break }
+      if (re.test(t[i])) {
+        const v = t[i + 1];
+        if (v && !LABELS.oplegger.test(v) && !LABELS.mestcode.test(v) && !LABELS.opmerkingcode.test(v) && !(/:$/.test(v))) { uit[veld] = v; break }
+        if (v && /:$/.test(v)) { uit[veld] = ''; break }
+      }
+    }
+  }
+  return { velden: uit, tekst: t };
 }
 const kg = s => { const n = parseFloat(String(s || '').replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.')); return isNaN(n) ? null : n };
 
@@ -173,6 +202,7 @@ module.exports = async (req, res) => {
   if (!USER || !PASS) { status.fout = 'EVDM_USER en EVDM_PASSWORD staan nog niet op Vercel.'; await zetStatus(status); return stuur(500, status) }
 
   const s = maakSessie();
+  const start = Date.now();
   let stap = 'inlogpagina';
   try {
     // 1. inloggen
@@ -202,7 +232,7 @@ module.exports = async (req, res) => {
 
     // 3. opslaan
     stap = 'opslaan';
-    const rijen = [...alle.values()].map(r => { const l = dt(r.laad), o = dt(r.los); return { id: r.id, vdm_nummer: r.vdm || null, gepland: r.gepland || null, kenteken: r.kenteken || null, laaddatum: l.datum, laad_op: l.op, losdatum: o.datum, los_op: o.op, leverancier: r.lev || null, afnemer: r.afn || null, gewicht_kg: kg(r.gew), opgehaald_op: new Date().toISOString() } });
+    const rijen = [...alle.values()].map(r => { const l = dt(r.laad), o = dt(r.los); return { id: r.id, detail_url: r.href ? new URL(r.href, BASIS).toString() : null, vdm_nummer: r.vdm || null, gepland: r.gepland || null, kenteken: r.kenteken || null, laaddatum: l.datum, laad_op: l.op, losdatum: o.datum, los_op: o.op, leverancier: r.lev || null, afnemer: r.afn || null, gewicht_kg: kg(r.gew), opgehaald_op: new Date().toISOString() } });
     const bekend = new Set();
     if (rijen.length) {
       for (let i = 0; i < rijen.length; i += 200) {
@@ -211,7 +241,21 @@ module.exports = async (req, res) => {
       }
       for (let i = 0; i < rijen.length; i += 500) await sb('/rest/v1/vrachten', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal', body: rijen.slice(i, i + 500) });
     }
-    Object.assign(status, { ok: true, gelezen: rijen.length, nieuw: rijen.filter(r => !bekend.has(r.id)).length });
+    // 4. details (oplegger, mestcode, opmerkingscode) van bonnen waar die nog ontbreken
+    stap = 'details';
+    let details = 0;
+    const open = await sb('/rest/v1/vrachten?select=id,detail_url&details_op=is.null&detail_url=not.is.null&laaddatum=gte.' + VANAF + '&order=laaddatum.desc&limit=200') || [];
+    for (const v of open) {
+      if (Date.now() - start > 45000) break;
+      try {
+        const d = await s.haal(v.detail_url);
+        const { velden, tekst: t } = leesDetails(d.html);
+        if (!status.detailVoorbeeld) status.detailVoorbeeld = t.join(' | ').slice(0, 2500);
+        await sb('/rest/v1/vrachten?id=eq.' + encodeURIComponent(v.id), { method: 'PATCH', prefer: 'return=minimal', body: { oplegger: velden.oplegger || null, mestcode: velden.mestcode || null, opmerkingcode: velden.opmerkingcode || null, details_op: new Date().toISOString() } });
+        details++;
+      } catch (e) { status.detailFout = e.message }
+    }
+    Object.assign(status, { ok: true, gelezen: rijen.length, nieuw: rijen.filter(r => !bekend.has(r.id)).length, details, detailsOpen: Math.max(0, open.length - details) });
     await zetStatus(status);
     return stuur(200, status);
   } catch (e) {
