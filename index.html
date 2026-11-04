@@ -3363,6 +3363,36 @@ function verstuur(actie, tabel, a, b){
 window.addEventListener('online', () => { toonNetStatus(); verwerkWachtrij() });
 window.addEventListener('offline', toonNetStatus);
 setInterval(() => { if (wachtrijLees().length) verwerkWachtrij() }, 30000);
+// ---- Automatisch bijwerken: bij wisselen van tabblad, terugkomen in het venster en elke minuut ----
+// Haalt de nieuwste gegevens op de achtergrond op (hooguit eens per 20 seconden) en tekent het scherm
+// alleen opnieuw als er iets veranderd is en je niet midden in het invullen of bewerken zit.
+let LAATST_GELADEN=Date.now(),VERVERS_BEZIG=false;
+function magHerteken(){
+  if(document.querySelector('#fMail,#klusWijzig,#klusNotitie,#orderEditor,#keurEditor,#planKopie,#pEditor,#fNieuwM,#fBedrijfM,#klantEditor,#matEditor,#matBulk,#fotoModal'))return false;
+  const a=document.activeElement;
+  if(a&&a!==document.body&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)&&$('main')&&$('main').contains(a))return false;
+  if(currentMode==='medewerker'&&currentView==='invoer')return false;
+  if(currentMode==='beheer'&&currentBeheerTab==='facturen'&&typeof FACT_OPEN!=='undefined'&&FACT_OPEN){const f=DB.get('facturen',FACT_OPEN);if(f&&f.status==='concept')return false}
+  if(currentMode==='beheer'&&currentBeheerTab==='planning')return false;
+  return true;
+}
+async function verversAchtergrond(reden){
+  if(CONFIG.MODE!=='supabase'||!SESSIE||VERVERS_BEZIG||navigator.onLine===false||document.hidden)return;
+  if(reden!=='forceer'&&Date.now()-LAATST_GELADEN<20000)return;
+  VERVERS_BEZIG=true;
+  try{
+    if(wachtrijLees().length){await verwerkWachtrij();if(wachtrijLees().length)return}   // eerst eigen wijzigingen versturen
+    const voor=JSON.stringify(CACHE);
+    await laadAlles();
+    LAATST_GELADEN=Date.now();
+    if(JSON.stringify(CACHE)!==voor){cacheBewaar();if(magHerteken()){const y=window.scrollY;renderCurrentView();try{window.scrollTo(0,y)}catch(e){}}}
+  }catch(e){}
+  finally{VERVERS_BEZIG=false}
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)verversAchtergrond('terug')});
+window.addEventListener('focus',()=>verversAchtergrond('terug'));
+setInterval(()=>verversAchtergrond('interval'),60000);
+
 async function laadAlles(){
   // Eerst versturen wat nog op het toestel wacht, anders overschrijft het laden die wijzigingen.
   if (!startteOffline) await verwerkWachtrij();
@@ -3744,7 +3774,7 @@ window.addEventListener('popstate',e=>{
   const mt=$('modeToggle');if(mt)mt.value=currentMode;
   renderBottomNav();renderCurrentView();zetNav(currentView);zetTabMarkering();
 });
-function switchView(view){currentView=view;navPush();renderCurrentView()}
+function switchView(view){currentView=view;navPush();renderCurrentView();verversAchtergrond('tab')}
 function switchTab(tab){
   if(BEHEER_ALLEEN.includes(tab)&&!isBeheer()){toast('Alleen voor beheerders','error');return}
   // Een beheertabblad aanklikken betekent ook echt naar de beheermodus.
@@ -3755,6 +3785,7 @@ function switchTab(tab){
   renderBottomNav();
   renderCurrentView();
   zetTabMarkering();
+  verversAchtergrond('tab');
 }
 
 // === PWA ===
