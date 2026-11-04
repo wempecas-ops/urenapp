@@ -1994,27 +1994,25 @@ function factuurPdfDef(f,b,img){
     info:{title:(credit?'Creditnota ':'Factuur ')+(f.nummer||'concept')+' – '+(kl.naam||''),author:b.naam,subject:(credit?'Creditnota ':'Factuur ')+(f.nummer||'')},
     defaultStyle:{font:'Inter',fontSize:9,color:inkt,lineHeight:1.2},
     background:(page)=>page!==1?null:[
-      {image:img.banner,width:595.28,height:209.8,absolutePosition:{x:0,y:0}},
-      {canvas:[{type:'rect',x:0,y:0,w:595.28,h:3.4,color:FACT_GROEN}],absolutePosition:{x:0,y:209.8}},
-      {image:img.logo,width:176,absolutePosition:{x:45,y:42}},
-      {text:titel,font:'InterLicht',fontSize:credit?23:29,characterSpacing:credit?3.6:5.6,color:'#ffffff',absolutePosition:{x:45,y:credit?127:122}},
-      {text:kop,fontSize:8.2,characterSpacing:1.6,color:FACT_SUB,absolutePosition:{x:45,y:163}}
+      {canvas:[{type:'rect',x:0,y:0,w:595.28,h:64,color:FACT_GROEN}],absolutePosition:{x:0,y:0}},
+      {image:img.logo,width:150,absolutePosition:{x:45,y:18}},
+      {absolutePosition:{x:45,y:15},columns:[{width:'*',text:''},{width:260,stack:[{text:titel,font:'InterLicht',fontSize:credit?17:20,characterSpacing:credit?2.6:4,color:'#ffffff',alignment:'right'},{text:kop,fontSize:7.4,characterSpacing:1.2,color:FACT_SUB,alignment:'right',margin:[0,3,0,0]}]},{width:45,text:''}]}
     ],
     header:(page)=>page===1?null:{text:[{text:(b.naam||'').toUpperCase(),bold:true},'   ·   '+(credit?'Creditnota ':'Factuur ')+(f.nummer||'')+' (vervolg)'],fontSize:7,characterSpacing:1,color:FACT_GROEN,margin:[45,28,45,0]},
     footer:(page,aantal)=>({margin:[45,18,45,0],stack:[
       {canvas:[{type:'line',x1:0,y1:0,x2:505.28,y2:0,lineWidth:0.5,lineColor:lijn}],margin:[0,0,0,6]},
       {columns:[{stack:voetRegels.map(x=>({text:x})),fontSize:6.8,color:'#7a7a7a',lineHeight:1.25},{text:'Pagina '+page+' van '+aantal,fontSize:6.8,color:'#7a7a7a',alignment:'right',width:90}]}]}),
     content:[
-      {text:'',margin:[0,175,0,0]},
+      {text:'',margin:[0,36,0,0]},
       {columns:[
         {width:'*',stack:[lab(credit?'Creditnota aan':'Factuur aan'),{text:kl.naam||'',bold:true,fontSize:11},kl.adres?{text:kl.adres}:'',(kl.postcode||kl.plaats)?{text:[kl.postcode,kl.plaats].filter(Boolean).join('  ')}:'',kl.btwnummer?{text:'Btw-nr '+kl.btwnummer,fontSize:8,color:grijs,margin:[0,3,0,0]}:'']},
         {width:'auto',table:{body:[
           ...[[credit?'Creditnotanummer':'Factuurnummer',f.nummer||'concept'],[credit?'Datum':'Factuurdatum',datumNL(f.factuurdatum)],...(credit?[]:[['Vervaldatum',datumNL(f.vervaldatum)]]),...(f.creditVan?[['Betreft factuur',(DB.get('facturen',f.creditVan)||{}).nummer||'']]:[]),...(kl.klantcode?[['Klantnummer',kl.klantcode]]:[])]
             .map(([a,c])=>[{text:a,color:grijs},{text:c,bold:true,alignment:'right'}])]},layout:'noBorders',fontSize:8.8}
       ]},
-      {margin:[0,26,0,0],table:{headerRows:1,dontBreakRows:true,keepWithHeaderRows:1,widths:['*',66,62,40,72],
+      {margin:[0,18,0,0],table:{headerRows:1,dontBreakRows:true,keepWithHeaderRows:1,widths:['*',66,62,40,72],
         body:[[th('Omschrijving'),th('Aantal','right'),th('Prijs','right'),th('Btw','center'),th('Totaal','right')],...rijen]},
-        layout:{hLineWidth:(i,node)=>i===0?0:(i===1?1.2:0.5),hLineColor:i=>i===1?inkt:lijn,vLineWidth:()=>0,paddingLeft:i=>i===0?0:6,paddingRight:(i,node)=>i===node.table.widths.length-1?0:6,paddingTop:i=>6,paddingBottom:()=>6}},
+        layout:{hLineWidth:(i,node)=>i===0?0:(i===1?1.2:0.5),hLineColor:i=>i===1?inkt:lijn,vLineWidth:()=>0,paddingLeft:i=>i===0?0:6,paddingRight:(i,node)=>i===node.table.widths.length-1?0:6,paddingTop:i=>4,paddingBottom:()=>4}},
       f.opmerking?{text:f.opmerking,fontSize:8.6,color:grijs,italics:true,margin:[0,12,0,0]}:'',
       {unbreakable:true,stack:[
         {margin:[0,18,0,0],columns:[{width:'*',stack:[btwTabel,verlegd?{text:'Btw verlegd'+(kl.btwnummer?' naar afnemer, btw-nr '+kl.btwnummer:'')+'.',fontSize:7.6,color:grijs,margin:[0,8,0,0]}:'']},totalen]},
