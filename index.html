@@ -2107,7 +2107,9 @@ function renderMtsEditor(id){
   const f0=DB.get('facturen_mts',id);if(!f0){MTS_OPEN=null;return renderMts()}
   const f=JSON.parse(JSON.stringify(f0));f.klant=f.klant||{};f.regels=(f.regels||[]).map(r=>({...r,id:r.id||uid()}));
   // Eerdere klanten om snel in te vullen
-  const klanten={};DB.list('facturen_mts').forEach(x=>{const k=x.klant||{};if((k.naam||'').trim())klanten[k.naam.trim()]=k});
+  // Klanten van Cas Wempe mogen ook; eerdere Mts.-facturen gaan voor (die hebben het laatst gebruikte adres)
+  const klanten={};DB.list('klanten').filter(k=>k.actief!==false).forEach(k=>{if((k.naam||'').trim())klanten[k.naam.trim()]={naam:k.naam.trim(),adres:k.adres||'',postcode:k.postcode||'',plaats:k.plaats||'',btwnummer:k.btwnummer||''}});
+  DB.list('facturen_mts').forEach(x=>{const k=x.klant||{};if((k.naam||'').trim())klanten[k.naam.trim()]=k});
   const inv='zk-invoer';
   $('main').innerHTML=`<div class="max-w-full mx-auto" style="padding:4px 8px 32px">
    <div style="font-size:13px;color:#5a655e;margin-bottom:8px"><a href="#" id="meTerug" style="color:#2f6b45;text-decoration:none;font-weight:500">Facturen ${esc(mtsGegevens().naam)}</a> <span aria-hidden="true">/</span> ${esc(f.nummer||'nieuw')}</div>
