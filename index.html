@@ -1668,11 +1668,10 @@ function renderFactuurPagina(id){
      <section class="zk-kaart" style="padding:18px 20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h2 style="margin:0;font-size:15px;font-weight:600">Voorbeeld</h2><button type="button" id="feGroot" style="font:inherit;font-size:13px;font-weight:500;color:#2f6b45;background:none;border:0;cursor:pointer;min-height:36px">Groot openen</button></div>
       <button type="button" id="feMini" aria-label="Voorbeeld groot openen" style="display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch;width:100%;padding:0;border:1px solid #e3e6e0;border-radius:6px;overflow:hidden;box-shadow:0 6px 18px rgba(16,21,19,.08);background:#fff;aspect-ratio:210/297;cursor:pointer;text-align:left">
-       <div style="position:relative;height:25%;background:#0d0d0d url(/factuur-banner.jpg) center/cover no-repeat"><img src="/logo-wit.png" alt="" style="position:absolute;left:7.5%;top:18%;width:30%"><div style="position:absolute;left:7.5%;top:58%;color:#fff;font-weight:300;letter-spacing:.2em;font-size:15px">${credit?'CREDITNOTA':'FACTUUR'}</div></div>
-       <div style="height:4px;background:#2f6b45"></div>
+       <div style="position:relative;height:10.2%;background:#4a4f52"><img src="/logo-wit.png" alt="" style="position:absolute;left:7.5%;top:23%;width:41%"><div style="position:absolute;right:7.5%;top:30%;color:#fff;font-weight:300;letter-spacing:.15em;font-size:11px">${credit?'CREDITNOTA':'FACTUUR'}</div></div>
        <div style="padding:7% 7.5%;display:flex;flex-direction:column;gap:6px"><div style="font-size:11px;font-weight:600;color:#14181a">${esc(f.klant?f.klant.naam:'')}</div><div style="height:6px;width:28%;background:#e7eae5;border-radius:3px"></div><div style="height:1px;background:#14181a;margin-top:14px"></div>
         ${Array.from({length:Math.min(6,Math.max(1,f.regels.length))}).map(()=>'<div style="height:6px;width:92%;background:#eceee9;border-radius:3px;margin-top:4px"></div>').join('')}
-        <div id="fe_minitot" style="align-self:flex-end;font-size:12px;font-weight:600;margin-top:12px;color:#14181a"></div><div style="height:26px;background:#eef5f0;border-left:3px solid #2f6b45;margin-top:10px"></div></div>
+        <div id="fe_minitot" style="align-self:flex-end;font-size:12px;font-weight:600;margin-top:12px;color:#14181a"></div><div style="height:26px;background:#f1f2f2;border-left:3px solid #4a4f52;margin-top:10px"></div></div>
       </button>
      </section>
     </aside>
@@ -1950,8 +1949,8 @@ function pdfKlaarmaken(){
     if(!window.FACTUUR_VFS)await laadScript('/vendor/factuur-fonts.js');
     pdfMake.vfs=window.FACTUUR_VFS;
     pdfMake.fonts={Inter:{normal:'Inter-Regular.otf',bold:'Inter-SemiBold.otf',italics:'Inter-Italic.otf',bolditalics:'Inter-SemiBold.otf'},InterLicht:{normal:'InterDisplay-ExtraLight.otf',bold:'InterDisplay-SemiBold.otf',italics:'InterDisplay-ExtraLight.otf',bolditalics:'InterDisplay-SemiBold.otf'}};
-    const [banner,logo,foto]=await Promise.all([naarDataUrl('/factuur-banner.jpg'),naarDataUrl('/logo-wit.png'),naarDataUrl('/factuur-foto-klein.jpg')]);
-    return {banner,logo,foto};
+    const [banner,logo]=await Promise.all([naarDataUrl('/factuur-banner.jpg'),naarDataUrl('/logo-wit.png')]);
+    return {banner,logo};
   })().catch(e=>{PDF_KLAAR=null;throw e});
   return PDF_KLAAR;
 }
@@ -1996,9 +1995,8 @@ function factuurPdfDef(f,b,img){
     defaultStyle:{font:'Inter',fontSize:9,color:inkt,lineHeight:1.2},
     background:(page)=>page!==1?null:[
       {canvas:[{type:'rect',x:0,y:0,w:595.28,h:86,color:KLEUR}],absolutePosition:{x:0,y:0}},
-      {image:img.foto,width:136,height:86,absolutePosition:{x:459.28,y:0}},
       {image:img.logo,width:245,absolutePosition:{x:45,y:20}},
-      {absolutePosition:{x:45,y:25},columns:[{width:'*',text:''},{width:150,stack:[{text:titel,font:'InterLicht',fontSize:credit?14:18,characterSpacing:credit?1.6:3,color:'#ffffff',alignment:'right'},{text:kop,fontSize:6.6,characterSpacing:0.6,color:SUB,alignment:'right',margin:[0,4,0,0]}]},{width:154.28,text:''}]}
+      {absolutePosition:{x:45,y:25},columns:[{width:'*',text:''},{width:220,stack:[{text:titel,font:'InterLicht',fontSize:credit?17:20,characterSpacing:credit?2.6:4,color:'#ffffff',alignment:'right'},{text:kop,fontSize:7.4,characterSpacing:1.2,color:SUB,alignment:'right',margin:[0,3,0,0]}]},{width:45,text:''}]}
     ],
     header:(page)=>page===1?null:{text:[{text:(b.naam||'').toUpperCase(),bold:true},'   ·   '+(credit?'Creditnota ':'Factuur ')+(f.nummer||'')+' (vervolg)'],fontSize:7,characterSpacing:1,color:KLEUR,margin:[45,28,45,0]},
     footer:(page,aantal)=>({margin:[45,18,45,0],stack:[
