@@ -243,14 +243,15 @@ module.exports = async (req, res) => {
     }
     // 4. details (oplegger, mestcode, opmerkingscode) van bonnen waar die nog ontbreken
     stap = 'details';
-    let details = 0;
+    let details = 0, debugGezet = false;
     const open = await sb('/rest/v1/vrachten?select=id,detail_url&details_op=is.null&detail_url=not.is.null&laaddatum=gte.' + VANAF + '&order=laaddatum.desc&limit=200') || [];
     for (const v of open) {
       if (Date.now() - start > 45000) break;
       try {
         const d = await s.haal(v.detail_url);
         const { velden, tekst: t } = leesDetails(d.html);
-        if (!status.detailVoorbeeld) status.detailVoorbeeld = t.join(' | ').slice(0, 2500);
+        // Ontbreekt er iets, bewaar dan de tekst van deze pagina apart (voor controle), los van de status
+        if (!debugGezet && (!velden.oplegger || !velden.mestcode || !velden.opmerkingcode)) { debugGezet = true; try { await sb('/rest/v1/instellingen', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal', body: { id: 'evdm_debug', waarde: { op: new Date().toISOString(), url: v.detail_url, gevonden: velden, tekst: t.join(' | ').slice(0, 12000) } } }) } catch (e) {} }
         await sb('/rest/v1/vrachten?id=eq.' + encodeURIComponent(v.id), { method: 'PATCH', prefer: 'return=minimal', body: { oplegger: velden.oplegger || null, mestcode: velden.mestcode || null, opmerkingcode: velden.opmerkingcode || null, details_op: new Date().toISOString() } });
         details++;
       } catch (e) { status.detailFout = e.message }
