@@ -439,7 +439,7 @@ function gaNaarMijnUren(){currentView='mijnuren';zetNav('mijnuren');navPush();re
 function wijzigDagstaat(id){
   const d=DB.get('dagstaten',id);if(!d)return;
   if(d.status==='verwerkt'){toast('Deze dag is al verwerkt en kan niet meer gewijzigd worden','error');return}
-  localStorage.setItem('uren_concept',JSON.stringify({editId:d.id,datum:d.datum,medewerkerId:d.medewerkerId,startTime:d.startTime,endTime:d.endTime,pauzeMin:d.pauzeMin,klussen:JSON.parse(JSON.stringify(d.klussen||[]))}));
+  localStorage.setItem('uren_concept',JSON.stringify({editId:d.id,datum:d.datum,medewerkerId:d.medewerkerId,startTime:d.startTime,endTime:d.endTime,pauzeMin:d.pauzeMin,vertrek:d.vertrek||'',klussen:JSON.parse(JSON.stringify(d.klussen||[]))}));
   gaNaarInvoer();
 }
 
@@ -490,6 +490,9 @@ async function toonFotos(paden){
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('[data-fotos]');if(b&&b.dataset.fotos)toonFotos(b.dataset.fotos.split('|'))});
 const fotoKnop=k=>(k.fotos&&k.fotos.length)?`<button type="button" data-fotos="${esc(k.fotos.join('|'))}" class="text-xs underline text-blue-600">Foto's (${k.fotos.length})</button>`:'';
 
+// Vertrekplaats: alleen voor chauffeurs bij wie beheer dit heeft aangezet (Werknemers -> Wijzig)
+const VERTREK_STANDAARD=['Zaak','Thuis (vrachtwagen mee naar huis)'];
+function vertrekOpties(wid){const w=DB.get('werknemers',wid);return w&&Array.isArray(w.vertrekOpties)?w.vertrekOpties.filter(x=>String(x||'').trim()):[]}
 function renderInvoer(){
   const werknemers=DB.list('werknemers').filter(w=>w.actief!==false);
   const klanten=DB.list('klanten').filter(k=>k.actief!==false);
@@ -511,6 +514,7 @@ function renderInvoer(){
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-5 space-y-4 mb-4">
       <div><label class="block text-sm font-medium mb-1" for="inDatum">Datum</label><input id="inDatum" type="date" value="${ds.datum}" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div>
       <div><label class="block text-sm font-medium mb-1" for="inMedew">Medewerker</label><select id="inMedew" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600">${wOpt}</select></div>
+      <div id="vertrekVak"></div>
       <div class="grid grid-cols-2 gap-3">
         <div><label class="block text-sm font-medium mb-1" for="inStart">Starttijd</label>${kwartierSelect('inStart',ds.startTime,'w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600')}</div>
         <div><label class="block text-sm font-medium mb-1" for="inEind">Eindtijd</label>${kwartierSelect('inEind',ds.endTime,'w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600')}</div>
@@ -534,10 +538,14 @@ function renderInvoer(){
       ${concept?'<p class="text-center text-xs text-gray-400 mt-2">Concept opgeslagen</p>':''}
     </div>
   </div>`;
+  // Vertrekplaats-keuze tonen als deze medewerker dat heeft
+  const tekenVertrek=()=>{const vak=$('vertrekVak');if(!vak)return;const opt=vertrekOpties($('inMedew').value);const huidig=$('inVertrek')?$('inVertrek').value:(ds.vertrek||'');
+    vak.innerHTML=opt.length?`<label class="block text-sm font-medium mb-1" for="inVertrek">Vertrokken vanaf</label><select id="inVertrek" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"><option value="">Kies…</option>${opt.map(o=>`<option${o===huidig?' selected':''}>${esc(o)}</option>`).join('')}${huidig&&!opt.includes(huidig)?`<option selected>${esc(huidig)}</option>`:''}</select>`:''};
+  window.tekenVertrek=tekenVertrek;
   // Event bindings
   const saveConcept=()=>{
     if(!$('inDatum'))return;
-    const s={editId:ds.editId||'',datum:$('inDatum').value,medewerkerId:$('inMedew').value,startTime:$('inStart').value,endTime:$('inEind').value,pauzeMin:+$('inPauze').value,klussen:getKlussen()};
+    const s={editId:ds.editId||'',datum:$('inDatum').value,medewerkerId:$('inMedew').value,startTime:$('inStart').value,endTime:$('inEind').value,pauzeMin:+$('inPauze').value,vertrek:$('inVertrek')?$('inVertrek').value:'',klussen:getKlussen()};
     localStorage.setItem('uren_concept',JSON.stringify(s));
   };
   const calcAndRender=()=>{
@@ -647,7 +655,8 @@ function renderInvoer(){
   };
   $('main').oninput=e=>{if(e.target.id&&e.target.id.startsWith('kpauze_')){const kid=e.target.id.slice(7);klusTijdRekenen(kid);const som=ds.klussen.reduce((t,k)=>t+(+(($('kpauze_'+k.id)||{}).value)||0),0);if($('inPauze')&&som>(+$('inPauze').value||0))$('inPauze').value=som;   /* alleen ophogen: een grotere dagpauze (ook pauze tussen klussen door) blijft staan */saveConcept();calcAndRender();return}
     if(e.target.id&&(e.target.id.startsWith('kbeg_')||e.target.id.startsWith('keind_'))){klusTijdRekenen(e.target.id.slice(e.target.id.indexOf('_')+1));saveConcept();calcAndRender();return}
-    if(['inDatum','inMedew','inStart','inEind','inPauze'].includes(e.target.id)){saveConcept();calcAndRender()}if(e.target.id.startsWith('klant_')||e.target.id.startsWith('dienst_')||e.target.id.startsWith('ket_')||e.target.id.startsWith('oms_')||e.target.id.startsWith('aant_')||e.target.id.startsWith('een_')){saveConcept();calcAndRender()}};
+    if(e.target.id==='inMedew')tekenVertrek();
+    if(['inDatum','inMedew','inStart','inEind','inPauze','inVertrek'].includes(e.target.id)){saveConcept();calcAndRender()}if(e.target.id.startsWith('klant_')||e.target.id.startsWith('dienst_')||e.target.id.startsWith('ket_')||e.target.id.startsWith('oms_')||e.target.id.startsWith('aant_')||e.target.id.startsWith('een_')){saveConcept();calcAndRender()}};
   $('main').onchange=async e=>{
     if(e.target.id&&e.target.id.startsWith('foto_')){
       const kid=e.target.id.slice(5),f=e.target.files&&e.target.files[0];if(!f)return;
@@ -677,6 +686,8 @@ function renderInvoer(){
       if(klussen.length===0){toast('Voeg minstens 1 klus toe','error');return}
       if(klussen.some(k=>!k.klantId)){toast('Kies bij elke klus een klant','error');return}
       if(!st||!et||st>=et){toast('Eindtijd moet na starttijd zijn','error');return}
+      const vertrek=$('inVertrek')?$('inVertrek').value:'';
+      if(vertrekOpties(wId).length&&!vertrek){toast('Kies waar je vanaf vertrokken bent','error');$('inVertrek').focus();return}
       const bestaat=DB.list('dagstaten').some(d=>d.medewerkerId===wId&&d.datum===datum&&d.id!==ds.editId);
       if(bestaat&&!confirm('Er staat al een dagstaat voor deze medewerker op '+datum+'. Toch doorgaan?'))return;
       const nettoDag=Math.max(0,calcBruto(st,et)-pauze/60);
@@ -700,13 +711,13 @@ function renderInvoer(){
         if(!oud){toast('Deze dagstaat bestaat niet meer','error');localStorage.removeItem('uren_concept');renderInvoer();return}
         if(oud.status==='verwerkt'){toast('Deze dag is al verwerkt en kan niet meer gewijzigd worden','error');return}
         if(oud.status==='goedgekeurd'&&!confirm('Deze werkdag was al goedgekeurd. Na je wijziging moet de beheerder hem opnieuw goedkeuren. Doorgaan?'))return;
-        DB.update('dagstaten',ds.editId,{...oud,datum,startTime:st,endTime:et,pauzeMin:pauze,nettoUren:+nettoDag.toFixed(1),status:'in_afwachting',klussen:klussen.map(k=>({...k}))});
+        DB.update('dagstaten',ds.editId,{...oud,datum,startTime:st,endTime:et,pauzeMin:pauze,vertrek:vertrek||null,nettoUren:+nettoDag.toFixed(1),status:'in_afwachting',klussen:klussen.map(k=>({...k}))});
         localStorage.removeItem('uren_concept');
         toast('Wijziging opgeslagen','success');
         gaNaarMijnUren();
         return;
       }
-      const dag={id:uid(),medewerkerId:wId,medewerkerNaam:w.naam,datum,startTime:st,endTime:et,pauzeMin:pauze,nettoUren:+nettoDag.toFixed(1),status:'in_afwachting',klussen:klussen.map(k=>({...k,gefactureerd:false,factuurdatum:''}))};
+      const dag={id:uid(),medewerkerId:wId,medewerkerNaam:w.naam,datum,startTime:st,endTime:et,pauzeMin:pauze,vertrek:vertrek||null,nettoUren:+nettoDag.toFixed(1),status:'in_afwachting',klussen:klussen.map(k=>({...k,gefactureerd:false,factuurdatum:''}))};
       DB.insert('dagstaten',dag);
       localStorage.removeItem('uren_concept');
       toast('Werkdag ingediend!','success');
@@ -720,7 +731,7 @@ function renderInvoer(){
   const matSet=new Set(mat.map(m=>(m.kenteken||'').toUpperCase()));
   const opties=mat.map(m=>`<option value="${esc(m.kenteken)}">${esc(m.omschrijving||'')}</option>`).join('')+unique.filter(k=>!matSet.has(String(k).toUpperCase())).map(k=>`<option value="${esc(k)}"></option>`).join('');
   if(opties)$('main').insertAdjacentHTML('beforeend',`<datalist id="ddKenteken">${opties}</datalist>`);
-  renderKlussen();calcAndRender();
+  tekenVertrek();renderKlussen();calcAndRender();
 }
 
 function calcBruto(st,et){
@@ -754,7 +765,7 @@ function renderDagKaart(d){
   const badgeClass=d.status==='in_afwachting'?'badge-afwachting':d.status==='goedgekeurd'?'badge-goedgekeurd':'badge-verwerkt';
   const statusLabel=d.status==='in_afwachting'?'In afwachting':d.status==='goedgekeurd'?'Goedgekeurd':'Verwerkt';
   return`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="flex justify-between items-center"><div><span class="font-semibold">${esc(d.medewerkerNaam)}</span> <span class="text-gray-400 text-sm">${datumMetDag(d.datum)}</span></div><span class="badge ${badgeClass}">${statusLabel}</span></div>
-  <div class="mt-2 text-sm text-gray-600 dark:text-gray-300">${d.startTime} – ${d.endTime} · pauze ${d.pauzeMin}m · <strong>${fmtNum(d.nettoUren)}u netto</strong> · ${totalKlussen} klus${totalKlussen!==1?'sen':''}</div>
+  <div class="mt-2 text-sm text-gray-600 dark:text-gray-300">${d.startTime} – ${d.endTime} · pauze ${d.pauzeMin}m · <strong>${fmtNum(d.nettoUren)}u netto</strong> · ${totalKlussen} klus${totalKlussen!==1?'sen':''}${d.vertrek?' · vertrek: '+esc(d.vertrek):''}</div>
   <div class="flex items-center gap-4 mt-1"><button class="muToggle text-xs text-emerald-600 dark:text-emerald-400 font-medium min-h-[44px]" data-dag-id="${d.id}">Bekijk details</button>${isMedewerker()?(d.status==='verwerkt'?'<span class="text-xs text-gray-400">Verwerkt, niet meer te wijzigen</span>':`<button class="muEdit text-xs text-blue-600 dark:text-blue-400 font-medium min-h-[44px]" data-wijzig-id="${d.id}">Wijzigen</button>`):''}</div>
   <div id="muDet_${d.id}" class="hidden mt-3 space-y-2 border-t border-gray-100 dark:border-gray-700 pt-3">${d.klussen.map(k=>{const kd=DB.get('klanten',k.klantId);const dd=DB.get('diensten',k.dienstId);return`<div class="text-sm bg-gray-50 dark:bg-gray-700 rounded-lg p-2"><div class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekend'}</div>${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500 dark:text-gray-400">${esc(klantAdres(kd))}</div>`:''}<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">${dd?esc(dd.naam):'Onbekend'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')} · ${klusTijdTekst(k)?esc(klusTijdTekst(k))+' · ':''}${k.aantal} ${esc(k.eenheid||'uur')}</div>${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">Wegen monsteren</span></div>':''}${fotoKnop(k)?'<div class="mt-1">'+fotoKnop(k)+'</div>':''}</div>`}).join('')}</div></div>`;
 }
@@ -778,7 +789,7 @@ function renderDashRows(dagen){
       </div>`}).join(''):'<div class="text-sm text-gray-400">Geen klussen bij deze dagstaat</div>';
     return`<tr class="border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
     <td class="px-2 py-2 text-center"><button data-uitklap="${d.id}" class="text-gray-400 hover:text-emerald-600 px-1 min-h-[48px]" aria-label="Toon klussen" aria-expanded="false">Toon</button></td>
-    <td class="px-3 py-2">${esc(d.medewerkerNaam)}</td><td class="px-3 py-2 whitespace-nowrap">${datumMetDag(d.datum)}</td><td class="px-3 py-2 text-center">${d.startTime}</td><td class="px-3 py-2 text-center">${d.endTime}</td>
+    <td class="px-3 py-2">${esc(d.medewerkerNaam)}${d.vertrek?`<div class="text-xs text-gray-500">vertrek: ${esc(d.vertrek)}</div>`:''}</td><td class="px-3 py-2 whitespace-nowrap">${datumMetDag(d.datum)}</td><td class="px-3 py-2 text-center">${d.startTime}</td><td class="px-3 py-2 text-center">${d.endTime}</td>
     <td class="px-3 py-2 text-center">${d.pauzeMin}m</td><td class="px-3 py-2 text-center font-semibold">${fmtNum(d.nettoUren)}u</td>
     <td class="px-3 py-2 text-center whitespace-nowrap">${klussen.length}${mono?` <span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-xs font-medium">Monsteren: ${mono}</span>`:''}</td>
     <td class="px-3 py-2 text-center"><span class="badge ${badgeClass}">${label}</span></td>
@@ -2690,7 +2701,7 @@ function renderWerknemers(){
   <table class="w-full text-sm min-w-[600px]"><thead class="bg-gray-50 dark:bg-gray-700"><tr>
   <th class="px-3 py-2 text-left">Naam</th><th class="px-3 py-2">Pers.Nr</th><th class="px-3 py-2">Functie</th><th class="px-3 py-2">Email</th><th class="px-3 py-2">Telefoon</th><th class="px-3 py-2">Actief</th><th class="px-3 py-2">Acties</th>
   </tr></thead><tbody>${items.map(w=>`<tr class="border-t border-gray-100 dark:border-gray-700">
-  <td class="px-3 py-2">${esc(w.naam)}</td><td class="px-3 py-2 text-center">${esc(w.persNr)}</td><td class="px-3 py-2">${esc(w.functie)}</td><td class="px-3 py-2">${esc(w.email)}</td><td class="px-3 py-2">${esc(w.telefoon)}</td>
+  <td class="px-3 py-2">${esc(w.naam)}${(w.vertrekOpties||[]).length?'<div class="text-xs text-gray-500">kiest vertrekplaats</div>':''}</td><td class="px-3 py-2 text-center">${esc(w.persNr)}</td><td class="px-3 py-2">${esc(w.functie)}</td><td class="px-3 py-2">${esc(w.email)}</td><td class="px-3 py-2">${esc(w.telefoon)}</td>
   <td class="px-3 py-2 text-center">${w.actief!==false?'<span class="text-emerald-700 dark:text-emerald-400 font-medium">Ja</span>':'<span class="text-gray-400">Nee</span>'}</td>
   <td class="px-3 py-2"><button data-edit-wn="${w.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">Wijzig</button><button data-del-wn="${w.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">Verwijder</button></td></tr>`).join('')}
   </tbody></table></div></div>`;
@@ -2709,10 +2720,18 @@ function openWnEditor(id,items){
   <label class="block text-sm font-medium mb-1">Functie</label><input id="wn_functie" value="${esc(existing?.functie||'')}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">
   <label class="block text-sm font-medium mb-1">E-mail</label><input id="wn_email" type="email" value="${esc(existing?.email||'')}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">
   <label class="block text-sm font-medium mb-1">Telefoon</label><input id="wn_telefoon" value="${esc(existing?.telefoon||'')}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">
-  <label class="flex items-center gap-2 mb-4"><input type="checkbox" id="wn_actief" ${existing?.actief!==false?'checked':''}> Actief</label>
+  <label class="flex items-center gap-2 mb-2"><input type="checkbox" id="wn_actief" ${existing?.actief!==false?'checked':''}> Actief</label>
+  <div class="border-t border-gray-200 dark:border-gray-700 pt-3 mb-4">
+   <label class="flex items-center gap-2"><input type="checkbox" id="wn_vertrek" ${(existing?.vertrekOpties||[]).length?'checked':''}> Vertrekplaats laten kiezen</label>
+   <p class="text-xs text-gray-500 mt-1">Bijvoorbeeld als deze chauffeur de vrachtwagen soms mee naar huis neemt. Hij kiest dan bij elke werkdag waar hij vanaf vertrok.</p>
+   <div id="wn_vertrekVak" class="${(existing?.vertrekOpties||[]).length?'':'hidden'} mt-2"><label class="block text-sm font-medium mb-1" for="wn_vertrekOpt">Keuzes (één per regel)</label>
+   <textarea id="wn_vertrekOpt" rows="3" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600">${esc(((existing?.vertrekOpties||[]).length?existing.vertrekOpties:VERTREK_STANDAARD).join('\n'))}</textarea></div>
+  </div>
   <div class="flex gap-2"><button id="wnSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button><button id="wnCancel" class="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
-  $('wnSave').onclick=()=>{const data={naam:$('wn_naam').value,persNr:$('wn_persnr').value,functie:$('wn_functie').value,email:$('wn_email').value,telefoon:$('wn_telefoon').value,actief:$('wn_actief').checked};if(!data.naam){toast('Naam is verplicht','error');return}if(existing)DB.update('werknemers',id,data);else DB.insert('werknemers',data);toast('Werknemer opgeslagen','success');document.getElementById('wnEditor').remove();renderCurrentView()};
+  $('wn_vertrek').onchange=e=>$('wn_vertrekVak').classList.toggle('hidden',!e.target.checked);
+  $('wnSave').onclick=()=>{const vopt=$('wn_vertrek').checked?$('wn_vertrekOpt').value.split('\n').map(x=>x.trim()).filter(Boolean):[];if($('wn_vertrek').checked&&!vopt.length){toast('Vul minstens één vertrekplaats in','error');return}
+    const data={naam:$('wn_naam').value,persNr:$('wn_persnr').value,functie:$('wn_functie').value,email:$('wn_email').value,telefoon:$('wn_telefoon').value,actief:$('wn_actief').checked,vertrekOpties:vopt.length?vopt:null};if(!data.naam){toast('Naam is verplicht','error');return}if(existing)DB.update('werknemers',id,data);else DB.insert('werknemers',data);toast('Werknemer opgeslagen','success');document.getElementById('wnEditor').remove();renderCurrentView()};
   $('wnCancel').onclick=()=>document.getElementById('wnEditor').remove();
 }
 
@@ -3094,7 +3113,7 @@ function renderUrenOverzicht(){
     <td class="px-3 py-2 font-medium">${esc(r.naam)}</td><td class="px-3 py-2 text-right">${r.dagen.length}</td><td class="px-3 py-2 text-right font-semibold">${f(r.uren)}</td>
     <td class="px-3 py-2 text-right"><button data-uo="${esc(r.id)}" class="text-blue-600 hover:text-blue-800 text-xs min-h-[40px]">${URENOV.open[r.id]?'Verberg dagen':'Toon dagen'}</button></td></tr>
     ${URENOV.open[r.id]?`<tr><td colspan="4" class="px-3 pb-3 bg-gray-50 dark:bg-gray-900"><table class="w-full text-xs"><thead><tr class="text-left text-gray-500"><th class="py-1">Datum</th><th>Start</th><th>Eind</th><th>Pauze</th><th class="text-right">Uren</th><th class="text-right">Status</th></tr></thead><tbody>
-      ${r.dagen.map(d=>`<tr class="border-t border-gray-200 dark:border-gray-700"><td class="py-1 whitespace-nowrap">${datumMetDag(d.datum)}</td><td>${esc(d.startTime||'')}</td><td>${esc(d.endTime||'')}</td><td>${esc(String(d.pauzeMin||0))} min</td><td class="text-right">${f(Number(d.nettoUren)||0)}</td><td class="text-right">${esc(statusNaam[d.status]||d.status||'')}</td></tr>`).join('')}
+      ${r.dagen.map(d=>`<tr class="border-t border-gray-200 dark:border-gray-700"><td class="py-1 whitespace-nowrap">${datumMetDag(d.datum)}</td><td>${esc(d.startTime||'')}</td><td>${esc(d.endTime||'')}</td><td>${esc(String(d.pauzeMin||0))} min${d.vertrek?' · '+esc(d.vertrek):''}</td><td class="text-right">${f(Number(d.nettoUren)||0)}</td><td class="text-right">${esc(statusNaam[d.status]||d.status||'')}</td></tr>`).join('')}
       </tbody></table></td></tr>`:''}`).join(''):'<tr><td colspan="4" class="px-3 py-6 text-center text-gray-500">Geen uren in deze periode.</td></tr>'}
   </tbody>${rijen.length?`<tfoot class="bg-gray-50 dark:bg-gray-700 font-semibold"><tr><td class="px-3 py-2">Totaal</td><td class="px-3 py-2 text-right">${dagen.length}</td><td class="px-3 py-2 text-right">${f(totaal)}</td><td></td></tr></tfoot>`:''}
   </table></div></div>`;
@@ -3107,9 +3126,9 @@ function renderUrenOverzicht(){
   document.querySelectorAll('[data-uo]').forEach(b=>b.onclick=()=>{const id=b.dataset.uo;URENOV.open[id]=!URENOV.open[id];her()});
   $('uoCsv').onclick=()=>{
     const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
-    const regels=[['Medewerker','Datum','Start','Eind','Pauze (min)','Netto uren','Status']];
-    rijen.forEach(r=>r.dagen.forEach(d=>regels.push([r.naam,d.datum,d.startTime||'',d.endTime||'',d.pauzeMin||0,String(Number(d.nettoUren)||0).replace('.',','),statusNaam[d.status]||d.status||''])));
-    rijen.forEach(r=>regels.push([r.naam+' (totaal)','','','','',String(Math.round(r.uren*100)/100).replace('.',','),'']));
+    const regels=[['Medewerker','Datum','Start','Eind','Pauze (min)','Netto uren','Status','Vertrek']];
+    rijen.forEach(r=>r.dagen.forEach(d=>regels.push([r.naam,d.datum,d.startTime||'',d.endTime||'',d.pauzeMin||0,String(Number(d.nettoUren)||0).replace('.',','),statusNaam[d.status]||d.status||'',d.vertrek||''])));
+    rijen.forEach(r=>regels.push([r.naam+' (totaal)','','','','',String(Math.round(r.uren*100)/100).replace('.',','),'','']));
     const csv='﻿'+regels.map(r=>r.map(q).join(';')).join('\n');
     const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='uren_per_medewerker_'+URENOV.van+'_tot_'+URENOV.tot+'.csv';a.click();URL.revokeObjectURL(a.href);
   };
@@ -3176,9 +3195,9 @@ function renderExports(){
 function exportCSV(dagen,werknemers,klanten,diensten){
   const wMap={},kMap={},dMap={};
   werknemers.forEach(w=>wMap[w.id]=w);klanten.forEach(k=>kMap[k.id]=k);diensten.forEach(d=>dMap[d.id]=d);
-  const headers=['Medewerker','Personeelsnr','Datum','Starttijd','Eindtijd','Pauze (min)','Netto uren dag','Klantcode','Klant','Adres klant','Dienst','Kenteken/Materieel','Omschrijving','Aantal','Eenheid','Wegen monsteren','Status'];
+  const headers=['Medewerker','Personeelsnr','Datum','Starttijd','Eindtijd','Pauze (min)','Netto uren dag','Klantcode','Klant','Adres klant','Dienst','Kenteken/Materieel','Omschrijving','Aantal','Eenheid','Wegen monsteren','Status','Vertrek'];
   const rows=[];
-  dagen.forEach(d=>{const w=wMap[d.medewerkerId]||{};d.klussen.forEach(k=>{const kl=kMap[k.klantId]||{},dv=dMap[k.dienstId]||{};rows.push([w.naam||'',w.persNr||'',d.datum,d.startTime,d.endTime,d.pauzeMin,d.nettoUren,kl.klantcode||'',kl.naam||'',esc(klantAdres(kl)),dv.naam||'',esc(k.kenteken||''),esc(k.omschrijving||''),k.aantal,k.eenheid||'',k.wegenMonsteren?'Ja':'Nee',d.status].join(';'))});});
+  dagen.forEach(d=>{const w=wMap[d.medewerkerId]||{};d.klussen.forEach(k=>{const kl=kMap[k.klantId]||{},dv=dMap[k.dienstId]||{};rows.push([w.naam||'',w.persNr||'',d.datum,d.startTime,d.endTime,d.pauzeMin,d.nettoUren,kl.klantcode||'',kl.naam||'',esc(klantAdres(kl)),dv.naam||'',esc(k.kenteken||''),esc(k.omschrijving||''),k.aantal,k.eenheid||'',k.wegenMonsteren?'Ja':'Nee',d.status,esc(d.vertrek||'')].join(';'))});});
   const bom='\uFEFF';
   const csv=bom+headers.join(';')+'\n'+rows.join('\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
@@ -3596,7 +3615,7 @@ function pasRolToe(){
   if (accTab) accTab.style.display = isBeheer() ? '' : 'none';
   if (mw && SESSIE) {
     const im = $('inMedew');
-    if (im) { im.value = SESSIE.werknemer_id; im.disabled = true }
+    if (im) { im.value = SESSIE.werknemer_id; im.disabled = true; if (typeof window.tekenVertrek === 'function') window.tekenVertrek() }
     const mu = $('muWerknemer');
     if (mu) { mu.value = SESSIE.werknemer_id; mu.disabled = true; mu.dispatchEvent(new Event('change')) }
   }
