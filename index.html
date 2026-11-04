@@ -2364,7 +2364,7 @@ async function vrachtenPdfBlob(lijst,titel,van,tot){
   const def={pageSize:'A4',pageOrientation:'landscape',pageMargins:[40,90,40,50],
     defaultStyle:{font:'Inter',fontSize:7.8,color:'#111'},
     background:()=>[{canvas:[{type:'rect',x:0,y:0,w:841.89,h:64,color:KLEUR}],absolutePosition:{x:0,y:0}},{image:img.logo,width:190,absolutePosition:{x:40,y:15}},
-      {absolutePosition:{x:40,y:16},columns:[{width:'*',text:''},{width:320,stack:[{text:'VRACHTENOVERZICHT',font:'InterLicht',fontSize:17,characterSpacing:3,color:'#fff',alignment:'right'},{text:(datumNL(van)+' t/m '+datumNL(tot)).toUpperCase(),fontSize:7.4,characterSpacing:1.2,color:'#d3d6d8',alignment:'right',margin:[0,3,0,0]}]},{width:40,text:''}]}],
+      {absolutePosition:{x:40,y:22},columns:[{width:'*',text:''},{width:320,text:'VRACHTENOVERZICHT',font:'InterLicht',fontSize:17,characterSpacing:3,color:'#fff',alignment:'right'},{width:40,text:''}]}],
     footer:(p,n)=>({margin:[40,16,40,0],columns:[{text:[b.naam,b.onderNaam,'gegevens uit eVDM'].filter(Boolean).join(' · '),fontSize:6.8,color:'#7a7a7a'},{text:'Pagina '+p+' van '+n,fontSize:6.8,color:'#7a7a7a',alignment:'right',width:90}]}),
     content:[
       {columns:[{stack:[{text:'BETREFT',fontSize:6.6,bold:true,color:KLEUR,characterSpacing:1.2,margin:[0,0,0,4]},{text:titel,bold:true,fontSize:11}]},
