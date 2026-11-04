@@ -3,6 +3,10 @@
     {
       "path": "/api/backup",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/apk",
+      "schedule": "0 3 * * *"
     }
   ],
   "functions": {
@@ -11,6 +15,9 @@
       "memory": 1024
     },
     "api/backup.js": {
+      "maxDuration": 60
+    },
+    "api/apk.js": {
       "maxDuration": 60
     }
   }

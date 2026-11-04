@@ -3231,21 +3231,44 @@ function renderKeuringen(){
   alle.forEach(v=>{const d=dagenTot(v.vervaldatum);if(d==null)return;if(d<0)teller.v++;else if(d<=30)teller.k++;else if(d<=60)teller.z++});
   const lijst=KEUR.toon==='alles'?alle:alle.filter(v=>{const d=dagenTot(v.vervaldatum);return d==null||d<=90});
   $('main').innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">Keuringen &amp; vervaldata</h2>
-  <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">APK, verzekering, tachograaf, rijbewijs, code 95 en meer, per voertuig of chauffeur. Wat binnen 30 dagen verloopt zie je ook op het dashboard.</p>
+  <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">APK, verzekering, tachograaf, rijbewijs, code 95 en meer, per voertuig of chauffeur. Wat binnen 30 dagen verloopt zie je ook op het dashboard. De APK (en tachograaf, als de RDW die kent) wordt elke nacht automatisch bijgewerkt voor alle kentekens in Materieel.</p>
   <div class="grid grid-cols-3 gap-3 mb-4">
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Verlopen</div><div class="text-2xl font-bold text-red-600">${teller.v}</div></div>
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Binnen 30 dagen</div><div class="text-2xl font-bold text-orange-600">${teller.k}</div></div>
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="text-xs text-gray-500">Binnen 60 dagen</div><div class="text-2xl font-bold text-amber-600">${teller.z}</div></div></div>
   <div class="flex flex-wrap gap-2 mb-4"><button id="kNieuw" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuw</button>
+    <button id="kRdw" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">APK nu ophalen bij RDW</button>
     <button id="kToon" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl min-h-[48px]">${KEUR.toon==='alles'?'Alleen wat binnen 90 dagen verloopt':'Toon alles ('+alle.length+')'}</button></div>
   <div class="bg-white dark:bg-gray-800 rounded-2xl shadow overflow-hidden border border-gray-100 dark:border-gray-700 scroll-x"><table class="w-full text-sm"><thead class="bg-gray-50 dark:bg-gray-700"><tr><th class="px-3 py-2 text-left">Wat</th><th class="px-3 py-2 text-left">Soort</th><th class="px-3 py-2 text-left">Vervalt op</th><th class="px-3 py-2 text-left">Status</th><th class="px-3 py-2 text-left">Opmerking</th><th class="px-3 py-2">Acties</th></tr></thead><tbody>
   ${lijst.length?lijst.map(v=>{const s=keurStatus(dagenTot(v.vervaldatum));return `<tr class="border-t border-gray-100 dark:border-gray-700"><td class="px-3 py-2 font-medium whitespace-nowrap">${esc(keurLabel(v))}</td><td class="px-3 py-2">${esc(v.soort==='Overig'&&v.omschrijving?v.omschrijving:v.soort||'')}</td><td class="px-3 py-2 whitespace-nowrap">${esc(datumNL(v.vervaldatum))}</td><td class="px-3 py-2 whitespace-nowrap"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${s.c}">${esc(s.t)}</span></td><td class="px-3 py-2">${esc(v.opmerking||'')}</td>
   <td class="px-3 py-2 whitespace-nowrap"><button data-k-verleng="${v.id}" class="text-emerald-700 hover:text-emerald-900 text-xs mr-2 min-h-[48px]">Verlengd</button><button data-k-edit="${v.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">Wijzig</button><button data-k-del="${v.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]">Verwijder</button></td></tr>`}).join(''):'<tr><td colspan="6" class="px-3 py-8 text-center text-gray-400">Niets dat binnenkort verloopt. Voeg vervaldata toe met "+ Nieuw".</td></tr>'}</tbody></table></div></div>`;
   $('kNieuw').onclick=()=>openKeuringEditor(null);
   $('kToon').onclick=()=>{KEUR.toon=KEUR.toon==='alles'?'open':'alles';renderKeuringen()};
+  $('kRdw').onclick=()=>apkOphalen($('kRdw'));
   document.querySelectorAll('[data-k-edit]').forEach(b=>b.onclick=()=>openKeuringEditor(b.dataset.kEdit));
   document.querySelectorAll('[data-k-del]').forEach(b=>b.onclick=()=>{if(confirm('Deze vervaldatum verwijderen?')){DB.remove('vervaldata',b.dataset.kDel);renderKeuringen()}});
   document.querySelectorAll('[data-k-verleng]').forEach(b=>b.onclick=()=>openKeuringEditor(b.dataset.kVerleng,true));
+}
+// APK-datums ophalen bij de RDW via /api/apk (doet de server; die zet ze in vervaldata)
+async function apkOphalen(knop){
+  if(CONFIG.MODE!=='supabase'){toast('Werkt alleen met de database','error');return}
+  if(navigator.onLine===false){toast('Geen internet','error');return}
+  const oud=knop.textContent;knop.disabled=true;knop.textContent='Bezig bij de RDW…';
+  try{
+    await zorgVoorToken();
+    const r=await fetch('/api/apk',{method:'POST',headers:{Authorization:'Bearer '+AUTH_TOKEN}});
+    let j={};try{j=await r.json()}catch(e){}
+    if(!r.ok||!j.ok)throw new Error(j.fout||('Fout '+r.status));
+    try{const o=await sbREST('/rest/v1/vervaldata?select=*&limit=1000');CACHE.vervaldata=Array.isArray(o)?o:CACHE.vervaldata;cacheBewaar()}catch(e){}
+    renderKeuringen();
+    const delen=[j.gecontroleerd+' kenteken'+(j.gecontroleerd===1?'':'s')+' gecontroleerd'];
+    if(j.nieuw.length)delen.push(j.nieuw.length+' nieuw');
+    if(j.bijgewerkt.length)delen.push(j.bijgewerkt.length+' bijgewerkt');
+    if(!j.nieuw.length&&!j.bijgewerkt.length)delen.push('alles was al actueel');
+    toast(delen.join(', '),'success');
+    if(j.nietGevonden.length||j.fouten.length)alert((j.nietGevonden.length?'Niet gevonden bij de RDW (controleer het kenteken in Materieel):\n- '+j.nietGevonden.join('\n- ')+'\n\n':'')+(j.fouten.length?'Mislukt:\n- '+j.fouten.join('\n- '):''));
+  }catch(e){toast('Ophalen bij RDW mislukt: '+e.message,'error')}
+  finally{knop.disabled=false;knop.textContent=oud}
 }
 function openKeuringEditor(id,verleng){
   const ex=id?DB.get('vervaldata',id):null;

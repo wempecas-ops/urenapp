@@ -10,8 +10,8 @@
 const URL_SB = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const TABELLEN = ['werknemers', 'klanten', 'diensten', 'diensten_tarief', 'materieel', 'dagstaten', 'profiles',
-  'orders', 'planningen', 'vervaldata', 'klus_notities', 'producten', 'facturen', 'instellingen', 'factuur_teller'];
-const MAG_ONTBREKEN = new Set(['materieel', 'orders', 'planningen', 'vervaldata', 'klus_notities', 'producten', 'facturen', 'instellingen', 'factuur_teller']);
+  'orders', 'planningen', 'vervaldata', 'klus_notities', 'producten', 'facturen', 'facturen_mts', 'instellingen', 'factuur_teller'];
+const MAG_ONTBREKEN = new Set(['materieel', 'orders', 'planningen', 'vervaldata', 'klus_notities', 'producten', 'facturen', 'facturen_mts', 'instellingen', 'factuur_teller']);
 const BEWAAR = 30;
 
 const kop = extra => Object.assign({ apikey: SERVICE, Authorization: 'Bearer ' + SERVICE }, extra || {});
