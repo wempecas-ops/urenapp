@@ -2086,7 +2086,7 @@ function renderMts(){
     <div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" id="mtsGeg" class="zk-knop">Gegevens</button><button type="button" id="mtsNieuw" class="zk-hoofd">+ Nieuwe factuur</button></div>
    </div>
    <p style="font-size:13px;color:#5a655e;margin:-8px 0 16px">Los van de facturen van Cas Wempe. Maak de factuur, download de pdf en verstuur hem vanuit je eigen mail. ${open.length?`<strong>${open.length} nog niet betaald</strong> (${eurF(open.reduce((s,f)=>s+(Number(f.totaalIncl)||0),0))}).`:''}</p>
-   <div class="zk-kaart" style="overflow:hidden"><div class="scroll-x"><table style="width:100%;border-collapse:collapse;font-size:14px;min-width:640px">
+   <div class="zk-kaart" style="overflow:hidden"><div class="scroll-x"><table style="width:100%;border-collapse:collapse;font-size:14px;min-width:760px">
     <thead><tr><th class="zk-th" style="text-align:left;padding:12px 16px">Nummer</th><th class="zk-th" style="text-align:left;padding:12px 16px">Datum</th><th class="zk-th" style="text-align:left;padding:12px 16px">Klant</th><th class="zk-th" style="text-align:right;padding:12px 16px">Bedrag</th><th class="zk-th" style="text-align:left;padding:12px 16px">Betaald</th><th class="zk-th" style="padding:12px 16px"></th></tr></thead>
     <tbody>${lijst.length?lijst.map(f=>`<tr style="border-top:1px solid #eceee9">
      <td style="padding:12px 16px;font-weight:600"><button type="button" data-mts-open="${f.id}" style="font:inherit;font-weight:600;background:none;border:0;padding:0;color:inherit;cursor:pointer;text-decoration:underline;text-decoration-color:#c9d3cc">${esc(f.nummer||'—')}</button></td>
@@ -2094,11 +2094,12 @@ function renderMts(){
      <td style="padding:12px 16px">${esc((f.klant&&f.klant.naam)||'')}</td>
      <td style="padding:12px 16px;text-align:right;font-weight:600;white-space:nowrap">${eurF(f.totaalIncl)}</td>
      <td style="padding:12px 16px"><label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" data-mts-betaald="${f.id}" ${f.betaaldOp?'checked':''} style="width:18px;height:18px;min-height:auto">${f.betaaldOp?esc(datumNL(f.betaaldOp)):'<span style="color:#8a5a12">open</span>'}</label></td>
-     <td style="padding:12px 16px;text-align:right;white-space:nowrap"><button type="button" data-mts-pdf="${f.id}" class="zk-knop" style="min-height:36px;padding:0 12px">PDF</button> <button type="button" data-mts-open="${f.id}" class="zk-knop" style="min-height:36px;padding:0 12px">Bewerken</button></td></tr>`).join('')
+     <td style="padding:12px 16px;text-align:right;white-space:nowrap"><button type="button" data-mts-pdf="${f.id}" class="zk-knop" style="min-height:36px;padding:0 12px">PDF</button> <button type="button" data-mts-open="${f.id}" class="zk-knop" style="min-height:36px;padding:0 12px">Bewerken</button> <button type="button" data-mts-del="${f.id}" class="zk-knop" style="min-height:36px;padding:0 12px;color:#b42318">Verwijderen</button></td></tr>`).join('')
      :'<tr><td colspan="6" style="padding:28px 16px;text-align:center;color:#5a655e">Nog geen facturen. Klik op <strong>+ Nieuwe factuur</strong>.</td></tr>'}</tbody></table></div></div></div>`;
   $('mtsNieuw').onclick=()=>{const f=DB.insert('facturen_mts',{nummer:mtsVolgendNummer(),factuurdatum:vandaagIso(),klant:{naam:'',adres:'',postcode:'',plaats:''},regels:[{id:uid(),omschrijving:'',detail:'',aantal:'',eenheid:'',prijs:''}],btw:'21',opmerking:'',totaalExcl:0,totaalBtw:0,totaalIncl:0,betaaldOp:null});MTS_OPEN=f.id;renderMts()};
   $('mtsGeg').onclick=openMtsGegevens;
   document.querySelectorAll('[data-mts-open]').forEach(b=>b.onclick=()=>{MTS_OPEN=b.dataset.mtsOpen;renderMts();try{window.scrollTo(0,0)}catch(e){}});
+  document.querySelectorAll('[data-mts-del]').forEach(b=>b.onclick=()=>{const f=DB.get('facturen_mts',b.dataset.mtsDel);if(!f)return;if(!confirm('Factuur '+(f.nummer||'')+' voor '+((f.klant&&f.klant.naam)||'onbekend')+' ('+eurF(f.totaalIncl)+') verwijderen?\n\nDit kan niet ongedaan worden gemaakt.'))return;DB.remove('facturen_mts',f.id);toast('Factuur verwijderd','success');renderMts()});
   document.querySelectorAll('[data-mts-pdf]').forEach(b=>b.onclick=()=>mtsPdf(b.dataset.mtsPdf,'download'));
   document.querySelectorAll('[data-mts-betaald]').forEach(c=>c.onchange=()=>{const f=DB.get('facturen_mts',c.dataset.mtsBetaald);if(!f)return;DB.update('facturen_mts',f.id,{...f,betaaldOp:c.checked?vandaagIso():null});renderMts()});
 }
