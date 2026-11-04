@@ -122,25 +122,34 @@ function dt(s) {
 function stukjes(html) {
   return String(html || '').replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, '').split(/<[^>]+>/).map(t => ent(t).replace(/\s+/g, ' ').trim()).filter(Boolean);
 }
-const LABELS = {
-  oplegger: /^(kenteken\s*)?(oplegger|aanhanger|aanhangwagen)(\s*kenteken)?\s*:?$/i,
-  mestcode: /^(mestcode|mestsoort(code)?|code\s*mest(soort)?)\s*:?$/i,
-  opmerkingcode: /^opmerking(s)?\s*-?\s*code(s)?\s*:?$/i
-};
-const ALLE_LABELS = /:$|^(kenteken|oplegger|mestcode|mestsoort|opmerking|laaddatum|losdatum|leverancier|afnemer|gewicht|vervoerder|status|vdm)/i;
+// Opbouw van een eVDM-detailpagina (rvdm/documents/<id>), als losse stukjes tekst:
+//   ... | Vervoermiddel | 83-BSZ-9 / 83-BSZ-9 | OV-61-NY / 23731012 | Chauffeur | ...
+//   ... | Opmerkingscodes | (codes, kunnen ontbreken) | Leverancier | ...
+//   ... | Mestcodes | 14 Rundvee: drijfmest behalve van vleeskalveren (VDM) | 100 % | Uitvoering | ...
+function na(t, label) { return t.findIndex(x => label.test(x)) }
 function leesDetails(html) {
   const t = stukjes(html), uit = {};
-  for (const [veld, re] of Object.entries(LABELS)) {
-    for (let i = 0; i < t.length; i++) {
-      const m = /^([^:]{3,40}):\s*(.+)$/.exec(t[i]);          // "Mestcode: 14"
-      if (m && re.test(m[1].trim())) { uit[veld] = m[2].trim(); break }
-      if (re.test(t[i])) {
-        const v = t[i + 1];
-        if (v && !LABELS.oplegger.test(v) && !LABELS.mestcode.test(v) && !LABELS.opmerkingcode.test(v) && !(/:$/.test(v))) { uit[veld] = v; break }
-        if (v && /:$/.test(v)) { uit[veld] = ''; break }
-      }
-    }
+  // oplegger: tweede regel onder "Vervoermiddel" (kenteken / chassisnummer); de eerste is de trekker
+  const iv = na(t, /^vervoermiddel(en)?$/i);
+  if (iv >= 0) {
+    const regels = [];
+    for (let i = iv + 1; i < t.length && regels.length < 4 && /\//.test(t[i]); i++) regels.push(t[i]);
+    const kent = regels.map(r => r.split('/')[0].trim()).filter(Boolean);
+    if (kent.length > 1) uit.oplegger = kent.slice(1).join(', ');
   }
+  // codes: alleen stukjes die met een cijfer beginnen (anders is het al het volgende kopje)
+  const codes = (label, stop) => {
+    const i = na(t, label); if (i < 0) return '';
+    const l = [];
+    for (let j = i + 1; j < t.length && j < i + 12; j++) {
+      if (stop.test(t[j])) break;
+      if (/^\d+\s*%$/.test(t[j])) continue;          // percentage bij de mestcode
+      if (/^\d/.test(t[j])) l.push(t[j]); else break;
+    }
+    return l.join('; ');
+  };
+  uit.mestcode = codes(/^mestcode(s)?$/i, /^(uitvoering|transport|leverancier|afnemer|overig)$/i);
+  uit.opmerkingcode = codes(/^opmerkingscode(s)?$/i, /^(leverancier|afnemer|overig|uitvoering|bedrijf)$/i);
   return { velden: uit, tekst: t };
 }
 const kg = s => { const n = parseFloat(String(s || '').replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.')); return isNaN(n) ? null : n };
@@ -251,7 +260,7 @@ module.exports = async (req, res) => {
         const d = await s.haal(v.detail_url);
         const { velden, tekst: t } = leesDetails(d.html);
         // Ontbreekt er iets, bewaar dan de tekst van deze pagina apart (voor controle), los van de status
-        if (!debugGezet && (!velden.oplegger || !velden.mestcode || !velden.opmerkingcode)) { debugGezet = true; try { await sb('/rest/v1/instellingen', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal', body: { id: 'evdm_debug', waarde: { op: new Date().toISOString(), url: v.detail_url, gevonden: velden, tekst: t.join(' | ').slice(0, 12000) } } }) } catch (e) {} }
+        if (!debugGezet && (!velden.oplegger || !velden.mestcode)) { debugGezet = true; try { await sb('/rest/v1/instellingen', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal', body: { id: 'evdm_debug', waarde: { op: new Date().toISOString(), url: v.detail_url, gevonden: velden, tekst: t.join(' | ').slice(0, 12000) } } }) } catch (e) {} }
         await sb('/rest/v1/vrachten?id=eq.' + encodeURIComponent(v.id), { method: 'PATCH', prefer: 'return=minimal', body: { oplegger: velden.oplegger || null, mestcode: velden.mestcode || null, opmerkingcode: velden.opmerkingcode || null, details_op: new Date().toISOString() } });
         details++;
       } catch (e) { status.detailFout = e.message }
