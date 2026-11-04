@@ -1956,13 +1956,14 @@ function pdfKlaarmaken(){
   return PDF_KLAAR;
 }
 function factuurPdfDef(f,b,img){
+  const KLEUR='#4a4f52',TINT='#f1f2f2',SUB='#d3d6d8';   // bedrijfskleur grijs
   const credit=f.soort==='credit';
   const t=factuurTotalen(f.regels);
   const kl=f.klant||{};
   const grijs='#6b6b6b',lijn='#e4e1da',inkt='#111111';
   const titel=credit?'CREDITNOTA':'FACTUUR';
   const kop=('Nr. '+(f.nummer||'concept')+'   ·   '+datumLangNL(f.factuurdatum)).toUpperCase();
-  const lab=tx=>({text:tx.toUpperCase(),fontSize:6.6,bold:true,color:FACT_GROEN,characterSpacing:1.2,margin:[0,0,0,5]});
+  const lab=tx=>({text:tx.toUpperCase(),fontSize:6.6,bold:true,color:KLEUR,characterSpacing:1.2,margin:[0,0,0,5]});
   const th=(tx,al)=>({text:tx.toUpperCase(),fontSize:6.4,bold:true,color:grijs,characterSpacing:1.1,alignment:al||'left',margin:[0,0,0,2]});
   const verlegd=(t.groepen.verlegd||0)!==0||(f.regels||[]).some(r=>r.btw==='verlegd');
   const rijen=(f.regels||[]).map(r=>[
@@ -1984,9 +1985,9 @@ function factuurPdfDef(f,b,img){
   ]};
   const betaal=credit?{text:'Dit bedrag wordt verrekend met openstaande facturen of aan u terugbetaald.',fontSize:8.6,color:grijs,margin:[0,22,0,0]}:{
     margin:[0,26,0,0],
-    table:{widths:[3.4,'*','auto'],body:[[{text:'',fillColor:FACT_GROEN},
-      {stack:[{text:['Graag ontvangen wij het bedrag vóór ',{text:datumLangNL(f.vervaldatum),bold:true},' op']},{text:[{text:b.iban,bold:true},' t.n.v. ',{text:b.tenaamstelling||b.naam,bold:true},', o.v.v. ',{text:'factuur '+(f.nummer||''),bold:true},'.']},{text:'Betalingstermijn '+(b.termijn||30)+' dagen.',fontSize:7.6,color:grijs,margin:[0,2,0,0]}],fillColor:FACT_TINT,margin:[10,10,6,10],fontSize:8.8},
-      {text:eurF(t.incl),font:'InterLicht',bold:true,fontSize:14,fillColor:FACT_TINT,margin:[6,16,12,10],noWrap:true}]]},
+    table:{widths:[3.4,'*','auto'],body:[[{text:'',fillColor:KLEUR},
+      {stack:[{text:['Graag ontvangen wij het bedrag vóór ',{text:datumLangNL(f.vervaldatum),bold:true},' op']},{text:[{text:b.iban,bold:true},' t.n.v. ',{text:b.tenaamstelling||b.naam,bold:true},', o.v.v. ',{text:'factuur '+(f.nummer||''),bold:true},'.']},{text:'Betalingstermijn '+(b.termijn||30)+' dagen.',fontSize:7.6,color:grijs,margin:[0,2,0,0]}],fillColor:TINT,margin:[10,10,6,10],fontSize:8.8},
+      {text:eurF(t.incl),font:'InterLicht',bold:true,fontSize:14,fillColor:TINT,margin:[6,16,12,10],noWrap:true}]]},
     layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>0,paddingRight:()=>0,paddingTop:()=>0,paddingBottom:()=>0}};
   const voetRegels=[[b.naam,b.onderNaam,b.adres+', '+b.postcode+' '+b.plaats].filter(Boolean).join(' · '),['T '+b.telefoon,b.email].filter(x=>x&&x!=='T ').join(' · '),['IBAN '+b.iban,'KvK '+b.kvk,'Btw '+b.btw].join(' · ')];
   return {
@@ -1994,11 +1995,11 @@ function factuurPdfDef(f,b,img){
     info:{title:(credit?'Creditnota ':'Factuur ')+(f.nummer||'concept')+' – '+(kl.naam||''),author:b.naam,subject:(credit?'Creditnota ':'Factuur ')+(f.nummer||'')},
     defaultStyle:{font:'Inter',fontSize:9,color:inkt,lineHeight:1.2},
     background:(page)=>page!==1?null:[
-      {canvas:[{type:'rect',x:0,y:0,w:595.28,h:64,color:FACT_GROEN}],absolutePosition:{x:0,y:0}},
+      {canvas:[{type:'rect',x:0,y:0,w:595.28,h:64,color:KLEUR}],absolutePosition:{x:0,y:0}},
       {image:img.logo,width:150,absolutePosition:{x:45,y:18}},
-      {absolutePosition:{x:45,y:15},columns:[{width:'*',text:''},{width:260,stack:[{text:titel,font:'InterLicht',fontSize:credit?17:20,characterSpacing:credit?2.6:4,color:'#ffffff',alignment:'right'},{text:kop,fontSize:7.4,characterSpacing:1.2,color:FACT_SUB,alignment:'right',margin:[0,3,0,0]}]},{width:45,text:''}]}
+      {absolutePosition:{x:45,y:15},columns:[{width:'*',text:''},{width:260,stack:[{text:titel,font:'InterLicht',fontSize:credit?17:20,characterSpacing:credit?2.6:4,color:'#ffffff',alignment:'right'},{text:kop,fontSize:7.4,characterSpacing:1.2,color:SUB,alignment:'right',margin:[0,3,0,0]}]},{width:45,text:''}]}
     ],
-    header:(page)=>page===1?null:{text:[{text:(b.naam||'').toUpperCase(),bold:true},'   ·   '+(credit?'Creditnota ':'Factuur ')+(f.nummer||'')+' (vervolg)'],fontSize:7,characterSpacing:1,color:FACT_GROEN,margin:[45,28,45,0]},
+    header:(page)=>page===1?null:{text:[{text:(b.naam||'').toUpperCase(),bold:true},'   ·   '+(credit?'Creditnota ':'Factuur ')+(f.nummer||'')+' (vervolg)'],fontSize:7,characterSpacing:1,color:KLEUR,margin:[45,28,45,0]},
     footer:(page,aantal)=>({margin:[45,18,45,0],stack:[
       {canvas:[{type:'line',x1:0,y1:0,x2:505.28,y2:0,lineWidth:0.5,lineColor:lijn}],margin:[0,0,0,6]},
       {columns:[{stack:voetRegels.map(x=>({text:x})),fontSize:6.8,color:'#7a7a7a',lineHeight:1.25},{text:'Pagina '+page+' van '+aantal,fontSize:6.8,color:'#7a7a7a',alignment:'right',width:90}]}]}),
