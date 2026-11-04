@@ -1601,19 +1601,21 @@ function renderFactuurPagina(id){
   const dis=concept?'':'disabled';
   const inv='zk-invoer';
   const credit=f.soort==='credit';
-  const titel=concept?(credit?'Nieuwe creditnota':'Nieuwe factuur'):(credit?'Creditnota ':'Factuur ')+f.nummer;
+  const titel=concept?(f.nummer?(credit?'Creditnota ':'Factuur ')+f.nummer+' (concept)':(credit?'Nieuwe creditnota':'Nieuwe factuur')):(credit?'Creditnota ':'Factuur ')+f.nummer;
+  const kanTerug=!concept&&f0.status==='open'&&!f0.verstuurdOp&&!(f0.verzendingen||[]).length;
   m.innerHTML=`<div class="max-w-full mx-auto" style="padding:4px 8px 32px">
-   <div style="font-size:13px;color:#5a655e;margin-bottom:8px"><a href="#" id="feX" style="color:#2f6b45;text-decoration:none;font-weight:500">Facturen</a> <span aria-hidden="true">/</span> ${concept?'Concept':esc(f.nummer)}</div>
+   <div style="font-size:13px;color:#5a655e;margin-bottom:8px"><a href="#" id="feX" style="color:#2f6b45;text-decoration:none;font-weight:500">Facturen</a> <span aria-hidden="true">/</span> ${concept&&!f.nummer?'Concept':esc(f.nummer)+(concept?' (concept)':'')}</div>
    <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h1 style="margin:0;font-size:28px;font-weight:600;letter-spacing:-.01em">${esc(titel)}</h1>
-     ${concept?'<span class="zk-pil" style="'+F_PIL.concept+'">Concept · nog geen nummer</span>':fPil(s)}
+     ${concept?'<span class="zk-pil" style="'+F_PIL.concept+'">'+(f.nummer?'Concept · nummer blijft gereserveerd':'Concept · nog geen nummer')+'</span>':fPil(s)}
      ${f.creditVan?`<span style="font-size:13px;color:#5a655e">creditering van factuur ${esc((DB.get('facturen',f.creditVan)||{}).nummer||'')}</span>`:''}</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px">
-     ${concept?`<button type="button" id="feDel" class="zk-knop" style="color:#b42318">Verwijderen</button>
+     ${concept?`${f.nummer?'':'<button type="button" id="feDel" class="zk-knop" style="color:#b42318">Verwijderen</button>'}
        <button type="button" id="fePdf" class="zk-knop">Voorbeeld PDF</button>
        <button type="button" id="feSave" class="zk-knop">Concept opslaan</button>
-       <button type="button" id="feDef" class="zk-hoofd">Definitief maken</button>`
-     :`${f.soort!=='credit'&&f.status!=='gecrediteerd'?'<button type="button" id="feCredit" class="zk-knop" style="color:#6b2fa8">Creditnota maken</button>':''}
+       <button type="button" id="feDef" class="zk-hoofd">${f.nummer?'Opnieuw definitief maken':'Definitief maken'}</button>`
+     :`${kanTerug?'<button type="button" id="feTerug" class="zk-knop">Terug naar concept</button>':''}
+       ${f.soort!=='credit'&&f.status!=='gecrediteerd'?'<button type="button" id="feCredit" class="zk-knop" style="color:#6b2fa8">Creditnota maken</button>':''}
        ${(s==='open'||s==='verlopen')&&f.soort!=='credit'?'<button type="button" id="feHerinner" class="zk-knop" style="color:#b42318">Herinnering sturen</button>':''}
        ${(s==='open'||s==='verlopen')?'<button type="button" id="feBetaald" class="zk-knop">Markeer als betaald</button>':''}
        ${s==='betaald'?'<button type="button" id="feOnbetaald" class="zk-knop">Toch niet betaald</button>':''}
@@ -1621,7 +1623,7 @@ function renderFactuurPagina(id){
        <button type="button" id="fePdf" class="zk-knop">PDF openen</button>
        <button type="button" id="feMail" class="zk-hoofd">${(f.verzendingen||[]).length?'Opnieuw versturen':'Versturen per mail'}</button>`}
     </div></div>
-   ${concept?'':'<div class="zk-kaart" style="padding:12px 16px;margin-bottom:20px;font-size:13px;color:#3e4842;background:#fafbf9">Deze '+(credit?'creditnota':'factuur')+' is definitief en kan niet meer worden gewijzigd. Klopt er iets niet? Maak dan een creditnota en daarna een nieuwe factuur.</div>'}
+   ${concept?(f.nummer?'<div class="zk-kaart" style="padding:12px 16px;margin-bottom:20px;font-size:13px;color:#7a4f0e;background:#fdf6e7">Deze '+(credit?'creditnota':'factuur')+' is teruggezet naar concept. Nummer '+esc(f.nummer)+' blijft gereserveerd, zodat de nummering geen gaten krijgt. Pas aan wat nodig is en maak hem daarna opnieuw definitief.</div>':''):'<div class="zk-kaart" style="padding:12px 16px;margin-bottom:20px;font-size:13px;color:#3e4842;background:#fafbf9">'+(kanTerug?'Deze '+(credit?'creditnota':'factuur')+' is definitief maar nog niet verstuurd. Klopt er iets niet? Met <b>Terug naar concept</b> kun je hem nog aanpassen; het nummer blijft hetzelfde.':'Deze '+(credit?'creditnota':'factuur')+' is verstuurd of betaald en kan niet meer worden gewijzigd. Klopt er iets niet? Maak dan een creditnota en daarna een nieuwe factuur.')+'</div>'}
    <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
     <div style="flex:999 1 560px;min-width:0;display:flex;flex-direction:column;gap:20px">
      <section aria-labelledby="h-klant" class="zk-kaart" style="padding:22px 24px">
@@ -1802,7 +1804,7 @@ function renderFactuurPagina(id){
     $('feKlussen').onclick=()=>{const ks=openKlussenVanKlant().sort((a,c)=>(a.datum||'').localeCompare(c.datum||''));if(!ks.length)return;ks.forEach(k=>{f.regels.push(regelUitKlus(k));f.klusIds.push({dagId:k.dagId,klusId:k.id})});tekenRegels();toast(ks.length+' klus'+(ks.length===1?'':'sen')+' toegevoegd','success')};
     $('feSave').onclick=()=>{bewaar();sluit()};
     $('fePdf').onclick=voorbeeld;
-    $('feDel').onclick=()=>{if(confirm('Dit concept verwijderen? (De klussen blijven gewoon op "te factureren" staan.)')){DB.remove('facturen',f.id);sluit()}};
+    if($('feDel'))$('feDel').onclick=()=>{if(confirm('Dit concept verwijderen? (De klussen blijven gewoon op "te factureren" staan.)')){DB.remove('facturen',f.id);sluit()}};
     $('feDef').onclick=async()=>{
       if(!f.klant){toast('Kies eerst een klant','error');return}
       if(!f.regels.length){toast('De factuur heeft nog geen regels','error');return}
@@ -1810,10 +1812,10 @@ function renderFactuurPagina(id){
       if(!f.factuurdatum){toast('Vul een factuurdatum in','error');return}
       if(f.regels.some(r=>r.btw==='verlegd')&&!(f.klant&&f.klant.btwnummer)){toast('Bij btw verlegd moet de klant een btw-nummer hebben (Klanten → Wijzig)','error');return}
       const t=factuurTotalen(f.regels);
-      if(!confirm((credit?'Creditnota':'Factuur')+' voor '+f.klant.naam+' van '+eurF(t.incl)+' definitief maken?\n\nDaarna krijgt hij een vast nummer en kun je hem niet meer wijzigen.'))return;
+      if(!confirm((credit?'Creditnota':'Factuur')+' voor '+f.klant.naam+' van '+eurF(t.incl)+' definitief maken?\n\n'+(f.nummer?'Hij houdt nummer '+f.nummer+'.':'Daarna krijgt hij een vast nummer.')+' Zolang hij nog niet verstuurd is, kun je hem nog terugzetten naar concept.'))return;
       const knop=$('feDef');knop.disabled=true;knop.textContent='Bezig…';
       try{
-        const nr=await volgendFactuurnummer();
+        const nr=f.nummer?f.nummer:await volgendFactuurnummer();
         const data=bewaar(true);
         DB.update('facturen',f.id,{...data,nummer:String(nr),status:'open'});
         if(credit&&f.creditVan){const org=DB.get('facturen',f.creditVan);if(org)DB.update('facturen',org.id,{...org,status:'gecrediteerd'});
@@ -1821,13 +1823,20 @@ function renderFactuurPagina(id){
         else if(f.klusIds.length)zetFactuurOpKlussen(f.klusIds,String(nr));
         toast((credit?'Creditnota ':'Factuur ')+nr+' is definitief','success');
         openFactuurEditor(f.id);
-      }catch(e){toast('Definitief maken mislukt: '+e.message,'error');knop.disabled=false;knop.textContent='Definitief maken'}
+      }catch(e){toast('Definitief maken mislukt: '+e.message,'error');knop.disabled=false;knop.textContent=f.nummer?'Opnieuw definitief maken':'Definitief maken'}
     };
   } else {
     $('feMail').onclick=()=>openFactuurVersturen(f.id);
     $('fePdf').onclick=()=>factuurPdf(f.id,'open');
     $('fePdfDl').onclick=()=>factuurPdf(f.id,'download');
     if($('feBetaald'))$('feBetaald').onclick=()=>markeerBetaald(f.id);
+    if($('feTerug'))$('feTerug').onclick=()=>{
+      if(!confirm((credit?'Creditnota ':'Factuur ')+f.nummer+' terugzetten naar concept?\n\nJe kunt hem dan weer aanpassen. Het nummer '+f.nummer+' blijft bij deze '+(credit?'creditnota':'factuur')+' en hij kan niet meer worden verwijderd.'))return;
+      if(credit&&f.creditVan){const org=DB.get('facturen',f.creditVan);if(org&&org.status==='gecrediteerd')DB.update('facturen',org.id,{...org,status:'open'})}
+      else if((f0.klusIds||[]).length)zetFactuurOpKlussen(f0.klusIds,null);
+      DB.update('facturen',f.id,{...f0,status:'concept'});
+      toast('Teruggezet naar concept','success');openFactuurEditor(f.id);
+    };
     if($('feHerinner'))$('feHerinner').onclick=()=>openFactuurVersturen(f.id,'herinnering');
     if($('feOnbetaald'))$('feOnbetaald').onclick=()=>{DB.update('facturen',f.id,{...f0,status:'open',betaaldOp:null});renderFacturen()};
     if($('feCredit'))$('feCredit').onclick=()=>{
