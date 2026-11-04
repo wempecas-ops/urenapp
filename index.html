@@ -169,6 +169,7 @@ textarea.zk-invoer{padding:10px 12px}
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="planarchief">Planning-archief</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="orders">Orders</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="uren">Uren</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="vrachten">Vrachten</button>
 <div class="nav-groep" aria-hidden="true">Financieel</div>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="facturen">Facturen</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="producten">Producten</button>
@@ -1672,6 +1673,7 @@ function renderFactuurPagina(id){
       <label for="fe_bijlIn" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;margin-top:6px;padding:18px;border:1.5px dashed #b9c1b8;border-radius:12px;cursor:pointer;text-align:center">
        <span style="font-size:14px;font-weight:600">Sleep bestanden hierheen</span><span style="font-size:13px;color:#5a655e">of klik om te kiezen (pdf, foto, Excel…)</span>
        <input type="file" id="fe_bijlIn" multiple class="sr-only"></label>
+      <button type="button" id="fe_vracht" class="zk-knop" style="width:100%;margin-top:8px">+ Vrachtenoverzicht uit eVDM</button>
      </section>
     </div>
     <aside aria-label="Totaal en controle" style="flex:1 1 320px;max-width:420px;display:flex;flex-direction:column;gap:20px">
@@ -1771,6 +1773,14 @@ function renderFactuurPagina(id){
     }
   };
   $('fe_bijlIn').onchange=e=>{const files=[...e.target.files];e.target.value='';voegBijlagenToe(files)};
+  $('fe_vracht').onclick=()=>{
+    // periode: van de eerste tot de laatste klus op deze factuur, anders de maand voor de factuurdatum
+    const data=(f.klusIds||[]).map(x=>(DB.get('dagstaten',x.dagId)||{}).datum).filter(Boolean).sort();
+    let van=data[0],tot=data[data.length-1];
+    if(!van){const d=new Date((f.factuurdatum||today())+'T12:00:00');const v=new Date(d.getFullYear(),d.getMonth()-1,1),e=new Date(d.getFullYear(),d.getMonth(),0);van=iso_(v);tot=iso_(e)}
+    if(!DB.list('vrachten').length){toast('Er zijn nog geen vrachten uit eVDM opgehaald (tabblad Vrachten)','error');return}
+    openVrachtKeuze({zoek:(f.klant&&f.klant.naam)||'',van,tot},file=>voegBijlagenToe([file]));
+  };
   maakSleepZone($('h-bijl').closest('section'),voegBijlagenToe);
   $('feX').onclick=e=>{e.preventDefault();sluit()};
   const voorbeeld=()=>{if(concept)bewaar(true);factuurPdf(f.id,'open')};
@@ -2255,6 +2265,136 @@ async function mtsPdf(id,actie){
     if(actie==='download'){doc.download(naam);return}
     doc.getBlob(b=>{const u=URL.createObjectURL(b);if(w)w.location.href=u;else window.open(u,'_blank')});
   }catch(e){if(actie==='blob')throw e;if(w)w.close();toast('PDF maken mislukt: '+e.message,'error')}
+}
+
+// ============================================================================
+// === VRACHTEN UIT eVDM ======================================================
+// De server (/api/evdm) haalt elke nacht de gereden vrachten op uit eVDM.
+// Hier: overzicht, filteren op klant/periode/kenteken en een pdf-overzicht,
+// ook direct als bijlage bij een factuur.
+// ============================================================================
+const VRACHT={van:'',tot:'',zoek:'',kenteken:'',sel:{}};
+// Namen vergelijken zonder puntjes, spaties en rechtsvormen: "Mts. C.J. Wempe" = "mts cj wempe" = "CJ Wempe"
+const vNorm=s=>String(s||'').toLowerCase().normalize('NFKD').replace(/[.'`´]/g,'').replace(/[^a-z0-9]+/g,' ').replace(/\b(mts|maatschap|bv|vof|cv|firma|fa|en)\b/g,' ').replace(/\s+/g,'');
+function vrachtenFilter(f){
+  const z=vNorm(f.zoek);
+  return DB.list('vrachten').filter(v=>(!f.van||(v.laaddatum||'')>=f.van)&&(!f.tot||(v.laaddatum||'')<=f.tot)&&(!f.kenteken||v.kenteken===f.kenteken)&&(!z||vNorm(v.leverancier).includes(z)||vNorm(v.afnemer).includes(z)||vNorm(v.vdmNummer).includes(z)))
+    .sort((a,b)=>String(a.laadOp||a.laaddatum||'').localeCompare(String(b.laadOp||b.laaddatum||'')));
+}
+const kgF=n=>(Number(n)||0).toLocaleString('nl-NL')+' kg';
+const tonF=n=>((Number(n)||0)/1000).toLocaleString('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:2})+' ton';
+const vTijd=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}:\d{2}))?/.exec(String(s||''));return m?m[3]+'-'+m[2]+'-'+m[1]+(m[4]?' '+m[4]:''):''};
+function evdmStatusTekst(){
+  const s=(DB.get('instellingen','evdm_status')||{}).waarde;
+  if(!s)return '<span style="color:#5a655e">Nog niet opgehaald. Zet EVDM_USER en EVDM_PASSWORD op Vercel en klik op <strong>Nu ophalen</strong>.</span>';
+  return s.ok?`<span style="color:#245a39">✓ Laatst opgehaald ${esc(tijdKort(s.op))}: ${s.gelezen} vrachten gelezen, ${s.nieuw} nieuw.</span>`
+    :`<span style="color:#b42318">Ophalen mislukt (${esc(tijdKort(s.op))}): ${esc(s.fout||'onbekend')}</span>`;
+}
+async function evdmOphalen(knop){
+  if(CONFIG.MODE!=='supabase'){toast('Werkt alleen met de database','error');return}
+  const oud=knop.textContent;knop.disabled=true;knop.textContent='Bezig met ophalen uit eVDM…';
+  try{
+    await zorgVoorToken();
+    const r=await fetch('/api/evdm',{method:'POST',headers:{Authorization:'Bearer '+AUTH_TOKEN}});
+    let j={};try{j=await r.json()}catch(e){}
+    await laadVrachten();
+    try{const o=await sbREST('/rest/v1/instellingen?select=*');if(Array.isArray(o))CACHE.instellingen=o}catch(e){}
+    cacheBewaar();
+    if(!r.ok||!j.ok)throw new Error(j.fout||('Fout '+r.status));
+    toast(j.gelezen+' vrachten gelezen, '+j.nieuw+' nieuw','success');
+  }catch(e){toast('Ophalen uit eVDM mislukt: '+e.message,'error')}
+  finally{knop.disabled=false;knop.textContent=oud;if(currentBeheerTab==='vrachten')renderVrachten()}
+}
+async function laadVrachten(){
+  const van=iso_(new Date(Date.now()-430*86400000));const uit=[];
+  for(let off=0;off<20000;off+=1000){
+    const o=await sbREST('/rest/v1/vrachten?select=*&laaddatum=gte.'+van+'&order=laaddatum.desc&limit=1000&offset='+off);
+    if(!Array.isArray(o))break;uit.push(...o);if(o.length<1000)break;
+  }
+  CACHE.vrachten=uit;
+}
+function renderVrachten(){
+  if(!VRACHT.van){const n=new Date();const p=x=>String(x).padStart(2,'0');const v=new Date(n.getFullYear(),n.getMonth()-1,1);VRACHT.van=v.getFullYear()+'-'+p(v.getMonth()+1)+'-01';VRACHT.tot=today()}
+  const alle=DB.list('vrachten');
+  const kentekens=[...new Set(alle.map(v=>v.kenteken).filter(Boolean))].sort();
+  const lijst=vrachtenFilter(VRACHT);
+  const gekozen=lijst.filter(v=>VRACHT.sel[v.id]);
+  const basis=gekozen.length?gekozen:lijst;
+  const tot=basis.reduce((s,v)=>s+(Number(v.gewichtKg)||0),0);
+  const namen=[...new Set(alle.flatMap(v=>[v.leverancier,v.afnemer]).filter(Boolean))].sort();
+  $('main').innerHTML=`<div class="max-w-full mx-auto" style="padding:4px 8px 32px">
+   <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:8px">
+    <div><div class="zk-label">Werk</div><h1 style="margin:6px 0 0;font-size:28px;font-weight:600">Vrachten (eVDM)</h1></div>
+    <button type="button" id="vrOphalen" class="zk-knop">Nu ophalen uit eVDM</button></div>
+   <p id="vrStatus" style="font-size:13px;margin:0 0 16px">${evdmStatusTekst()} <span style="color:#5a655e">Elke nacht om 04:00 automatisch.</span></p>
+   <div class="zk-kaart" style="padding:16px 18px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+    <div><label class="zk-label" for="vrVan" style="display:block;margin-bottom:6px">Van</label><input type="date" id="vrVan" value="${esc(VRACHT.van)}" class="zk-invoer"></div>
+    <div><label class="zk-label" for="vrTot" style="display:block;margin-bottom:6px">Tot en met</label><input type="date" id="vrTot" value="${esc(VRACHT.tot)}" class="zk-invoer"></div>
+    <div style="flex:1 1 220px"><label class="zk-label" for="vrZoek" style="display:block;margin-bottom:6px">Klant (leverancier of afnemer)</label><input id="vrZoek" list="vrNamen" value="${esc(VRACHT.zoek)}" class="zk-invoer" placeholder="Typ een naam…" autocomplete="off"><datalist id="vrNamen">${namen.map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist></div>
+    <div><label class="zk-label" for="vrKent" style="display:block;margin-bottom:6px">Kenteken</label><select id="vrKent" class="zk-invoer"><option value="">Alle</option>${kentekens.map(k=>`<option${k===VRACHT.kenteken?' selected':''}>${esc(k)}</option>`).join('')}</select></div>
+   </div>
+   <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
+    <div style="font-size:14px"><strong>${basis.length}</strong> vracht${basis.length===1?'':'en'}${gekozen.length?' geselecteerd':''} · <strong>${kgF(tot)}</strong> (${tonF(tot)})</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${gekozen.length?'<button type="button" id="vrLeeg" class="zk-knop">Selectie wissen</button>':''}<button type="button" id="vrPdf" class="zk-hoofd" ${basis.length?'':'disabled'}>Overzicht als pdf${gekozen.length?' (selectie)':''}</button></div></div>
+   <div class="zk-kaart" style="overflow:hidden"><div class="scroll-x"><table style="width:100%;border-collapse:collapse;font-size:14px;min-width:820px">
+    <thead><tr><th class="zk-th" style="padding:10px 12px;width:36px"><input type="checkbox" id="vrAlles" aria-label="Alles selecteren" style="min-height:auto" ${lijst.length&&gekozen.length===lijst.length?'checked':''}></th><th class="zk-th" style="text-align:left;padding:10px 12px">Laden</th><th class="zk-th" style="text-align:left;padding:10px 12px">Lossen</th><th class="zk-th" style="text-align:left;padding:10px 12px">VDM-nummer</th><th class="zk-th" style="text-align:left;padding:10px 12px">Kenteken</th><th class="zk-th" style="text-align:left;padding:10px 12px">Leverancier</th><th class="zk-th" style="text-align:left;padding:10px 12px">Afnemer</th><th class="zk-th" style="text-align:right;padding:10px 12px">Gewicht</th></tr></thead>
+    <tbody>${lijst.length?lijst.map(v=>`<tr style="border-top:1px solid #eceee9"><td style="padding:9px 12px"><input type="checkbox" data-vsel="${esc(v.id)}" ${VRACHT.sel[v.id]?'checked':''} style="min-height:auto" aria-label="Selecteer vracht ${esc(v.vdmNummer||v.id)}"></td><td style="padding:9px 12px;white-space:nowrap">${esc(vTijd(v.laadOp||v.laaddatum))}</td><td style="padding:9px 12px;white-space:nowrap;color:#5a655e">${esc(vTijd(v.losOp||v.losdatum))}</td><td style="padding:9px 12px">${esc(v.vdmNummer||'')}</td><td style="padding:9px 12px;white-space:nowrap">${esc(v.kenteken||'')}</td><td style="padding:9px 12px">${esc(v.leverancier||'')}</td><td style="padding:9px 12px">${esc(v.afnemer||'')}</td><td style="padding:9px 12px;text-align:right;white-space:nowrap">${kgF(v.gewichtKg)}</td></tr>`).join('')
+     :`<tr><td colspan="8" style="padding:28px 12px;text-align:center;color:#5a655e">${alle.length?'Geen vrachten met deze filters.':'Nog geen vrachten opgehaald.'}</td></tr>`}</tbody></table></div></div></div>`;
+  const her=()=>renderVrachten();
+  $('vrVan').onchange=e=>{VRACHT.van=e.target.value;her()};
+  $('vrTot').onchange=e=>{VRACHT.tot=e.target.value;her()};
+  $('vrKent').onchange=e=>{VRACHT.kenteken=e.target.value;her()};
+  $('vrZoek').onchange=e=>{const v=e.target.value.trim();if(v===VRACHT.zoek)return;VRACHT.zoek=v;VRACHT.sel={};setTimeout(her,0)};
+  $('vrOphalen').onclick=()=>evdmOphalen($('vrOphalen'));
+  $('vrAlles').onchange=e=>{VRACHT.sel={};if(e.target.checked)lijst.forEach(v=>VRACHT.sel[v.id]=true);her()};
+  document.querySelectorAll('[data-vsel]').forEach(c=>c.onchange=()=>{if(c.checked)VRACHT.sel[c.dataset.vsel]=true;else delete VRACHT.sel[c.dataset.vsel];her()});
+  if($('vrLeeg'))$('vrLeeg').onclick=()=>{VRACHT.sel={};her()};
+  $('vrPdf').onclick=async()=>{try{const titel=vrachtTitel(VRACHT.zoek,basis);const bl=await vrachtenPdfBlob(basis,titel,VRACHT.van,VRACHT.tot);const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download=vrachtPdfNaam(titel,VRACHT.van,VRACHT.tot);a.click();setTimeout(()=>URL.revokeObjectURL(a.href),4000)}catch(e){toast('PDF maken mislukt: '+e.message,'error')}};
+}
+// De echte naam zoals die in eVDM staat (in plaats van wat er getypt is)
+function vrachtTitel(zoek,lijst){const z=vNorm(zoek);if(!z)return 'Alle vrachten';for(const v of lijst){for(const n of [v.afnemer,v.leverancier])if(n&&vNorm(n).includes(z))return n}return zoek}
+const vrachtPdfNaam=(titel,van,tot)=>('Vrachtenoverzicht '+titel+' '+datumNL(van)+' tm '+datumNL(tot)).replace(/[\\/:*?"<>|]/g,'').replace(/\s+/g,' ').trim()+'.pdf';
+async function vrachtenPdfBlob(lijst,titel,van,tot){
+  const img=await pdfKlaarmaken();const b=bedrijf();
+  const KLEUR='#4a4f52',grijs='#6b6b6b',lijn='#e4e1da';
+  const totaal=lijst.reduce((s,v)=>s+(Number(v.gewichtKg)||0),0);
+  const th=(t,al)=>({text:t.toUpperCase(),fontSize:6.4,bold:true,color:grijs,characterSpacing:1,alignment:al||'left'});
+  const def={pageSize:'A4',pageOrientation:'landscape',pageMargins:[40,90,40,50],
+    defaultStyle:{font:'Inter',fontSize:8.6,color:'#111'},
+    background:()=>[{canvas:[{type:'rect',x:0,y:0,w:841.89,h:64,color:KLEUR}],absolutePosition:{x:0,y:0}},{image:img.logo,width:190,absolutePosition:{x:40,y:15}},
+      {absolutePosition:{x:40,y:16},columns:[{width:'*',text:''},{width:320,stack:[{text:'VRACHTENOVERZICHT',font:'InterLicht',fontSize:17,characterSpacing:3,color:'#fff',alignment:'right'},{text:(datumNL(van)+' t/m '+datumNL(tot)).toUpperCase(),fontSize:7.4,characterSpacing:1.2,color:'#d3d6d8',alignment:'right',margin:[0,3,0,0]}]},{width:40,text:''}]}],
+    footer:(p,n)=>({margin:[40,16,40,0],columns:[{text:[b.naam,b.onderNaam,'gegevens uit eVDM'].filter(Boolean).join(' · '),fontSize:6.8,color:'#7a7a7a'},{text:'Pagina '+p+' van '+n,fontSize:6.8,color:'#7a7a7a',alignment:'right',width:90}]}),
+    content:[
+      {columns:[{stack:[{text:'BETREFT',fontSize:6.6,bold:true,color:KLEUR,characterSpacing:1.2,margin:[0,0,0,4]},{text:titel,bold:true,fontSize:11}]},
+        {width:'auto',table:{body:[['Aantal vrachten',String(lijst.length)],['Totaal gewicht',kgF(totaal)+'  ('+tonF(totaal)+')']].map(([a,c])=>[{text:a,color:grijs},{text:c,bold:true,alignment:'right'}])},layout:'noBorders'}]},
+      {margin:[0,16,0,0],table:{headerRows:1,dontBreakRows:true,widths:[82,82,72,62,'*','*',70],
+        body:[[th('Laden'),th('Lossen'),th('VDM-nummer'),th('Kenteken'),th('Leverancier'),th('Afnemer'),th('Gewicht','right')],
+          ...lijst.map(v=>[vTijd(v.laadOp||v.laaddatum),vTijd(v.losOp||v.losdatum),v.vdmNummer||'',v.kenteken||'',v.leverancier||'',v.afnemer||'',{text:kgF(v.gewichtKg),alignment:'right'}]),
+          [{text:'Totaal',bold:true,colSpan:6},'','','','','',{text:kgF(totaal),bold:true,alignment:'right'}]]},
+       layout:{hLineWidth:(i,node)=>i===0?0:(i===1||i===node.table.body.length-1?1:0.4),hLineColor:(i,node)=>(i===1||i===node.table.body.length-1)?'#111':lijn,vLineWidth:()=>0,paddingLeft:i=>i===0?0:5,paddingRight:()=>5,paddingTop:()=>4,paddingBottom:()=>4}}
+    ]};
+  return await new Promise(ok=>pdfMake.createPdf(def).getBlob(ok));
+}
+// Keuzevenster bij een factuur: welke vrachten gaan als overzicht mee?
+function openVrachtKeuze(standaard,klaar){
+  const st={van:standaard.van||'',tot:standaard.tot||'',zoek:standaard.zoek||'',kenteken:''};
+  const m=document.createElement('div');m.id='vrKeuze';m.className='fixed inset-0 bg-black/50 z-30 overflow-auto p-3';
+  const teken=()=>{
+    const l=vrachtenFilter(st);const t=l.reduce((s,v)=>s+(Number(v.gewichtKg)||0),0);
+    m.innerHTML=`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 w-full max-w-2xl mx-auto my-4"><h3 class="font-bold mb-1">Vrachtenoverzicht (eVDM) toevoegen</h3><p class="text-xs text-gray-500 mb-3">De vrachten van deze klant in de gekozen periode komen als pdf bij de factuur.</p>
+     <div class="grid grid-cols-2 gap-3 mb-3"><div><label class="block text-xs font-medium mb-1" for="vk_van">Van</label><input type="date" id="vk_van" value="${esc(st.van)}" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div><div><label class="block text-xs font-medium mb-1" for="vk_tot">Tot en met</label><input type="date" id="vk_tot" value="${esc(st.tot)}" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div>
+     <div class="col-span-2"><label class="block text-xs font-medium mb-1" for="vk_zoek">Naam in eVDM (leverancier of afnemer)</label><input id="vk_zoek" value="${esc(st.zoek)}" class="w-full border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"></div></div>
+     <div class="text-sm mb-2"><strong>${l.length}</strong> vracht${l.length===1?'':'en'} · <strong>${kgF(t)}</strong></div>
+     <div class="max-h-64 overflow-auto border border-gray-200 dark:border-gray-700 rounded-xl text-xs">${l.length?l.map(v=>`<div class="flex justify-between gap-2 px-3 py-1.5 border-b border-gray-100 dark:border-gray-700"><span>${esc(vTijd(v.laadOp||v.laaddatum))} · ${esc(v.kenteken||'')} · ${esc(v.leverancier||'')} → ${esc(v.afnemer||'')}</span><span class="whitespace-nowrap">${kgF(v.gewichtKg)}</span></div>`).join(''):'<div class="p-3 text-gray-500">Geen vrachten gevonden. Pas de naam of periode aan.</div>'}</div>
+     <div class="flex gap-2 mt-4"><button id="vkOk" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]" ${l.length?'':'disabled'}>Toevoegen als bijlage</button><button id="vkX" class="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div></div>`;
+    m.querySelector('#vk_van').onchange=e=>{st.van=e.target.value;teken()};
+    m.querySelector('#vk_tot').onchange=e=>{st.tot=e.target.value;teken()};
+    m.querySelector('#vk_zoek').onchange=e=>{const v=e.target.value.trim();if(v===st.zoek)return;st.zoek=v;setTimeout(teken,0)};
+    m.querySelector('#vkX').onclick=()=>m.remove();
+    m.querySelector('#vkOk').onclick=async()=>{const k=m.querySelector('#vkOk');k.disabled=true;k.textContent='PDF maken…';
+      try{const ti=vrachtTitel(st.zoek,l);const bl=await vrachtenPdfBlob(l,ti,st.van,st.tot);m.remove();await klaar(new File([bl],vrachtPdfNaam(ti,st.van,st.tot),{type:'application/pdf'}))}catch(e){toast('PDF maken mislukt: '+e.message,'error');k.disabled=false;k.textContent='Toevoegen als bijlage'}};
+  };
+  teken();document.body.appendChild(m);
 }
 
 // ---- Factuur versturen per mail ----
@@ -3626,7 +3766,7 @@ setInterval(() => { if (wachtrijLees().length) verwerkWachtrij() }, 30000);
 // alleen opnieuw als er iets veranderd is en je niet midden in het invullen of bewerken zit.
 let LAATST_GELADEN=Date.now(),VERVERS_BEZIG=false;
 function magHerteken(){
-  if(document.querySelector('#fMail,#klusWijzig,#klusNotitie,#orderEditor,#keurEditor,#planKopie,#pEditor,#fNieuwM,#fBedrijfM,#klantEditor,#matEditor,#matBulk,#fotoModal,#mtsGegM,#wnEditor'))return false;
+  if(document.querySelector('#fMail,#klusWijzig,#klusNotitie,#orderEditor,#keurEditor,#planKopie,#pEditor,#fNieuwM,#fBedrijfM,#klantEditor,#matEditor,#matBulk,#fotoModal,#mtsGegM,#wnEditor,#vrKeuze'))return false;
   const a=document.activeElement;
   if(a&&a!==document.body&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)&&$('main')&&$('main').contains(a))return false;
   if(currentMode==='medewerker'&&currentView==='invoer')return false;
@@ -3688,6 +3828,8 @@ async function laadAlles(){
       } catch (e) { CACHE[t] = CACHE[t] || [] }
     }
   }
+  // Vrachten uit eVDM (alleen beheer; tabel mag nog ontbreken)
+  if (isBeheer()) { try { await laadVrachten() } catch (e) { CACHE.vrachten = CACHE.vrachten || [] } }
   // Tarieven staan in een aparte tabel die alleen de beheerder mag lezen.
   if (isBeheer()) {
     try {
@@ -3992,6 +4134,7 @@ function renderCurrentView(){
       case 'facturen':renderFacturen();break;
       case 'producten':renderProducten();break;
       case 'mts':renderMts();break;
+      case 'vrachten':renderVrachten();break;
       case 'klanten':renderKlanten();break;
       case 'diensten':renderDiensten();break;
       case 'materieel':renderMaterieel();break;
@@ -4015,8 +4158,8 @@ function renderBottomNav(){
 // Na elke render de rolregels toepassen (medewerker = alleen eigen uren)
 function naRender(){ try{pasRolToe()}catch(e){} }
 // Terugknop van de browser: elke pagina (tabblad) krijgt een eigen plek in de browsergeschiedenis.
-const BEHEER_TABS=['dashboard','klussen','facturen','producten','mts','orders','klanten','diensten','materieel','keuringen','werknemers','planning','planarchief','uren','export','accounts'];
-const BEHEER_ALLEEN=['accounts','orders','planarchief','keuringen','facturen','producten','mts'];
+const BEHEER_TABS=['dashboard','klussen','facturen','producten','mts','vrachten','orders','klanten','diensten','materieel','keuringen','werknemers','planning','planarchief','uren','export','accounts'];
+const BEHEER_ALLEEN=['accounts','orders','planarchief','keuringen','facturen','producten','mts','vrachten'];
 function navStaat(){return {m:currentMode,v:currentView,t:currentBeheerTab}}
 function navPush(vervang){
   try{
