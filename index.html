@@ -1447,7 +1447,9 @@ function factureerKlussen(paren){
     const lijst=perKlant[kid].sort((a,b2)=>(a.datum||'').localeCompare(b2.datum||'')||(a.startTijd||'').localeCompare(b2.startTijd||''));
     const kl=DB.get('klanten',kid);
     const datum=vandaagIso();
-    laatste=DB.insert('facturen',{nummer:null,soort:'factuur',status:'concept',klantId:kl?kl.id:null,klant:klantSnapshot(kl),factuurdatum:datum,vervaldatum:plusDagen(datum,b.termijn),regels:lijst.map(regelUitKlus),opmerking:'',klusIds:lijst.map(k=>({dagId:k.dagId,klusId:k.id})),...(()=>{const t=factuurTotalen(lijst.map(regelUitKlus));return {totaalExcl:t.excl,totaalBtw:t.btw,totaalIncl:t.incl}})()});
+    const regels0=lijst.map(regelUitKlus);
+    if(kl&&kl.dieseltoeslag&&dieselInst().prijzen.length){try{dieselRegels(regels0,{factuurdatum:datum}).regels.forEach(r=>regels0.push(r))}catch(e){}}
+    laatste=DB.insert('facturen',{nummer:null,soort:'factuur',status:'concept',klantId:kl?kl.id:null,klant:klantSnapshot(kl),factuurdatum:datum,vervaldatum:plusDagen(datum,b.termijn),regels:regels0,opmerking:'',klusIds:lijst.map(k=>({dagId:k.dagId,klusId:k.id})),...(()=>{const t=factuurTotalen(lijst.map(regelUitKlus));return {totaalExcl:t.excl,totaalBtw:t.btw,totaalIncl:t.incl}})()});
     n++;
   });
   toast(n===1?'Conceptfactuur gemaakt':n+' conceptfacturen gemaakt (één per klant)','success');
@@ -1494,7 +1496,7 @@ function renderFacturen(){
   $('main').innerHTML=`<div class="max-w-full mx-auto" style="padding:8px 8px 32px">
    <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:24px">
     <div><div class="zk-label">Financieel</div><h1 style="margin:6px 0 0;font-size:30px;font-weight:600;letter-spacing:-.01em">Facturen</h1></div>
-    <div style="display:flex;flex-wrap:wrap;gap:10px"><button type="button" id="fBedrijf" class="zk-knop">Bedrijfsgegevens &amp; nummering</button><button type="button" id="fNieuw" class="zk-hoofd">+ Nieuwe factuur</button></div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px"><button type="button" id="fDiesel" class="zk-knop">Dieseltoeslag</button><button type="button" id="fBedrijf" class="zk-knop">Bedrijfsgegevens &amp; nummering</button><button type="button" id="fNieuw" class="zk-hoofd">+ Nieuwe factuur</button></div>
    </div>
    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:20px">
     ${kpi('Open',eurF(som(open)),open.length+' factu'+(open.length===1?'ur':'ren'),'#1d4ed8','open')}
@@ -1544,6 +1546,7 @@ function renderFacturen(){
   $('fJaar').onchange=e=>{FFILT.jaar=e.target.value;renderFacturen()};
   $('fNieuw').onclick=openNieuweFactuur;
   $('fBedrijf').onclick=openBedrijfsgegevens;
+  if($('fDiesel'))$('fDiesel').onclick=openDieselInstellingen;
   document.querySelectorAll('[data-fopen]').forEach(b=>b.onclick=()=>openFactuurEditor(b.dataset.fopen));
   document.querySelectorAll('[data-fmail]').forEach(b=>b.onclick=()=>openFactuurVersturen(b.dataset.fmail));
   document.querySelectorAll('[data-fklant-open]').forEach(b=>b.onclick=()=>openKlantOverzicht(b.dataset.fklantOpen));
@@ -1696,7 +1699,8 @@ function renderFactuurPagina(id){
         <button type="button" id="feMerge" class="zk-stippel" title="Vink twee of meer regels aan, bijvoorbeeld een klus die over twee dagen ging">Regels samenvoegen</button>
         <label for="feProduct" class="sr-only">Product toevoegen</label><select id="feProduct" class="zk-stippel" style="padding-right:30px"><option value="">+ Product uit de lijst…</option>${producten.map(p=>`<option value="${p.id}">${esc(p.naam)} – ${eurF(p.prijs)} / ${esc(eenhLabel(p.eenheid))}</option>`).join('')}</select>
         <button type="button" id="feKlussen" class="zk-stippel" style="border-color:#9cc2a8;background:#f2f8f4;color:#245a39"></button>
-        <button type="button" id="feTol" class="zk-stippel" title="Tol (DKV) van dezelfde wagen op de dagen van de klussen op deze factuur">+ Tol van deze klussen</button></div>`:''}
+        <button type="button" id="feTol" class="zk-stippel" title="Tol (DKV) van dezelfde wagen op de dagen van de klussen op deze factuur">+ Tol van deze klussen</button>
+        <button type="button" id="feDiesel" class="zk-stippel" title="Over de uren op deze factuur; heb je regels aangevinkt, dan alleen over die regels">+ Dieseltoeslag</button></div>`:''}
      </section>
      <section aria-labelledby="h-opm" class="zk-kaart" style="padding:22px 24px">
       <h2 id="h-opm" style="margin:0 0 12px;font-size:15px;font-weight:600"><label for="fe_opm">Opmerking op de factuur</label></h2>
@@ -1859,6 +1863,17 @@ function renderFactuurPagina(id){
     };
     $('feRegel').onclick=()=>{f.regels.push({id:uid(),omschrijving:'',detail:'',aantal:1,eenheid:'stuk',prijs:0,btw:'21'});tekenRegels()};
     $('feProduct').onchange=e=>{const p=producten.find(x=>x.id===e.target.value);e.target.value='';if(!p)return;f.regels.push({id:uid(),omschrijving:p.naam,detail:p.omschrijving||'',aantal:1,eenheid:p.eenheid||'stuk',prijs:Number(p.prijs)||0,btw:p.btw||'21'});tekenRegels()};
+    $('feDiesel').onclick=()=>{
+      const d=dieselInst();if(!d.prijzen.length){toast('Vul eerst een dieselprijs in (Facturen → Dieseltoeslag)','error');openDieselInstellingen();return}
+      const gekozen=f.regels.filter(r=>sel.has(r.id)&&!r.diesel);
+      const bron=gekozen.length?gekozen:f.regels;
+      const {regels,zonder}=dieselRegels(bron,f);
+      if(!regels.length){toast(zonder?'Geen dieselprijs bekend voor de data van deze uren':'Geen toeslag: geen uren, of de dieselprijs ligt niet boven de basisprijs','error');return}
+      if(f.regels.some(r=>r.diesel)){if(!confirm('Er staat al dieseltoeslag op deze factuur. Vervangen door de nieuwe berekening?'))return;f.regels=f.regels.filter(r=>!r.diesel)}
+      sel.clear();
+      regels.forEach(r=>f.regels.push(r));tekenRegels();
+      toast('Dieseltoeslag toegevoegd: '+eurF(regels.reduce((t,r)=>t+r.aantal*r.prijs,0))+(gekozen.length?' (over de aangevinkte regels)':'')+(zonder?' · let op: '+zonder+' regel(s) zonder dieselprijs':''),'success');
+    };
     $('feTol').onclick=()=>{
       if(!f.klusIds.length){toast('Zet eerst klussen op deze factuur','error');return}
       if(!DB.list('tolposten').length){toast('Er is nog geen tol ingelezen (tabblad Tol)','error');return}
@@ -2773,6 +2788,64 @@ function openPerceelEditor(p,nieuw){
   teken();document.body.appendChild(m);
 }
 
+// ============================================================================
+// === DIESELTOESLAG ==========================================================
+// Toeslag per uur = (dieselprijs per liter − basisprijs) × liters per uur.
+// Dieselprijzen (van de factuur van de dieselboer) gelden vanaf een datum;
+// per klus telt de prijs die op die dag gold.
+// ============================================================================
+function dieselInst(){const r=DB.get('instellingen','diesel');const w=(r&&r.waarde)||{};return {basis:w.basis!=null?Number(w.basis):1.30,verbruik:w.verbruik!=null?Number(w.verbruik):25,prijzen:Array.isArray(w.prijzen)?w.prijzen:[]}}
+function bewaarDiesel(w){if(DB.get('instellingen','diesel'))DB.update('instellingen','diesel',{waarde:w});else DB.insert('instellingen',{id:'diesel',waarde:w})}
+function dieselPrijsOp(datum){const l=dieselInst().prijzen.filter(p=>p.vanaf&&p.prijs!=null&&p.vanaf<=(datum||'9999')).sort((a,b)=>b.vanaf.localeCompare(a.vanaf));return l[0]||null}
+// datum van een factuurregel (uit de klus, of de datum vooraan in het detail)
+function regelDatum(r,f){
+  if(r.dagId){const d=DB.get('dagstaten',r.dagId);if(d&&d.datum)return d.datum}
+  const m=/(\d{2})-(\d{2})-(\d{4})/.exec(r.detail||'');if(m)return m[3]+'-'+m[2]+'-'+m[1];
+  return (f&&f.factuurdatum)||today();
+}
+// Toeslagregels voor de uur-regels (alleen de gekozen regels als die er zijn)
+function dieselRegels(regels,f){
+  const d=dieselInst();const groep={};let zonder=0;
+  regels.filter(r=>!r.diesel&&(r.eenheid||'uur')==='uur'&&getal(r.aantal)>0).forEach(r=>{
+    const p=dieselPrijsOp(regelDatum(r,f));if(!p){zonder++;return}
+    const k=p.vanaf+'|'+p.prijs;(groep[k]=groep[k]||{p,uren:0}).uren+=getal(r.aantal);
+  });
+  const uit=[];
+  Object.values(groep).sort((a,b)=>a.p.vanaf.localeCompare(b.p.vanaf)).forEach(({p,uren})=>{
+    const perUur=r2((Number(p.prijs)-d.basis)*d.verbruik);if(perUur<=0)return;
+    uit.push({id:uid(),omschrijving:'Dieseltoeslag',detail:'diesel € '+Number(p.prijs).toLocaleString('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:3})+'/l (vanaf '+datumNL(p.vanaf)+') − basis € '+d.basis.toLocaleString('nl-NL',{minimumFractionDigits:2})+' × '+d.verbruik+' l/uur',aantal:r2(uren),eenheid:'uur',prijs:perUur,btw:'21',diesel:true});
+  });
+  return {regels:uit,zonder};
+}
+function openDieselInstellingen(){
+  const d=dieselInst();const prijzen=d.prijzen.map(p=>({...p}));
+  const m=document.createElement('div');m.id='dieselM';m.className='fixed inset-0 bg-black/50 z-30 overflow-auto p-3';
+  const inv='border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600';
+  const teken=()=>{
+    const s=prijzen.slice().sort((a,b)=>(b.vanaf||'').localeCompare(a.vanaf||''));
+    m.innerHTML=`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 w-full max-w-lg mx-auto my-4">
+     <h3 class="font-bold mb-1">Dieseltoeslag</h3>
+     <p class="text-xs text-gray-500 mb-3">Toeslag per uur = (dieselprijs − basisprijs) × liters per uur. Vul de prijs per liter <strong>exclusief btw</strong> in van de factuur van de dieselboer, met de datum vanaf wanneer die geldt.</p>
+     <div class="grid grid-cols-2 gap-3 mb-4"><div><label class="block text-xs font-medium mb-1" for="ds_basis">Basisprijs per liter (€)</label><input id="ds_basis" inputmode="decimal" value="${d.basis.toFixed(2).replace('.',',')}" class="${inv} w-full"></div><div><label class="block text-xs font-medium mb-1" for="ds_verbr">Liters per uur</label><input id="ds_verbr" inputmode="decimal" value="${String(d.verbruik).replace('.',',')}" class="${inv} w-full"></div></div>
+     <div class="text-sm font-medium mb-2">Dieselprijzen</div>
+     <div class="space-y-2 mb-2">${s.map(p=>{const i=prijzen.indexOf(p);const pu=r2((getal(p.prijs)-getal($('ds_basis')?$('ds_basis').value:d.basis))*d.verbruik);return `<div class="flex gap-2 items-center"><input type="date" data-dp="${i}" data-k="vanaf" value="${esc(p.vanaf||'')}" class="${inv}" style="width:150px" aria-label="Geldt vanaf"><input data-dp="${i}" data-k="prijs" inputmode="decimal" value="${p.prijs!=null?String(p.prijs).replace('.',','):''}" class="${inv}" style="width:90px" placeholder="1,65" aria-label="Prijs per liter"><input data-dp="${i}" data-k="opmerking" value="${esc(p.opmerking||'')}" class="${inv} flex-1" placeholder="bijv. factuurnr dieselboer"><button type="button" data-dpdel="${i}" class="text-red-600 text-lg px-2" aria-label="Verwijderen">×</button></div>`}).join('')||'<p class="text-xs text-gray-500">Nog geen dieselprijzen.</p>'}</div>
+     <button type="button" id="ds_plus" class="w-full py-2 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl text-sm mb-3">+ Dieselprijs toevoegen</button>
+     <div id="ds_vb" class="text-xs text-gray-600 dark:text-gray-300 mb-4"></div>
+     <div class="flex gap-2"><button id="ds_ok" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button><button id="ds_x" class="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div></div>`;
+    const lees=()=>m.querySelectorAll('[data-dp]').forEach(el=>{const p=prijzen[+el.dataset.dp];if(!p)return;p[el.dataset.k]=el.dataset.k==='prijs'?(el.value.trim()===''?null:getal(el.value)):el.value});
+    const vb=()=>{lees();const b=getal(m.querySelector('#ds_basis').value),v=getal(m.querySelector('#ds_verbr').value);const l=prijzen.filter(p=>p.vanaf&&p.prijs!=null).sort((a,c)=>c.vanaf.localeCompare(a.vanaf))[0];
+      m.querySelector('#ds_vb').innerHTML=l?`Nu geldend: € ${Number(l.prijs).toLocaleString('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:3})} − € ${b.toLocaleString('nl-NL',{minimumFractionDigits:2})} = € ${(l.prijs-b).toLocaleString('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:3})} × ${v} l = <strong>${eurF(Math.max(0,r2((l.prijs-b)*v)))} per uur</strong>`:''};
+    m.querySelector('#ds_plus').onclick=()=>{lees();prijzen.push({vanaf:today(),prijs:null,opmerking:''});teken()};
+    m.querySelectorAll('[data-dpdel]').forEach(b=>b.onclick=()=>{lees();prijzen.splice(+b.dataset.dpdel,1);teken()});
+    m.oninput=vb;vb();
+    m.querySelector('#ds_x').onclick=()=>m.remove();
+    m.querySelector('#ds_ok').onclick=()=>{lees();const b=getal(m.querySelector('#ds_basis').value),v=getal(m.querySelector('#ds_verbr').value);
+      if(!(v>0)){toast('Vul het aantal liters per uur in','error');return}
+      bewaarDiesel({basis:b,verbruik:v,prijzen:prijzen.filter(p=>p.vanaf&&p.prijs!=null)});m.remove();toast('Dieseltoeslag opgeslagen','success');renderCurrentView()};
+  };
+  teken();document.body.appendChild(m);
+}
+
 // ---- Factuur versturen per mail ----
 // De pdf's en bijlagen gaan eerst naar de besloten opslag (map facturen/<id>/), daarna verstuurt
 // /api/factuur-mail de mail via Gmail. Vooraf rekenen we uit of de mail niet te groot wordt.
@@ -3215,10 +3288,11 @@ function openKlantEditor(id,items){
   const actief=existing?existing.actief!==false:true;
   const html=`<div class="fixed inset-0 bg-black/50 z-30 overflow-auto p-3" id="klantEditor"><div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-md mx-auto my-4"><h3 class="font-bold mb-4">${existing?'Klant bewerken':'Nieuwe klant'}</h3>
   ${fields.map((f,i)=>`<label class="block text-sm font-medium mb-1">${labels[i]}</label><input id="kl_${f}" value="${esc(values[i])}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">`).join('')}
+  <label class="flex items-center gap-2 mb-2"><input type="checkbox" id="kl_diesel" ${existing&&existing.dieseltoeslag?'checked':''}> Altijd dieseltoeslag (komt automatisch op de factuur)</label>
   <label class="flex items-center gap-2 mb-4"><input type="checkbox" id="kl_actief" ${actief?'checked':''}> Actief</label>
   <div class="flex gap-2"><button id="klSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button><button id="klCancel" class="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
-  $('klSave').onclick=()=>{const data={klantcode:$('kl_klantcode').value.trim(),naam:$('kl_naam').value,adres:$('kl_adres').value,postcode:$('kl_postcode').value,plaats:$('kl_plaats').value,contact:$('kl_contact').value,email:$('kl_email').value,telefoon:$('kl_telefoon').value,btwnummer:$('kl_btwnummer').value.trim(),actief:$('kl_actief').checked};if(!data.naam){toast('Naam is verplicht','error');return}if(!data.klantcode)data.klantcode=nieuweKlantcode();if(DB.list('klanten').some(k=>k.klantcode===data.klantcode&&k.id!==id)){toast('Deze klantcode bestaat al','error');return}if(existing)DB.update('klanten',id,data);else DB.insert('klanten',data);toast('Klant opgeslagen','success');document.getElementById('klantEditor').remove();renderCurrentView()};
+  $('klSave').onclick=()=>{const data={klantcode:$('kl_klantcode').value.trim(),naam:$('kl_naam').value,adres:$('kl_adres').value,postcode:$('kl_postcode').value,plaats:$('kl_plaats').value,contact:$('kl_contact').value,email:$('kl_email').value,telefoon:$('kl_telefoon').value,btwnummer:$('kl_btwnummer').value.trim(),dieseltoeslag:$('kl_diesel').checked,actief:$('kl_actief').checked};if(!data.naam){toast('Naam is verplicht','error');return}if(!data.klantcode)data.klantcode=nieuweKlantcode();if(DB.list('klanten').some(k=>k.klantcode===data.klantcode&&k.id!==id)){toast('Deze klantcode bestaat al','error');return}if(existing)DB.update('klanten',id,data);else DB.insert('klanten',data);toast('Klant opgeslagen','success');document.getElementById('klantEditor').remove();renderCurrentView()};
   $('klCancel').onclick=()=>document.getElementById('klantEditor').remove();
 }
 
