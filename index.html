@@ -174,6 +174,7 @@ textarea.zk-invoer{padding:10px 12px}
 <div class="nav-groep" aria-hidden="true">Financieel</div>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="facturen">Facturen</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="producten">Producten</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="tol">Tol</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="mts">Facturen Mts. Wempe</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="klanten">Klanten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="diensten">Diensten</button>
@@ -1693,7 +1694,8 @@ function renderFactuurPagina(id){
         <button type="button" id="feRegel" class="zk-stippel">+ Lege regel</button>
         <button type="button" id="feMerge" class="zk-stippel" title="Vink twee of meer regels aan, bijvoorbeeld een klus die over twee dagen ging">Regels samenvoegen</button>
         <label for="feProduct" class="sr-only">Product toevoegen</label><select id="feProduct" class="zk-stippel" style="padding-right:30px"><option value="">+ Product uit de lijst…</option>${producten.map(p=>`<option value="${p.id}">${esc(p.naam)} – ${eurF(p.prijs)} / ${esc(eenhLabel(p.eenheid))}</option>`).join('')}</select>
-        <button type="button" id="feKlussen" class="zk-stippel" style="border-color:#9cc2a8;background:#f2f8f4;color:#245a39"></button></div>`:''}
+        <button type="button" id="feKlussen" class="zk-stippel" style="border-color:#9cc2a8;background:#f2f8f4;color:#245a39"></button>
+        <button type="button" id="feTol" class="zk-stippel" title="Tol (DKV) van dezelfde wagen op de dagen van de klussen op deze factuur">+ Tol van deze klussen</button></div>`:''}
      </section>
      <section aria-labelledby="h-opm" class="zk-kaart" style="padding:22px 24px">
       <h2 id="h-opm" style="margin:0 0 12px;font-size:15px;font-weight:600"><label for="fe_opm">Opmerking op de factuur</label></h2>
@@ -1856,6 +1858,17 @@ function renderFactuurPagina(id){
     };
     $('feRegel').onclick=()=>{f.regels.push({id:uid(),omschrijving:'',detail:'',aantal:1,eenheid:'stuk',prijs:0,btw:'21'});tekenRegels()};
     $('feProduct').onchange=e=>{const p=producten.find(x=>x.id===e.target.value);e.target.value='';if(!p)return;f.regels.push({id:uid(),omschrijving:p.naam,detail:p.omschrijving||'',aantal:1,eenheid:p.eenheid||'stuk',prijs:Number(p.prijs)||0,btw:p.btw||'21'});tekenRegels()};
+    $('feTol').onclick=()=>{
+      if(!f.klusIds.length){toast('Zet eerst klussen op deze factuur','error');return}
+      if(!DB.list('tolposten').length){toast('Er is nog geen tol ingelezen (tabblad Tol)','error');return}
+      const al=new Set(f.regels.flatMap(r=>r.tolIds||[]));
+      const nieuw=tolVoorKlussen(f.klusIds).map(r=>({...r,tolIds:r.tolIds.filter(x=>!al.has(x))})).filter(r=>r.tolIds.length);
+      if(!nieuw.length){toast('Geen (nieuwe) tol gevonden voor de wagens en dagen van deze klussen','error');return}
+      // bedragen opnieuw na het weglaten van posten die er al op stonden
+      nieuw.forEach(r=>{const ps=r.tolIds.map(i=>DB.get('tolposten',i)).filter(Boolean);r.prijs=r2(ps.reduce((t,p)=>t+(Number(p.bedrag)||0),0))});
+      nieuw.forEach(r=>f.regels.push(r));tekenRegels();
+      toast(nieuw.length+' tolregel'+(nieuw.length===1?'':'s')+' toegevoegd ('+eurF(nieuw.reduce((t,r)=>t+r.prijs,0))+')','success');
+    };
     $('feKlussen').onclick=()=>{const ks=openKlussenVanKlant().sort((a,c)=>(a.datum||'').localeCompare(c.datum||''));if(!ks.length)return;ks.forEach(k=>{f.regels.push(regelUitKlus(k));f.klusIds.push({dagId:k.dagId,klusId:k.id})});tekenRegels();toast(ks.length+' klus'+(ks.length===1?'':'sen')+' toegevoegd','success')};
     $('feSave').onclick=()=>{bewaar();sluit()};
     $('fePdf').onclick=voorbeeld;
@@ -2430,6 +2443,134 @@ function openVrachtKeuze(standaard,klaar){
       try{const ti=vrachtTitel(st.zoek,l);const bl=await vrachtenPdfBlob(l,ti,st.van,st.tot);m.remove();await klaar(new File([bl],vrachtPdfNaam(ti,st.van,st.tot),{type:'application/pdf'}))}catch(e){toast('PDF maken mislukt: '+e.message,'error');k.disabled=false;k.textContent='Toevoegen als bijlage'}};
   };
   teken();document.body.appendChild(m);
+}
+
+// ============================================================================
+// === TOL (DKV) ==============================================================
+// De "E-List of passages" die DKV bij elke factuur meestuurt (pdf) inlezen:
+// per tolpost kenteken, tijd oprit/afrit, route, km en bedrag. Daarna per klus
+// de tol van dezelfde wagen op die dag (binnen de tijden van de klus) op de factuur.
+// ============================================================================
+const TOL={van:'',tot:'',kenteken:''};
+const kentKey=k=>String(k||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+let PDFJS_KLAAR=null;
+function pdfjsKlaarmaken(){
+  if(!PDFJS_KLAAR)PDFJS_KLAAR=(async()=>{if(!window.pdfjsLib)await laadScript('/vendor/pdfjs/pdf.js');window.pdfjsLib.GlobalWorkerOptions.workerSrc='/vendor/pdfjs/pdf.worker.js';return window.pdfjsLib})().catch(e=>{PDFJS_KLAAR=null;throw e});
+  return PDFJS_KLAAR;
+}
+// Tekst van een pdf, per pagina als [{str,x,y}]
+async function pdfTekstItems(file){
+  const lib=await pdfjsKlaarmaken();
+  const doc=await lib.getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false}).promise;
+  const pag=[];for(let i=1;i<=doc.numPages;i++){const tc=await (await doc.getPage(i)).getTextContent();pag.push(tc.items.map(t=>({str:t.str,x:t.transform[4],y:t.transform[5]})))}
+  return pag;
+}
+function dkvRegels(pagina){
+  const rij={};for(const it of pagina){if(!it.str.trim())continue;const k=Math.round(it.y/2);(rij[k]=rij[k]||[]).push(it)}
+  return Object.keys(rij).map(Number).sort((a,b)=>b-a).map(k=>rij[k].sort((a,b)=>a.x-b.x));
+}
+// DKV "E-List of passages / E-Passagelijst" -> tolposten
+function dkvParse(paginas){
+  const uit=[];let kenteken='',laatste=null,factuur='';
+  const getal=s=>{s=String(s).trim();if(/,\d{1,4}$/.test(s)||/^\d{1,3}(\.\d{3})+,/.test(s))s=s.replace(/\./g,'').replace(',','.');return parseFloat(s)};
+  for(const p of paginas){
+    laatste=null;let routeX=null;
+    for(const r of dkvRegels(p)){
+      const tekst=r.map(i=>i.str).join(' ').replace(/\s+/g,' ').trim();
+      let m=/KFZ-KZ\s+(.+?)\s+Emissieklasse/i.exec(tekst);if(m){kenteken=kentKey(m[1]);laatste=null;continue}
+      m=/Verwijzing naar de factuur:?\s*([\d\/]+)/i.exec(tekst);if(m&&!factuur)factuur=m[1];
+      m=/^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}:\d{2}) (\d{2})\.(\d{2})\.(\d{4}) (\d{2}:\d{2}) (\S+) (.*?) ([\d.]+,\d+|\d+) ([\d.]+,\d+|\d+) ([\d.]+,\d+|\d+)$/.exec(tekst);
+      if(m&&kenteken){
+        laatste={kenteken,inOp:`${m[3]}-${m[2]}-${m[1]}T${m[4]}`,uitOp:`${m[7]}-${m[6]}-${m[5]}T${m[8]}`,datum:`${m[3]}-${m[2]}-${m[1]}`,land:m[9],route:m[10].trim(),km:getal(m[11]),lucht:getal(m[12]),bedrag:r2(getal(m[13]))};   // DKV rondt per passage af op centen
+        const rw=m[10].trim().split(' ')[0];const ri=r.find(i=>i.str.trim().startsWith(rw)&&i.x>r[0].x+40);routeX=ri?ri.x:null;
+        uit.push(laatste);continue;
+      }
+      if(laatste&&!/^(Totaal|Total)/i.test(tekst)&&!/\d{2}\.\d{2}\.\d{4}/.test(tekst)&&/^[A-Za-z]/.test(tekst)&&tekst.length<90&&routeX!=null&&Math.abs(r[0].x-routeX)<15){laatste.route=(laatste.route+' '+tekst).replace(/- /g,'-');continue}
+      if(/^(Totaal|Total)/i.test(tekst))laatste=null;
+    }
+  }
+  uit.forEach(p=>{p.id=p.kenteken+'|'+p.inOp;p.dkvFactuur=factuur});
+  return {posten:uit,factuur};
+}
+async function laadTol(){
+  const van=iso_(new Date(Date.now()-430*86400000));const uit=[];
+  for(let off=0;off<20000;off+=1000){const o=await sbREST('/rest/v1/tolposten?select=*&datum=gte.'+van+'&order=datum.desc&limit=1000&offset='+off);if(!Array.isArray(o))break;uit.push(...o);if(o.length<1000)break}
+  CACHE.tolposten=uit;
+}
+async function tolInlezen(files){
+  for(const file of files){
+    if(!/\.pdf$/i.test(file.name)&&file.type!=='application/pdf'){toast(file.name+' is geen pdf','error');continue}
+    try{
+      toast(file.name+' inlezen…');
+      const {posten,factuur}=dkvParse(await pdfTekstItems(file));
+      if(!posten.length){toast('Geen tolposten gevonden in '+file.name+'. Is dit de "E-List of passages" van DKV?','error');continue}
+      let nieuw=0,al=0;
+      for(const p of posten){if(DB.get('tolposten',p.id)){al++;continue}DB.insert('tolposten',{...p});nieuw++}
+      const tot=posten.reduce((s,p)=>s+p.bedrag,0);
+      toast(`${posten.length} tolposten gelezen (${eurF(tot)})${factuur?' · DKV-factuur '+factuur:''}: ${nieuw} nieuw${al?', '+al+' stonden er al':''}`,'success');
+    }catch(e){toast('Inlezen mislukt: '+e.message,'error')}
+  }
+  if(currentBeheerTab==='tol')renderTol();
+}
+function tolFilter(f){return DB.list('tolposten').filter(p=>(!f.van||(p.datum||'')>=f.van)&&(!f.tot||(p.datum||'')<=f.tot)&&(!f.kenteken||p.kenteken===f.kenteken))}
+const tijdNL=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})/.exec(String(s||''));return m?m[3]+'-'+m[2]+' '+m[4]:''};
+const kentTonen=k=>{const m=(DB.list('materieel')||[]).find(x=>kentKey(x.kenteken)===k);return m?m.kenteken:k};
+function renderTol(){
+  if(!TOL.van){const n=new Date();const p=x=>String(x).padStart(2,'0');const v=new Date(n.getFullYear(),n.getMonth()-1,1);TOL.van=v.getFullYear()+'-'+p(v.getMonth()+1)+'-01';TOL.tot=today()}
+  const alle=DB.list('tolposten');
+  const kents=[...new Set(alle.map(p=>p.kenteken).filter(Boolean))].sort();
+  const lijst=tolFilter(TOL).sort((a,b)=>String(b.inOp).localeCompare(String(a.inOp)));
+  // per dag en kenteken
+  const dagen={};lijst.forEach(p=>{const k=p.datum+'|'+p.kenteken;(dagen[k]=dagen[k]||{datum:p.datum,kenteken:p.kenteken,posten:[],km:0,bedrag:0});dagen[k].posten.push(p);dagen[k].km+=Number(p.km)||0;dagen[k].bedrag+=Number(p.bedrag)||0});
+  const dl=Object.values(dagen).sort((a,b)=>b.datum.localeCompare(a.datum)||a.kenteken.localeCompare(b.kenteken));
+  const tot=lijst.reduce((s,p)=>s+(Number(p.bedrag)||0),0),km=lijst.reduce((s,p)=>s+(Number(p.km)||0),0);
+  // klussen per dag+kenteken (om te zien bij welke klant de tol hoort)
+  const kl={};DB.list('dagstaten').forEach(d=>(d.klussen||[]).forEach(k=>{const key=d.datum+'|'+kentKey(k.kenteken);const kn=(DB.get('klanten',k.klantId)||{}).naam;if(kn)(kl[key]=kl[key]||new Set()).add(kn)}));
+  $('main').innerHTML=`<div class="max-w-full mx-auto" style="padding:4px 8px 32px">
+   <div style="margin-bottom:8px"><div class="zk-label">Financieel</div><h1 style="margin:6px 0 0;font-size:28px;font-weight:600">Tol (DKV)</h1></div>
+   <p style="font-size:13px;color:#5a655e;margin:0 0 16px">Sleep de <strong>E-List of passages</strong> (pdf) die je bij elke DKV-factuur krijgt hierheen. Bij een factuur zet je de tol daarna met één klik op de klussen.</p>
+   <label id="tolZone" for="tolIn" class="zk-kaart" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:22px;border:1.5px dashed #b9c1b8;cursor:pointer;text-align:center;margin-bottom:16px">
+    <span style="font-size:15px;font-weight:600">Sleep de DKV-passagelijst hierheen</span><span style="font-size:13px;color:#5a655e">of klik om de pdf te kiezen (ook meerdere tegelijk)</span><input type="file" id="tolIn" accept="application/pdf,.pdf" multiple class="sr-only"></label>
+   <div class="zk-kaart" style="padding:16px 18px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+    <div><label class="zk-label" for="tlVan" style="display:block;margin-bottom:6px">Van</label><input type="date" id="tlVan" value="${esc(TOL.van)}" class="zk-invoer"></div>
+    <div><label class="zk-label" for="tlTot" style="display:block;margin-bottom:6px">Tot en met</label><input type="date" id="tlTot" value="${esc(TOL.tot)}" class="zk-invoer"></div>
+    <div><label class="zk-label" for="tlKent" style="display:block;margin-bottom:6px">Kenteken</label><select id="tlKent" class="zk-invoer"><option value="">Alle</option>${kents.map(k=>`<option value="${esc(k)}"${k===TOL.kenteken?' selected':''}>${esc(kentTonen(k))}</option>`).join('')}</select></div>
+    <div style="margin-left:auto;font-size:14px;text-align:right"><div><strong>${eurF(tot)}</strong> tol</div><div style="color:#5a655e">${lijst.length} posten · ${Math.round(km).toLocaleString('nl-NL')} km</div></div>
+   </div>
+   <div class="zk-kaart" style="overflow:hidden"><div class="scroll-x"><table style="width:100%;border-collapse:collapse;font-size:14px;min-width:760px">
+    <thead><tr><th class="zk-th" style="text-align:left;padding:10px 12px">Datum</th><th class="zk-th" style="text-align:left;padding:10px 12px">Kenteken</th><th class="zk-th" style="text-align:left;padding:10px 12px">Klant(en) die dag</th><th class="zk-th" style="text-align:right;padding:10px 12px">Posten</th><th class="zk-th" style="text-align:right;padding:10px 12px">Km</th><th class="zk-th" style="text-align:right;padding:10px 12px">Tol</th><th class="zk-th" style="padding:10px 12px"></th></tr></thead>
+    <tbody>${dl.length?dl.map((d,i)=>`<tr style="border-top:1px solid #eceee9"><td style="padding:9px 12px;white-space:nowrap">${datumMetDag(d.datum)}</td><td style="padding:9px 12px;white-space:nowrap">${esc(kentTonen(d.kenteken))}</td><td style="padding:9px 12px">${esc([...(kl[d.datum+'|'+d.kenteken]||[])].join(', '))||'<span style="color:#8a5a12">geen klus gevonden</span>'}</td><td style="padding:9px 12px;text-align:right">${d.posten.length}</td><td style="padding:9px 12px;text-align:right">${Math.round(d.km)}</td><td style="padding:9px 12px;text-align:right;font-weight:600;white-space:nowrap">${eurF(d.bedrag)}</td><td style="padding:9px 12px;text-align:right"><button type="button" data-tolopen="${i}" class="zk-knop" style="min-height:32px;padding:0 10px;font-size:12px">Details</button></td></tr>
+      <tr data-toldet="${i}" style="display:none"><td colspan="7" style="padding:0 12px 10px;background:#fafbf9">${d.posten.slice().sort((a,b)=>String(a.inOp).localeCompare(String(b.inOp))).map(p=>`<div style="display:flex;justify-content:space-between;gap:12px;font-size:12px;padding:5px 0;border-bottom:1px solid #eceee9"><span style="white-space:nowrap">${esc(tijdNL(p.inOp))} – ${esc(tijdNL(p.uitOp).slice(6))}</span><span style="flex:1">${esc(p.route)}</span><span style="white-space:nowrap">${(Number(p.km)||0).toLocaleString('nl-NL',{maximumFractionDigits:1})} km</span><span style="white-space:nowrap;width:70px;text-align:right">${eurF(p.bedrag)}</span></div>`).join('')}</td></tr>`).join('')
+     :`<tr><td colspan="7" style="padding:28px 12px;text-align:center;color:#5a655e">${alle.length?'Geen tol in deze periode.':'Nog geen tol ingelezen.'}</td></tr>`}</tbody></table></div></div></div>`;
+  $('tlVan').onchange=e=>{TOL.van=e.target.value;renderTol()};
+  $('tlTot').onchange=e=>{TOL.tot=e.target.value;renderTol()};
+  $('tlKent').onchange=e=>{TOL.kenteken=e.target.value;renderTol()};
+  $('tolIn').onchange=e=>{const f=[...e.target.files];e.target.value='';tolInlezen(f)};
+  maakSleepZone($('tolZone'),tolInlezen);
+  document.querySelectorAll('[data-tolopen]').forEach(b=>b.onclick=()=>{const r=document.querySelector('[data-toldet="'+b.dataset.tolopen+'"]');const open=r.style.display==='none';r.style.display=open?'':'none';b.textContent=open?'Verberg':'Details'});
+}
+// Tol bij de klussen van een factuur: per klus de posten van dezelfde wagen op die dag,
+// binnen de tijden van de klus (met een half uur speling) als die zijn ingevuld.
+function tolVoorKlussen(klusIds){
+  const posten=DB.list('tolposten');const gebruikt=new Set();const regels=[];
+  const perDag={};
+  (klusIds||[]).forEach(x=>{const d=DB.get('dagstaten',x.dagId);const k=d&&(d.klussen||[]).find(y=>y.id===x.klusId);if(!d||!k||!k.kenteken)return;(perDag[d.datum+'|'+kentKey(k.kenteken)]=perDag[d.datum+'|'+kentKey(k.kenteken)]||[]).push({d,k})});
+  const min=t=>{const m=/(\d{1,2}):(\d{2})/.exec(t||'');return m?(+m[1])*60+(+m[2]):null};
+  for(const [sleutel,ks] of Object.entries(perDag)){
+    const [datum,kent]=sleutel.split('|');
+    const metTijd=ks.filter(o=>min(o.k.startTijd)!=null&&min(o.k.eindTijd)!=null);
+    const kandidaten=posten.filter(p=>p.datum===datum&&p.kenteken===kent&&!gebruikt.has(p.id));
+    const keuze=kandidaten.filter(p=>{
+      if(metTijd.length<ks.length)return true;        // een klus zonder tijden: hele dag
+      const a=min(String(p.inOp).slice(11)),b=min(String(p.uitOp).slice(11));
+      return metTijd.some(o=>b>=min(o.k.startTijd)-30&&a<=min(o.k.eindTijd)+30);
+    });
+    if(!keuze.length)continue;
+    keuze.forEach(p=>gebruikt.add(p.id));
+    const bedrag=r2(keuze.reduce((s,p)=>s+(Number(p.bedrag)||0),0)),km=keuze.reduce((s,p)=>s+(Number(p.km)||0),0);
+    regels.push({_k:datum+kent,id:uid(),omschrijving:'Vrachtwagenheffing',detail:datumNL(datum)+' · '+kentTonen(kent)+' · '+Math.round(km)+' km ('+keuze.length+' passage'+(keuze.length===1?'':'s')+')',aantal:1,eenheid:'stuk',prijs:bedrag,btw:'21',tolIds:keuze.map(p=>p.id)});
+  }
+  return regels.sort((a,b)=>a._k.localeCompare(b._k)).map(r=>{delete r._k;return r});
 }
 
 // ---- Factuur versturen per mail ----
@@ -3876,6 +4017,7 @@ async function laadAlles(){
   }
   // Vrachten uit eVDM (alleen beheer; tabel mag nog ontbreken)
   if (isBeheer()) { try { await laadVrachten() } catch (e) { CACHE.vrachten = CACHE.vrachten || [] } }
+  if (isBeheer()) { try { await laadTol() } catch (e) { CACHE.tolposten = CACHE.tolposten || [] } }   // tabel mag nog ontbreken
   // Tarieven staan in een aparte tabel die alleen de beheerder mag lezen.
   if (isBeheer()) {
     try {
@@ -4192,6 +4334,7 @@ function renderCurrentView(){
       case 'producten':renderProducten();break;
       case 'mts':renderMts();break;
       case 'vrachten':renderVrachten();break;
+      case 'tol':renderTol();break;
       case 'klanten':renderKlanten();break;
       case 'diensten':renderDiensten();break;
       case 'materieel':renderMaterieel();break;
@@ -4215,8 +4358,8 @@ function renderBottomNav(){
 // Na elke render de rolregels toepassen (medewerker = alleen eigen uren)
 function naRender(){ try{pasRolToe()}catch(e){} }
 // Terugknop van de browser: elke pagina (tabblad) krijgt een eigen plek in de browsergeschiedenis.
-const BEHEER_TABS=['dashboard','klussen','facturen','producten','mts','vrachten','orders','klanten','diensten','materieel','keuringen','werknemers','planning','planarchief','uren','export','accounts'];
-const BEHEER_ALLEEN=['accounts','orders','planarchief','keuringen','facturen','producten','mts','vrachten'];
+const BEHEER_TABS=['dashboard','klussen','facturen','producten','mts','vrachten','tol','orders','klanten','diensten','materieel','keuringen','werknemers','planning','planarchief','uren','export','accounts'];
+const BEHEER_ALLEEN=['accounts','orders','planarchief','keuringen','facturen','producten','mts','vrachten','tol'];
 function navStaat(){return {m:currentMode,v:currentView,t:currentBeheerTab}}
 function navPush(vervang){
   try{
