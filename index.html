@@ -2817,6 +2817,38 @@ function dieselRegels(regels,f){
   });
   return {regels:uit,zonder};
 }
+// Factuur van de dieselboer (pdf) lezen: per dieselregel datum, liters en literprijs (excl. btw)
+// Factuur dieselboer -> [{datum, prijs (per liter excl btw), liters, bedrag, factuurnr}]
+function dieselParse(paginas){
+  const regels=[];
+  for(const p of paginas){const rij={};for(const it of p){if(!it.str.trim())continue;const k=Math.round(it.y/2);(rij[k]=rij[k]||[]).push(it)}
+    Object.keys(rij).map(Number).sort((a,b)=>b-a).forEach(k=>regels.push(rij[k].sort((a,b)=>a.x-b.x).map(i=>i.str).join(' ').replace(/\s+/g,' ').trim()))}
+  const alles=regels.join('\n');
+  const dmy=s=>{const m=/(\d{1,2})-(\d{1,2})-(\d{2,4})/.exec(s||'');if(!m)return null;const j=m[3].length===2?'20'+m[3]:m[3];return j+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0')};
+  const nlGetal=s=>{s=s.replace(/\./g,'').replace(',','.');return parseFloat(s)};
+  let alg=null;let m=/Aflever(ings)?datum\s*:?\s*(\d{1,2}-\d{1,2}-\d{2,4})/i.exec(alles);if(m)alg=dmy(m[2]);
+  const fdat=(m=/(Factuurdatum|Datum)\s*:?\s*(\d{1,2}-\d{1,2}-\d{2,4})/i.exec(alles))?dmy(m[2]):null;
+  const fnr=(m=/Factuur(nummer|nr)\.?\s*:?\s*(\d{3,})/i.exec(alles))?m[2]:'';
+  const uit=[];
+  regels.forEach((r,i)=>{
+    if(!/(diesel|en\s?590|gasolie|hvo|green\s?fuel)/i.test(r))return;
+    const venster=[r,regels[i+1]||'',regels[i+2]||''].join(' ');
+    const getallen=(venster.match(/\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+,\d+|\d+/g)||[]).map(nlGetal).filter(n=>!isNaN(n)&&n>0);
+    // zoek liters × prijs / per = bedrag (per = 1, 100 of 1000)
+    let best=null;
+    for(let a=0;a<getallen.length;a++)for(let b=a+1;b<getallen.length;b++)for(let c=b+1;c<getallen.length;c++){
+      const q=getallen[a],pr=getallen[b],bed=getallen[c];
+      for(const per of [1,100,1000]){
+        const pl=pr/per;if(pl<0.5||pl>4||q<20)continue;
+        if(Math.abs(q*pl-bed)<=Math.max(0.05,bed*0.0005)){if(!best||bed>best.bedrag)best={liters:q,prijs:Math.round(pl*10000)/10000,bedrag:bed}}
+      }
+    }
+    if(!best)return;
+    const datum=dmy((r.match(/^\d{1,2}-\d{1,2}-\d{2,4}/)||[])[0])||alg||fdat;
+    if(!uit.some(x=>x.datum===datum&&x.liters===best.liters))uit.push({datum,factuurnr:fnr,...best});
+  });
+  return uit;
+}
 function openDieselInstellingen(){
   const d=dieselInst();const prijzen=d.prijzen.map(p=>({...p}));
   const m=document.createElement('div');m.id='dieselM';m.className='fixed inset-0 bg-black/50 z-30 overflow-auto p-3';
@@ -2827,6 +2859,7 @@ function openDieselInstellingen(){
      <h3 class="font-bold mb-1">Dieseltoeslag</h3>
      <p class="text-xs text-gray-500 mb-3">Toeslag per uur = (dieselprijs − basisprijs) × liters per uur. Vul de prijs per liter <strong>exclusief btw</strong> in van de factuur van de dieselboer, met de datum vanaf wanneer die geldt.</p>
      <div class="grid grid-cols-2 gap-3 mb-4"><div><label class="block text-xs font-medium mb-1" for="ds_basis">Basisprijs per liter (€)</label><input id="ds_basis" inputmode="decimal" value="${d.basis.toFixed(2).replace('.',',')}" class="${inv} w-full"></div><div><label class="block text-xs font-medium mb-1" for="ds_verbr">Liters per uur</label><input id="ds_verbr" inputmode="decimal" value="${String(d.verbruik).replace('.',',')}" class="${inv} w-full"></div></div>
+     <label id="ds_zone" for="ds_in" class="flex flex-col items-center gap-1 p-4 mb-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer text-center"><span class="text-sm font-semibold">Sleep de factuur van de dieselboer hierheen</span><span class="text-xs text-gray-500">of klik om de pdf te kiezen; datum en literprijs worden er zelf uit gehaald</span><input type="file" id="ds_in" accept="application/pdf,.pdf" multiple class="sr-only"></label>
      <div class="text-sm font-medium mb-2">Dieselprijzen</div>
      <div class="space-y-2 mb-2">${s.map(p=>{const i=prijzen.indexOf(p);const pu=r2((getal(p.prijs)-getal($('ds_basis')?$('ds_basis').value:d.basis))*d.verbruik);return `<div class="flex gap-2 items-center"><input type="date" data-dp="${i}" data-k="vanaf" value="${esc(p.vanaf||'')}" class="${inv}" style="width:150px" aria-label="Geldt vanaf"><input data-dp="${i}" data-k="prijs" inputmode="decimal" value="${p.prijs!=null?String(p.prijs).replace('.',','):''}" class="${inv}" style="width:90px" placeholder="1,65" aria-label="Prijs per liter"><input data-dp="${i}" data-k="opmerking" value="${esc(p.opmerking||'')}" class="${inv} flex-1" placeholder="bijv. factuurnr dieselboer"><button type="button" data-dpdel="${i}" class="text-red-600 text-lg px-2" aria-label="Verwijderen">×</button></div>`}).join('')||'<p class="text-xs text-gray-500">Nog geen dieselprijzen.</p>'}</div>
      <button type="button" id="ds_plus" class="w-full py-2 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl text-sm mb-3">+ Dieselprijs toevoegen</button>
@@ -2838,6 +2871,17 @@ function openDieselInstellingen(){
     m.querySelector('#ds_plus').onclick=()=>{lees();prijzen.push({vanaf:today(),prijs:null,opmerking:''});teken()};
     m.querySelectorAll('[data-dpdel]').forEach(b=>b.onclick=()=>{lees();prijzen.splice(+b.dataset.dpdel,1);teken()});
     m.oninput=vb;vb();
+    const lees2=async files=>{lees();let n=0;
+      for(const file of files){try{
+        const r=dieselParse(await pdfTekstItems(file));
+        if(!r.length){toast('Geen dieselregel gevonden in '+file.name,'error');continue}
+        r.forEach(x=>{const opm='Factuur '+(x.factuurnr||'')+' · '+x.liters.toLocaleString('nl-NL')+' l';
+          if(prijzen.some(p=>p.vanaf===x.datum&&(p.opmerking||'').includes('Factuur '+(x.factuurnr||''))))return;
+          prijzen.push({vanaf:x.datum,prijs:x.prijs,opmerking:opm});n++});
+      }catch(e){toast('Lezen mislukt: '+e.message,'error')}}
+      teken();if(n)toast(n+' dieselprijs'+(n===1?'':'zen')+' toegevoegd; klik op Opslaan','success')};
+    m.querySelector('#ds_in').onchange=e=>{const f=[...e.target.files];e.target.value='';lees2(f)};
+    maakSleepZone(m.querySelector('#ds_zone'),lees2);
     m.querySelector('#ds_x').onclick=()=>m.remove();
     m.querySelector('#ds_ok').onclick=()=>{lees();const b=getal(m.querySelector('#ds_basis').value),v=getal(m.querySelector('#ds_verbr').value);
       if(!(v>0)){toast('Vul het aantal liters per uur in','error');return}
