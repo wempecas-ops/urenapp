@@ -3641,6 +3641,8 @@ const TABELLEN = ['werknemers', 'klanten', 'diensten', 'dagstaten'];
 
 const isBeheer = () => !!SESSIE && SESSIE.rol === 'beheer';
 const isMedewerker = () => !!SESSIE && SESSIE.rol === 'medewerker';
+// Account dat alleen bij de facturen van Mts. C.J. Wempe mag (voor de broer)
+const isMts = () => !!SESSIE && SESSIE.rol === 'mts';
 const naarEmail = g => { g = String(g || '').trim().toLowerCase(); return g.includes('@') ? g : g + '@' + EMAIL_DOMEIN };
 // Alleen voor de demo-modus; echte wachtwoorden worden door Supabase beheerd.
 function hashWachtwoord(p){ let h = 5381; const s = String(p) + '|urenapp'; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return 'demo-' + h.toString(16) }
@@ -3852,6 +3854,10 @@ async function laadAlles(){
     const m = await sbREST('/rest/v1/materieel?select=*&order=kenteken.asc&limit=1000');
     CACHE.materieel = Array.isArray(m) ? m : [];
   } catch (e) { CACHE.materieel = CACHE.materieel || [] }
+  // Account voor Mts. Wempe: alleen de eigen facturen en gegevens
+  if (isMts()) {
+    for (const t of ['facturen_mts', 'instellingen']) { try { const o = await sbREST('/rest/v1/' + t + '?select=*&limit=1000'); CACHE[t] = Array.isArray(o) ? o : [] } catch (e) { CACHE[t] = CACHE[t] || [] } }
+  }
   // Orders (verzamelorders): alleen beheer; mag ontbreken zolang de tabel nog niet is aangemaakt.
   if (isBeheer()) {
     try {
@@ -4019,6 +4025,16 @@ function openWachtwoordWijzigen(){
 }
 // ---- rol toepassen op de interface ----
 function pasRolToe(){
+  if (isMts()) {
+    currentMode = 'beheer'; currentBeheerTab = 'mts';
+    const mt0 = $('modeToggle'); if (mt0) mt0.classList.add('hidden');
+    document.querySelectorAll('#beheerNav .tab-btn,#beheerNav .nav-groep').forEach(el => { el.style.display = el.dataset && el.dataset.tab === 'mts' ? '' : 'none' });
+    const nl = document.querySelector('#beheerNav .nav-logo div'); if (nl) nl.textContent = 'Facturen Mts. Wempe';
+    const li = document.querySelector('#beheerNav .nav-logo img'); if (li && !/mts-logo/.test(li.src)) { li.src = '/mts-logo.jpg'; li.alt = 'Melkveebedrijf Wempe'; li.style.cssText = 'width:96px;height:auto;background:#fff;border-radius:10px;padding:6px' }
+    const pw0 = $('pwBtn'); if (pw0 && CONFIG.MODE === 'supabase') { pw0.classList.remove('hidden'); pw0.onclick = openWachtwoordWijzigen }
+    const ch = $('userChip'); if (ch && SESSIE) ch.textContent = SESSIE.naam + ' · Mts.';
+    return;
+  }
   const mw = isMedewerker();
   const mt = $('modeToggle');
   if (mt) { if (mw) mt.classList.add('hidden'); else mt.classList.remove('hidden') }
@@ -4054,14 +4070,14 @@ function renderAccounts(){
   const werknemers = DB.list('werknemers');
   $('main').innerHTML = `<div class="max-w-4xl mx-auto">
   <h2 class="text-xl font-bold mb-1 text-gray-800 dark:text-gray-100">Accounts</h2>
-  <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Maak per medewerker een account met een gebruikersnaam en wachtwoord. Een medewerker ziet dan alleen zijn eigen uren.</p>
+  <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Maak per medewerker een account met een gebruikersnaam en wachtwoord. Een medewerker ziet dan alleen zijn eigen uren. Een account "Alleen facturen Mts. Wempe" ziet alleen het tabblad met de facturen van het melkveebedrijf.</p>
   <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700 mb-4">
     <h3 class="font-semibold mb-3">Nieuw account</h3>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
       <div><label class="block text-xs text-gray-500 mb-1" for="naGebruiker">Gebruikersnaam</label><input id="naGebruiker" autocapitalize="none" class="${SEL_S} w-full bg-white dark:bg-gray-700" placeholder="bijv. jan"></div>
       <div><label class="block text-xs text-gray-500 mb-1" for="naNaam">Naam</label><input id="naNaam" class="${SEL_S} w-full bg-white dark:bg-gray-700" placeholder="Jan de Boer"></div>
       <div><label class="block text-xs text-gray-500 mb-1" for="naWachtwoord">Wachtwoord</label><input id="naWachtwoord" type="text" class="${SEL_S} w-full bg-white dark:bg-gray-700" placeholder="min. 6 tekens"></div>
-      <div><label class="block text-xs text-gray-500 mb-1" for="naRol">Rol</label><select id="naRol" class="${SEL_S} w-full bg-white dark:bg-gray-700"><option value="medewerker">Medewerker</option><option value="beheer">Beheerder</option></select></div>
+      <div><label class="block text-xs text-gray-500 mb-1" for="naRol">Rol</label><select id="naRol" class="${SEL_S} w-full bg-white dark:bg-gray-700"><option value="medewerker">Medewerker</option><option value="beheer">Beheerder</option><option value="mts">Alleen facturen Mts. Wempe</option></select></div>
       <div class="md:col-span-2"><label class="block text-xs text-gray-500 mb-1" for="naWerknemer">Koppelen aan werknemer (voor medewerkers)</label>
         <select id="naWerknemer" class="${SEL_S} w-full bg-white dark:bg-gray-700"><option value="">— geen —</option>${werknemers.map(w => `<option value="${w.id}">${esc(w.naam)}</option>`).join('')}</select></div>
     </div>
@@ -4123,7 +4139,7 @@ async function vulAccountLijst(){
   body.innerHTML = rijen.map(a => `<tr class="border-t border-gray-100 dark:border-gray-700">
     <td class="px-3 py-2 font-medium">${esc(a.gebruikersnaam)}</td>
     <td class="px-3 py-2">${esc(a.naam)}</td>
-    <td class="px-3 py-2">${a.rol === 'beheer' ? '<span class="badge bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">Beheerder</span>' : 'Medewerker'}</td>
+    <td class="px-3 py-2">${a.rol === 'beheer' ? '<span class="badge bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">Beheerder</span>' : a.rol === 'mts' ? '<span class="badge bg-emerald-100 text-emerald-800">Alleen facturen Mts.</span>' : 'Medewerker'}</td>
     <td class="px-3 py-2">${a.werknemer_id && wMap[a.werknemer_id] ? esc(wMap[a.werknemer_id]) : '—'}</td>
     <td class="px-3 py-2 text-center">${a.actief !== false ? '<span class="text-emerald-700 dark:text-emerald-400 font-medium">Ja</span>' : '<span class="text-gray-400">Nee</span>'}</td>
     <td class="px-3 py-2 whitespace-nowrap">
@@ -4159,6 +4175,7 @@ async function vulAccountLijst(){
 let currentView='invoer', currentBeheerTab='dashboard', currentMode='medewerker';
 function renderCurrentView(){
   const main=$('main');
+  if(isMts()){currentMode='beheer';currentBeheerTab='mts'}
   // Oude handlers van het invoerformulier opruimen: anders reageren ze ook op
   // andere schermen (en crashen ze op velden die daar niet bestaan).
   main.oninput=null;main.onchange=null;main.onclick=null;
@@ -4219,7 +4236,8 @@ window.addEventListener('popstate',e=>{
 });
 function switchView(view){currentView=view;navPush();renderCurrentView();verversAchtergrond('tab')}
 function switchTab(tab){
-  if(BEHEER_ALLEEN.includes(tab)&&!isBeheer()){toast('Alleen voor beheerders','error');return}
+  if(isMts())tab='mts';
+  if(BEHEER_ALLEEN.includes(tab)&&!isBeheer()&&!(tab==='mts'&&isMts())){toast('Alleen voor beheerders','error');return}
   // Een beheertabblad aanklikken betekent ook echt naar de beheermodus.
   currentMode='beheer';
   const mt=$('modeToggle');if(mt)mt.value='beheer';

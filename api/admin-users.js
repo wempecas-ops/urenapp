@@ -94,7 +94,7 @@ module.exports = async (req, res) => {
       const gebruikersnaam = String(body.gebruikersnaam || '').trim().toLowerCase();
       const naam = String(body.naam || '').trim();
       const wachtwoord = String(body.wachtwoord || '');
-      const rol = body.rol === 'beheer' ? 'beheer' : 'medewerker';
+      const rol = ['beheer', 'mts'].includes(body.rol) ? body.rol : 'medewerker';   // mts = alleen facturen Mts. C.J. Wempe
       const werknemerId = body.werknemer_id || null;
       if (!gebruikersnaam || !wachtwoord) return stuur(400, { fout: 'Gebruikersnaam en wachtwoord zijn verplicht' });
       if (wachtwoord.length < 6) return stuur(400, { fout: 'Kies een wachtwoord van minstens 6 tekens' });
@@ -119,7 +119,7 @@ module.exports = async (req, res) => {
       try {
         await sb('/rest/v1/profiles', {
           service: true, method: 'POST', prefer: 'resolution=merge-duplicates,return=representation',
-          body: { id: uid, gebruikersnaam, naam, rol, werknemer_id: werknemerId, actief: true }
+          body: { id: uid, gebruikersnaam, naam, rol, werknemer_id: rol === 'medewerker' ? werknemerId : null, actief: true }
         });
       } catch (e) {
         // Profiel mislukt: het net aangemaakte inlogaccount weer weghalen, anders blijft er een wees achter.
