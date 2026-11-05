@@ -127,8 +127,30 @@ function stukjes(html) {
 //   ... | Opmerkingscodes | (codes, kunnen ontbreken) | Leverancier | ...
 //   ... | Mestcodes | 14 Rundvee: drijfmest behalve van vleeskalveren (VDM) | 100 % | Uitvoering | ...
 function na(t, label) { return t.findIndex(x => label.test(x)) }
+// Coördinaten (Nederland e.o.) uit de ruwe pagina, met wat tekst ervoor om te zien waar ze bij horen
+function coordinaten(html) {
+  const h = String(html || ''), uit = [];
+  const re = /(-?5[0-4]\.\d{4,})["'\s,;:\]\)}a-z_=\-]{1,30}?(-?[2-8]\.\d{4,})|(-?[2-8]\.\d{4,})["'\s,;:\]\)}a-z_=\-]{1,30}?(5[0-4]\.\d{4,})/gi;
+  let m;
+  while ((m = re.exec(h)) && uit.length < 40) {
+    const lat = +(m[1] || m[4]), lng = +(m[2] || m[3]);
+    uit.push({ lat, lng, ervoor: h.slice(Math.max(0, m.index - 140), m.index).replace(/\s+/g, ' ') });
+  }
+  return uit;
+}
+function laadLos(cs) {
+  const r = { laad: null, los: null };
+  for (const c of cs) {
+    const v = c.ervoor.toLowerCase().slice(-90);
+    if (!r.laad && /(laad|load|pickup|geladen|start|vertrek|leverancier|from)/.test(v) && !/(los|unload|deliver|afnemer)/.test(v.slice(-40))) r.laad = c;
+    else if (!r.los && /(los|unload|deliver|gelost|afnemer|eind|to\b|destination)/.test(v)) r.los = c;
+  }
+  return r;
+}
 function leesDetails(html) {
   const t = stukjes(html), uit = {};
+  const cs = coordinaten(html), ll = laadLos(cs);
+  uit.coords = cs; uit.laad = ll.laad; uit.los = ll.los;
   // oplegger: tweede regel onder "Vervoermiddel" (kenteken / chassisnummer); de eerste is de trekker
   const iv = na(t, /^vervoermiddel(en)?$/i);
   if (iv >= 0) {
@@ -148,6 +170,21 @@ function leesDetails(html) {
     }
     return l.join('; ');
   };
+  // laad- en losadres: de "Locatie" in het blok Leverancier / Afnemer (anders het adres van het bedrijf)
+  const pc = x => /^\d{4}\s?[A-Z]{2}\b/i.test(x || '');
+  const adresUit = (sectie) => {
+    const i = t.findIndex((x, j) => new RegExp('^' + sectie + '$', 'i').test(x) && /^bedrijf$/i.test(t[j + 1] || ''));
+    if (i < 0) return '';
+    const eind = t.findIndex((x, j) => j > i + 1 && /^(leverancier|afnemer|overig|mestcodes|uitvoering)$/i.test(x));
+    const blok = t.slice(i + 1, eind > 0 ? eind : i + 25);
+    const maak = (straat, pcRegel) => { const m = /^(\d{4}\s?[A-Z]{2}),\s*([^,]+)/i.exec(pcRegel || ''); return m ? [straat, m[1].toUpperCase() + ' ' + m[2].trim()].filter(Boolean).join(', ') : '' };
+    const il = blok.findIndex(x => /^locatie$/i.test(x));
+    if (il >= 0) { for (let j = il + 1; j < Math.min(blok.length, il + 6); j++) if (pc(blok[j])) return maak(blok[j - 1] !== blok[il + 1] ? blok[j - 1] : '', blok[j]) }
+    for (let j = 1; j < blok.length; j++) if (pc(blok[j])) return maak(blok[j - 1], blok[j]);
+    return '';
+  };
+  uit.leverancierLocatie = adresUit('leverancier');
+  uit.afnemerLocatie = adresUit('afnemer');
   uit.mestcode = codes(/^mestcode(s)?$/i, /^(uitvoering|transport|leverancier|afnemer|overig)$/i);
   uit.opmerkingcode = codes(/^opmerkingscode(s)?$/i, /^(leverancier|afnemer|overig|uitvoering|bedrijf)$/i);
   return { velden: uit, tekst: t };
@@ -260,8 +297,8 @@ module.exports = async (req, res) => {
         const d = await s.haal(v.detail_url);
         const { velden, tekst: t } = leesDetails(d.html);
         // Ontbreekt er iets, bewaar dan de tekst van deze pagina apart (voor controle), los van de status
-        if (!debugGezet && (!velden.oplegger || !velden.mestcode)) { debugGezet = true; try { await sb('/rest/v1/instellingen', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal', body: { id: 'evdm_debug', waarde: { op: new Date().toISOString(), url: v.detail_url, gevonden: velden, tekst: t.join(' | ').slice(0, 12000) } } }) } catch (e) {} }
-        await sb('/rest/v1/vrachten?id=eq.' + encodeURIComponent(v.id), { method: 'PATCH', prefer: 'return=minimal', body: { oplegger: velden.oplegger || null, mestcode: velden.mestcode || null, opmerkingcode: velden.opmerkingcode || null, details_op: new Date().toISOString() } });
+        if (!debugGezet && (!velden.oplegger || !velden.mestcode || !velden.laad || !velden.los)) { debugGezet = true; try { await sb('/rest/v1/instellingen', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal', body: { id: 'evdm_debug', waarde: { op: new Date().toISOString(), url: v.detail_url, gevonden: Object.assign({}, velden, { coords: undefined }), coords: velden.coords, kaartHtml: (d.html.match(/<[^>]*(data-(lat|lng|lon|coord|geo|route|marker|map)|leaflet|google\.maps|mapbox|L\.map|latlng|LatLng)[\s\S]{0,600}/gi) || []).slice(0, 8).map(x => x.slice(0, 600)), tekst: t.join(' | ').slice(0, 8000) } } }) } catch (e) {} }
+        await sb('/rest/v1/vrachten?id=eq.' + encodeURIComponent(v.id), { method: 'PATCH', prefer: 'return=minimal', body: { oplegger: velden.oplegger || null, mestcode: velden.mestcode || null, opmerkingcode: velden.opmerkingcode || null, leverancier_locatie: velden.leverancierLocatie || null, afnemer_locatie: velden.afnemerLocatie || null, laad_lat: velden.laad ? velden.laad.lat : null, laad_lng: velden.laad ? velden.laad.lng : null, los_lat: velden.los ? velden.los.lat : null, los_lng: velden.los ? velden.los.lng : null, details_op: new Date().toISOString() } });
         details++;
       } catch (e) { status.detailFout = e.message }
     }
