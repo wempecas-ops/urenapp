@@ -11,6 +11,10 @@
     {
       "path": "/api/evdm",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/scans",
+      "schedule": "30 4 * * *"
     }
   ],
   "functions": {
@@ -26,6 +30,10 @@
     },
     "api/evdm.js": {
       "maxDuration": 60
+    },
+    "api/scans.js": {
+      "maxDuration": 60,
+      "memory": 1024
     }
   }
 }
