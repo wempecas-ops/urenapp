@@ -17,7 +17,7 @@ const IMAP_HOST = process.env.SCANS_IMAP_HOST || 'imap.gmail.com';
 const USER = process.env.SCANS_USER || process.env.GMAIL_USER || '';
 const PASS = (process.env.SCANS_PASSWORD || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
 const LABEL = process.env.SCANS_ADRES_DEEL || '+scans';      // stukje van het aan-adres
-const MAX_BERICHTEN = 25, MAX_BYTES = 20 * 1024 * 1024;
+const MAX_BERICHTEN = 25, MAX_BYTES = 26 * 1024 * 1024;   // Gmail laat max. 25 MB per mail door
 
 // ---------- Supabase ----------
 const kop = extra => Object.assign({ apikey: SERVICE, Authorization: 'Bearer ' + SERVICE }, extra || {});
