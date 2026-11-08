@@ -2909,7 +2909,7 @@ function scanTokens(tekst){
   (t.toUpperCase().match(/\b[A-Z0-9]{1,3}-[A-Z0-9]{2,3}-[A-Z0-9]{1,3}\b/g)||[]).forEach(w=>uit.add('kt:'+w.replace(/-/g,'')));  // kentekens
   return [...uit];
 }
-function scanModel(){const r=DB.get('instellingen','scan_model');return (r&&r.waarde&&r.waarde.klanten)?r.waarde:{klanten:{}}}
+function scanModel(){const r=DB.get('instellingen','scan_model');const w=(r&&r.waarde)||{};return {...w,klanten:w.klanten||{}}}
 function bewaarScanModel(m){if(DB.get('instellingen','scan_model'))DB.update('instellingen','scan_model',{waarde:m});else DB.insert('instellingen',{id:'scan_model',waarde:m})}
 const scanKlantKey=s=>s.klantId||('n:'+vNorm(s.klantNaam||''));
 // Leren: woorden van deze bon tellen bij deze klant
@@ -2946,7 +2946,10 @@ function scanVoorstel(scan){
   Object.entries(m.klanten).forEach(([k,e])=>{
     let s=0,raak=0;
     toks.forEach(t=>{const c=e.w[t];if(!c)return;const idf=Math.log(1+aantalKl/(df[t]||1));s+=Math.min(1,c/Math.max(1,e.docs))*idf*2;raak++});
-    if(s>0.5){const id=k.startsWith('n:')?null:k;const kl=id?DB.get('klanten',id):null;plus(id,kl?kl.naam:e.naam,Math.min(12,s),'geleerd ('+raak+' woorden)')}
+    // kenmerkende woorden van deze klant (komen op de meeste van zijn bonnen voor): hoeveel staan er op deze bon?
+    const kenm=Object.keys(e.w).filter(t=>e.w[t]>=Math.max(2,e.docs*0.5));
+    if(e.docs>=2&&kenm.length>=3){const cov=kenm.filter(t=>toks.has(t)).length/kenm.length;if(cov>=0.5)s+=cov*10}
+    if(s>0.5){const id=k.startsWith('n:')?null:k;const kl=id?DB.get('klanten',id):null;plus(id,kl?kl.naam:e.naam,Math.min(14,s),'geleerd ('+raak+' woorden)')}
   });
   return Object.values(kand).sort((a,b)=>b.score-a.score).slice(0,4);
 }
@@ -2984,30 +2987,73 @@ async function scansOphalen(stil){
   finally{SCAN.bezig=false;if(currentBeheerTab==='scans')renderScans()}
 }
 // Tekst lezen van scans die dat nog niet hebben (één voor één, op de achtergrond)
+// Is een pagina (vrijwel) leeg? (achterkant bij dubbelzijdig scannen)
+function canvasLeeg(c){
+  const w=80,h=Math.round(80*c.height/c.width)||80,k=document.createElement('canvas');k.width=w;k.height=h;const x=k.getContext('2d');x.drawImage(c,0,0,w,h);
+  const d=x.getImageData(0,0,w,h).data;let donker=0;for(let i=0;i<d.length;i+=4){if((d[i]+d[i+1]+d[i+2])/3<200)donker++}
+  return donker/(w*h)<0.004;
+}
+// Een pdf met meerdere bonnen opknippen: elke (niet-lege) pagina wordt een eigen scan (jpg)
+async function scanSplitsen(s,doc,voortgang){
+  const T=await ocrKlaarmaken().catch(()=>null);
+  const basis=(s.bestandsnaam||'scan').replace(/\.pdf$/i,'');let n=0;
+  for(let i=1;i<=doc.numPages;i++){
+    if(currentBeheerTab!=='scans')return false;
+    voortgang&&voortgang('Pagina '+i+' van '+doc.numPages+' opknippen…');
+    const pg=await doc.getPage(i);const vp=pg.getViewport({scale:2});const c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;
+    const cx=c.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,c.width,c.height);await pg.render({canvasContext:cx,viewport:vp}).promise;
+    if(canvasLeeg(c))continue;
+    let tekst='';try{const tc=await pg.getTextContent();tekst=tc.items.map(x=>x.str).join(' ')}catch(e){}
+    if(tekst.replace(/\s/g,'').length<40&&T){try{tekst=(await T.recognize(c,'nld')).data.text}catch(e){}}
+    const blob=await new Promise(ok=>c.toBlob(ok,'image/jpeg',0.82));
+    const id=uid(),naam=basis+' - p'+i+'.jpg';
+    const pad=await opslagUpload('scans/'+String(s.ontvangenOp||today()).slice(0,7)+'/'+id+'-'+veiligBestand(naam),blob,'image/jpeg');
+    const nieuw=DB.insert('scans',{id,messageId:(s.messageId||s.id)+'#p'+i,ontvangenOp:s.ontvangenOp,afzender:s.afzender,onderwerp:s.onderwerp,bestandsnaam:naam,pad,type:'image/jpeg',grootte:blob.size,tekst:tekst.replace(/[ \t]+/g,' ').trim().slice(0,20000),datum:scanDatumUit(tekst),status:'nieuw'});
+    scanAutoSorteer(nieuw);n++;
+  }
+  DB.update('scans',s.id,{...DB.get('scans',s.id),status:'gesplitst',tekst:'',notitie:n+' bonnen'});
+  return true;
+}
+// Zelf sorteren als de app zeker is (alleen als die schakelaar aan staat); leert hier NIET van
+function scanZeker(vs){const t=vs[0];return !!(t&&t.score>=8&&(!vs[1]||t.score>=vs[1].score*1.6))}
+function scanAutoSorteer(s){
+  if(!scanModel().auto||!s||s.status!=='nieuw')return;
+  const vs=scanVoorstel(s);if(!scanZeker(vs))return;
+  DB.update('scans',s.id,{...s,klantId:vs[0].klantId,klantNaam:vs[0].klantNaam,datum:s.datum||scanDatumUit(s.tekst),status:'gesorteerd',notitie:'automatisch'});
+}
 async function scansTekstAanvullen(){
   if(SCAN.ocrBezig)return;SCAN.ocrBezig=true;
+  const zet=t=>{SCAN.voortgang=t;const el=$('scVoortgang');if(el)el.textContent=t||''};
   try{
-    for(const s of DB.list('scans').filter(x=>x.tekst==null&&x.status!=='genegeerd').slice(0,25)){
-      if(currentBeheerTab!=='scans')break;
+    let rest=DB.list('scans').filter(x=>x.tekst==null&&x.status==='nieuw');
+    let nr=0;const tot=rest.length;
+    for(const s of rest.slice(0,40)){
+      if(currentBeheerTab!=='scans')break;nr++;
+      zet('Scan '+nr+' van '+tot+' lezen…');
       const el=document.querySelector('[data-scanst="'+s.id+'"]');if(el)el.textContent='Tekst lezen…';
+      // meerdere pagina's? dan eerst opknippen
+      if(/pdf/.test(s.type||'')||/\.pdf$/i.test(s.bestandsnaam||'')){
+        try{const url=await fotoUrl(s.pad);const lib=await pdfjsKlaarmaken();const doc=await lib.getDocument({data:new Uint8Array(await (await fetch(url)).arrayBuffer()),isEvalSupported:false}).promise;
+          if(doc.numPages>1){await scanSplitsen(s,doc,t=>zet('Scan '+nr+' van '+tot+': '+t));if(currentBeheerTab==='scans')renderScans();continue}}catch(e){}
+      }
       let tekst='';try{tekst=await scanTekstLezen(s)}catch(e){tekst=''}
       const datum=s.datum||scanDatumUit(tekst);
-      DB.update('scans',s.id,{...DB.get('scans',s.id),tekst,datum});
+      const nieuw={...DB.get('scans',s.id),tekst,datum};DB.update('scans',s.id,nieuw);scanAutoSorteer(nieuw);
       if(currentBeheerTab==='scans')renderScans();
     }
-  }finally{SCAN.ocrBezig=false}
+  }finally{SCAN.ocrBezig=false;zet('')}
 }
 function renderScans(){
   if(CONFIG.MODE==='supabase'&&!SCAN.bezig&&Date.now()-SCAN.laatstOpgehaald>120000){setTimeout(()=>scansOphalen(true),50)}
   const alle=DB.list('scans');
   const nieuw=alle.filter(s=>s.status==='nieuw').sort((a,b)=>String(b.ontvangenOp).localeCompare(String(a.ontvangenOp)));
-  const gesorteerd=alle.filter(s=>s.status==='gesorteerd'&&(!SCAN.klant||scanKlantKey(s)===SCAN.klant)).sort((a,b)=>String(b.datum||b.ontvangenOp).localeCompare(String(a.datum||a.ontvangenOp)));
+  const gesorteerd=alle.filter(s=>s.status==='gesorteerd'&&(!SCAN.klant||(SCAN.klant==='_auto'?s.notitie==='automatisch':scanKlantKey(s)===SCAN.klant))).sort((a,b)=>String(b.datum||b.ontvangenOp).localeCompare(String(a.datum||a.ontvangenOp)));
   const klantNamen=[...new Set([...DB.list('klanten').filter(k=>k.actief!==false).map(k=>k.naam),...Object.values(scanModel().klanten).map(e=>e.naam)].filter(Boolean))].sort();
   const adres=SCAN.adres||((DB.get('instellingen','bedrijf')||{}).waarde||{}).email||'facturencaswempe@gmail.com';
   const scanAdres=String(adres).includes('+scans')?adres:String(adres).replace('@','+scans@');
   const kaart=s=>{
     const vs=s.status==='nieuw'?scanVoorstel(s):[];const top=vs[0];
-    const zeker=top&&top.score>=8&&(!vs[1]||top.score>=vs[1].score*1.6);
+    const zeker=scanZeker(vs);
     return `<div class="zk-kaart" style="padding:14px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
      <button type="button" data-scanzie="${esc(s.id)}" style="width:96px;height:120px;border:1px solid #e3e6e0;border-radius:8px;background:#fafbf9;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#5a655e;cursor:pointer;flex:none" aria-label="Scan bekijken">${/pdf/.test(s.type||'')?'PDF':'FOTO'}<br>bekijken</button>
      <div style="flex:1 1 260px;min-width:0">
@@ -3021,7 +3067,7 @@ function renderScans(){
         <label style="font-size:12px;color:#5a655e">Datum bon<br><input type="date" data-scandatum="${esc(s.id)}" value="${esc(s.datum||scanDatumUit(s.tekst)||'')}" class="zk-invoer" style="min-height:40px"></label>
         <button type="button" data-scannee="${esc(s.id)}" class="zk-knop" style="min-height:40px;color:#5a655e">Negeren</button>
        </div>${top?`<div style="font-size:11px;color:#5a655e;margin-top:6px">Voorstel op basis van: ${esc(top.waarom.join(', '))}</div>`:''}`
-      :`<div style="margin-top:8px;font-size:13px"><strong>${esc(s.klantNaam||'')}</strong>${s.datum?' · '+esc(datumNL(s.datum)):''}${s.factuurId?' · <span style="color:#245a39">op factuur</span>':''} <button type="button" data-scanterug="${esc(s.id)}" class="zk-knop" style="min-height:30px;padding:0 10px;font-size:12px;margin-left:8px">Wijzigen</button></div>`}
+      :`<div style="margin-top:8px;font-size:13px"><strong>${esc(s.klantNaam||'')}</strong>${s.datum?' · '+esc(datumNL(s.datum)):''}${s.factuurId?' · <span style="color:#245a39">op factuur</span>':''}${s.notitie==='automatisch'?` · <span style="color:#8a5a12">automatisch</span> <button type="button" data-scanklopt="${esc(s.id)}" class="zk-hoofd" style="min-height:30px;padding:0 10px;font-size:12px;margin-left:6px">Klopt</button>`:''} <button type="button" data-scanterug="${esc(s.id)}" class="zk-knop" style="min-height:30px;padding:0 10px;font-size:12px;margin-left:8px">Wijzigen</button></div>`}
      </div></div>`;
   };
   $('main').innerHTML=`<div class="max-w-full mx-auto" style="padding:4px 8px 32px">
@@ -3030,9 +3076,11 @@ function renderScans(){
     <button type="button" id="scOphalen" class="zk-knop" ${SCAN.bezig?'disabled':''}>${SCAN.bezig?'Bezig met ophalen…':'Nu ophalen'}</button></div>
    <p style="font-size:13px;color:#5a655e;margin:0 0 6px">Scan op de printer naar <strong>${esc(scanAdres)}</strong>. De scans komen hier binnen; kies voor wie ze zijn, dan leert de app het vanzelf.</p>
    ${SCAN.fout?`<p style="font-size:13px;color:#b42318;margin:0 0 10px">${esc(SCAN.fout)}</p>`:''}
+   <p style="font-size:13px;color:#5a655e;margin:0 0 6px">Je kunt veel bonnen achter elkaar in één pdf scannen: de app knipt ze in losse bonnen en slaat lege pagina's over.</p>
+   <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin:10px 0 0"><label style="display:inline-flex;gap:8px;align-items:center;font-size:14px;cursor:pointer"><input type="checkbox" id="scAuto" ${scanModel().auto?'checked':''} style="width:18px;height:18px;min-height:auto"> Zelf sorteren als de app zeker is</label><span id="scVoortgang" style="font-size:13px;color:#245a39;font-weight:500">${esc(SCAN.voortgang||'')}</span></div>
    <datalist id="scKlanten">${klantNamen.map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>
    <div style="display:flex;gap:8px;margin:14px 0">${[['nieuw','Te sorteren ('+nieuw.length+')'],['gesorteerd','Gesorteerd']].map(([k,l])=>`<button type="button" data-sctab="${k}" class="${SCAN.tab===k?'zk-hoofd':'zk-knop'}">${l}</button>`).join('')}
-    ${SCAN.tab==='gesorteerd'?`<select id="scKlant" class="zk-invoer" style="margin-left:auto"><option value="">Alle klanten</option>${[...new Map(alle.filter(s=>s.status==='gesorteerd').map(s=>[scanKlantKey(s),s.klantNaam])).entries()].sort((a,b)=>String(a[1]).localeCompare(String(b[1]))).map(([k,n])=>`<option value="${esc(k)}"${k===SCAN.klant?' selected':''}>${esc(n)}</option>`).join('')}</select>`:''}</div>
+    ${SCAN.tab==='gesorteerd'?`<select id="scKlant" class="zk-invoer" style="margin-left:auto"><option value="">Alle klanten</option><option value="_auto"${SCAN.klant==='_auto'?' selected':''}>Automatisch gesorteerd (nakijken)</option>${[...new Map(alle.filter(s=>s.status==='gesorteerd').map(s=>[scanKlantKey(s),s.klantNaam])).entries()].sort((a,b)=>String(a[1]).localeCompare(String(b[1]))).map(([k,n])=>`<option value="${esc(k)}"${k===SCAN.klant?' selected':''}>${esc(n)}</option>`).join('')}</select>`:''}</div>
    <div style="display:flex;flex-direction:column;gap:10px">${(SCAN.tab==='nieuw'?nieuw:gesorteerd).map(kaart).join('')||`<div class="zk-kaart" style="padding:26px;text-align:center;color:#5a655e">${SCAN.tab==='nieuw'?'Niets te sorteren.':'Nog geen gesorteerde scans.'}</div>`}</div></div>`;
   $('scOphalen').onclick=()=>scansOphalen(false);
   document.querySelectorAll('[data-sctab]').forEach(b=>b.onclick=()=>{SCAN.tab=b.dataset.sctab;renderScans()});
@@ -3044,6 +3092,8 @@ function renderScans(){
   document.querySelectorAll('[data-scanzet]').forEach(b=>b.onclick=()=>{const v=(document.querySelector('[data-scanklant="'+b.dataset.scanzet+'"]')||{}).value||'';if(!v.trim()){toast('Typ of kies een klant','error');return}zet(b.dataset.scanzet,'',v.trim())});
   document.querySelectorAll('[data-scandatum]').forEach(i=>i.onchange=()=>{const s=DB.get('scans',i.dataset.scandatum);if(s)DB.update('scans',s.id,{...s,datum:i.value||null})});
   document.querySelectorAll('[data-scannee]').forEach(b=>b.onclick=()=>{const s=DB.get('scans',b.dataset.scannee);if(s){DB.update('scans',s.id,{...s,status:'genegeerd'});renderScans()}});
+  if($('scAuto'))$('scAuto').onchange=e=>{const m=scanModel();m.auto=e.target.checked;bewaarScanModel(m);if(m.auto){DB.list('scans').filter(x=>x.status==='nieuw'&&x.tekst!=null).forEach(scanAutoSorteer)}renderScans()};
+  document.querySelectorAll('[data-scanklopt]').forEach(b=>b.onclick=()=>{const s=DB.get('scans',b.dataset.scanklopt);if(!s)return;const n={...s,notitie:null};DB.update('scans',s.id,n);scanLeer(n);renderScans()});
   document.querySelectorAll('[data-scanterug]').forEach(b=>b.onclick=()=>{const s=DB.get('scans',b.dataset.scanterug);if(s){DB.update('scans',s.id,{...s,status:'nieuw'});SCAN.tab='nieuw';renderScans()}});
   document.querySelectorAll('[data-scanzie]').forEach(b=>b.onclick=async()=>{const s=DB.get('scans',b.dataset.scanzie);try{window.open(await fotoUrl(s.pad),'_blank','noopener')}catch(e){toast('Kan scan niet openen: '+e.message,'error')}});
   if(DB.list('scans').some(x=>x.tekst==null&&x.status!=='genegeerd'))setTimeout(scansTekstAanvullen,100);
