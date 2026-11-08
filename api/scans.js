@@ -180,8 +180,11 @@ module.exports = async (req, res) => {
           const pad = 'scans/' + ontvangen.toISOString().slice(0, 7) + '/' + id + '-' + veilig;
           const bestaat = await sb('/rest/v1/scans?select=id&message_id=eq.' + encodeURIComponent(msgId) + '&bestandsnaam=eq.' + encodeURIComponent(b.naam));
           if (bestaat && bestaat.length) continue;
-          await sb('/storage/v1/object/bijlagen/' + pad.split('/').map(encodeURIComponent).join('/'), { method: 'POST', body: b.data, headers: { 'Content-Type': b.type, 'x-upsert': 'true' } });
-          await sb('/rest/v1/scans', { method: 'POST', prefer: 'return=minimal', json: { id, message_id: msgId, ontvangen_op: isNaN(ontvangen) ? new Date().toISOString() : ontvangen.toISOString(), afzender: woorden(h.from || '').slice(0, 200), onderwerp: woorden(h.subject || '').slice(0, 300), bestandsnaam: b.naam, pad, type: b.type, grootte: b.data.length, status: 'nieuw' } });
+          // eerst de regel claimen (bij twee rondes tegelijk wint er één), dan pas het bestand opslaan
+          const rij = await sb('/rest/v1/scans?on_conflict=message_id,bestandsnaam', { method: 'POST', prefer: 'resolution=ignore-duplicates,return=representation', json: { id, message_id: msgId, ontvangen_op: isNaN(ontvangen) ? new Date().toISOString() : ontvangen.toISOString(), afzender: woorden(h.from || '').slice(0, 200), onderwerp: woorden(h.subject || '').slice(0, 300), bestandsnaam: b.naam, pad, type: b.type, grootte: b.data.length, status: 'nieuw' } });
+          if (!Array.isArray(rij) || !rij.length) continue;            // stond er al
+          try { await sb('/storage/v1/object/bijlagen/' + pad.split('/').map(encodeURIComponent).join('/'), { method: 'POST', body: b.data, headers: { 'Content-Type': b.type, 'x-upsert': 'true' } }) }
+          catch (e) { await sb('/rest/v1/scans?id=eq.' + encodeURIComponent(id), { method: 'DELETE' }).catch(() => {}); throw e }
           uit.bestanden++;
         }
         uit.berichten++;
