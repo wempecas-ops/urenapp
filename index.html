@@ -3194,6 +3194,27 @@ function openScanBundel(ids){
   };
   teken();document.body.appendChild(m);
 }
+// Bestaande bonnen (foto's) nalopen: liggen ze verkeerd, dan rechtop zetten en de tekst opnieuw lezen
+async function scansRechtop(ids){
+  if(SCAN.ocrBezig){toast('De app is nog bezig met lezen; probeer het zo nog eens','error');return}
+  SCAN.ocrBezig=true;let n=0,gedraaid=0;
+  const zet=t=>{SCAN.voortgang=t;const el=$('scVoortgang');if(el)el.textContent=t||''};
+  try{
+    const lijst=ids.map(id=>DB.get('scans',id)).filter(x=>x&&x.pad&&['nieuw','gesorteerd'].includes(x.status)&&!/pdf/.test(x.type||''));
+    for(const s of lijst){
+      if(currentBeheerTab!=='scans')break;n++;zet('Bon '+n+' van '+lijst.length+' controleren…');
+      try{
+        const c=await blobNaarCanvas(await (await fetch(await fotoUrl(s.pad))).blob());
+        const r=await ocrBesteRichting(c);let extra={};
+        if(r.graden){extra=await scanVervangDoorCanvas(s,r.canvas);extra.notitie=s.notitie==='automatisch'?'automatisch':'automatisch gedraaid';gedraaid++}
+        const tekst=(r.tekst||'').replace(/[ \t]+/g,' ').trim().slice(0,20000);
+        DB.update('scans',s.id,{...DB.get('scans',s.id),...extra,tekst,datum:s.datum||scanDatumUit(tekst)});
+        if(currentBeheerTab==='scans')renderScans();
+      }catch(e){}
+    }
+  }finally{SCAN.ocrBezig=false;zet('')}
+  toast(gedraaid+' van de '+n+' bonnen rechtop gezet','success');
+}
 function renderScans(){
   if(currentBeheerTab!=='scans'){const b=$('scanSelBalk');if(b)b.remove()}
   if(CONFIG.MODE==='supabase'&&!SCAN.bezig&&Date.now()-SCAN.laatstOpgehaald>120000){setTimeout(()=>scansOphalen(true),50)}
@@ -3230,7 +3251,7 @@ function renderScans(){
    <p style="font-size:13px;color:#5a655e;margin:0 0 6px">Scan op de printer naar <strong>${esc(scanAdres)}</strong>. De scans komen hier binnen; kies voor wie ze zijn, dan leert de app het vanzelf.</p>
    ${SCAN.fout?`<p style="font-size:13px;color:#b42318;margin:0 0 10px">${esc(SCAN.fout)}</p>`:''}
    <p style="font-size:13px;color:#5a655e;margin:0 0 6px">Je kunt veel bonnen achter elkaar in één pdf scannen: de app knipt ze in losse bonnen en slaat lege pagina's over.</p>
-   <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin:10px 0 0"><label style="display:inline-flex;gap:8px;align-items:center;font-size:14px;cursor:pointer"><input type="checkbox" id="scAuto" ${scanModel().auto?'checked':''} style="width:18px;height:18px;min-height:auto"> Zelf sorteren als de app zeker is</label><span id="scVoortgang" style="font-size:13px;color:#245a39;font-weight:500">${esc(SCAN.voortgang||'')}</span></div>
+   <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin:10px 0 0"><label style="display:inline-flex;gap:8px;align-items:center;font-size:14px;cursor:pointer"><input type="checkbox" id="scAuto" ${scanModel().auto?'checked':''} style="width:18px;height:18px;min-height:auto"> Zelf sorteren als de app zeker is</label><button type="button" id="scRechtop" class="zk-knop" style="min-height:36px;font-size:13px" title="Alle bonnen nalopen en verkeerd liggende bonnen draaien">Bonnen rechtop zetten</button><span id="scVoortgang" style="font-size:13px;color:#245a39;font-weight:500">${esc(SCAN.voortgang||'')}</span></div>
    <datalist id="scKlanten">${klantNamen.map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>
    <div style="display:flex;gap:8px;margin:14px 0">${[['nieuw','Te sorteren ('+nieuw.length+')'],['gesorteerd','Gesorteerd']].map(([k,l])=>`<button type="button" data-sctab="${k}" class="${SCAN.tab===k?'zk-hoofd':'zk-knop'}">${l}</button>`).join('')}
     ${SCAN.tab==='gesorteerd'?`<select id="scKlant" class="zk-invoer" style="margin-left:auto"><option value="">Alle klanten</option><option value="_auto"${SCAN.klant==='_auto'?' selected':''}>Automatisch gesorteerd (nakijken)</option>${[...new Map(alle.filter(s=>s.status==='gesorteerd').map(s=>[scanKlantKey(s),s.klantNaam])).entries()].sort((a,b)=>String(a[1]).localeCompare(String(b[1]))).map(([k,n])=>`<option value="${esc(k)}"${k===SCAN.klant?' selected':''}>${esc(n)}</option>`).join('')}</select>`:''}</div>
@@ -3245,6 +3266,9 @@ function renderScans(){
   document.querySelectorAll('[data-scanzet]').forEach(b=>b.onclick=()=>{const v=(document.querySelector('[data-scanklant="'+b.dataset.scanzet+'"]')||{}).value||'';if(!v.trim()){toast('Typ of kies een klant','error');return}zet(b.dataset.scanzet,'',v.trim())});
   document.querySelectorAll('[data-scandatum]').forEach(i=>i.onchange=()=>{const s=DB.get('scans',i.dataset.scandatum);if(s)DB.update('scans',s.id,{...s,datum:i.value||null})});
   document.querySelectorAll('[data-scannee]').forEach(b=>b.onclick=()=>{const s=DB.get('scans',b.dataset.scannee);if(s){DB.update('scans',s.id,{...s,status:'genegeerd'});renderScans()}});
+  if($('scRechtop'))$('scRechtop').onclick=()=>{const ids=(SCAN.sel.size?[...SCAN.sel]:DB.list('scans').map(x=>x.id));const n=ids.map(id=>DB.get('scans',id)).filter(x=>x&&['nieuw','gesorteerd'].includes(x.status)&&!/pdf/.test(x.type||'')).length;
+    if(!n){toast('Geen bonnen om te controleren','error');return}
+    if(confirm((SCAN.sel.size?'De '+n+' geselecteerde':'Alle '+n)+' bonnen nalopen en rechtop zetten waar nodig? Dat duurt een paar seconden per bon; laat dit tabblad open.'))scansRechtop(ids)};
   if($('scAuto'))$('scAuto').onchange=e=>{const m=scanModel();m.auto=e.target.checked;bewaarScanModel(m);if(m.auto){DB.list('scans').filter(x=>x.status==='nieuw'&&x.tekst!=null).forEach(scanAutoSorteer)}renderScans()};
   document.querySelectorAll('[data-scanklopt]').forEach(b=>b.onclick=()=>{const s=DB.get('scans',b.dataset.scanklopt);if(!s)return;const n={...s,notitie:null};DB.update('scans',s.id,n);scanLeer(n);renderScans()});
   document.querySelectorAll('[data-scanterug]').forEach(b=>b.onclick=()=>{const s=DB.get('scans',b.dataset.scanterug);if(s){DB.update('scans',s.id,{...s,status:'nieuw'});SCAN.tab='nieuw';renderScans()}});
