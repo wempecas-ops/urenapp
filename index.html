@@ -3105,12 +3105,17 @@ async function scanGroot(id){
     const s=DB.get('scans',lijst[pos]);if(!s)return;
     m.innerHTML=`<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:#fff"><strong style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.bestandsnaam||'scan')}${s.klantNaam?' · '+esc(s.klantNaam):''}</strong><span style="font-size:13px;opacity:.75">${pos+1} / ${lijst.length}</span>
       <button type="button" id="sgVorige" style="min-height:40px;padding:0 14px;border-radius:10px;border:1px solid #556;background:transparent;color:#fff" ${pos?'':'disabled'} aria-label="Vorige bon">‹</button><button type="button" id="sgVolgende" style="min-height:40px;padding:0 14px;border-radius:10px;border:1px solid #556;background:transparent;color:#fff" ${pos<lijst.length-1?'':'disabled'} aria-label="Volgende bon">›</button>
-       <button type="button" id="sgDraai" style="min-height:40px;padding:0 14px;border-radius:10px;border:1px solid #556;background:transparent;color:#fff" title="Kwartslag met de klok mee draaien en opslaan">Draaien ↻</button><button type="button" id="sgOrigineel" style="min-height:40px;padding:0 14px;border-radius:10px;border:1px solid #556;background:transparent;color:#fff">Origineel</button><button type="button" id="sgSluit" style="min-height:40px;padding:0 14px;border-radius:10px;border:0;background:#fff;color:#111;font-weight:600">Sluiten</button></div>
+       <button type="button" id="sgWeg" style="min-height:40px;padding:0 14px;border-radius:10px;border:1px solid #7a3b35;background:transparent;color:#ffb4ab">Verwijderen</button><button type="button" id="sgDraai" style="min-height:40px;padding:0 14px;border-radius:10px;border:1px solid #556;background:transparent;color:#fff" title="Kwartslag met de klok mee draaien en opslaan">Draaien ↻</button><button type="button" id="sgOrigineel" style="min-height:40px;padding:0 14px;border-radius:10px;border:1px solid #556;background:transparent;color:#fff">Origineel</button><button type="button" id="sgSluit" style="min-height:40px;padding:0 14px;border-radius:10px;border:0;background:#fff;color:#111;font-weight:600">Sluiten</button></div>
       <div id="sgVak" style="flex:1;overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:0 14px 14px"><p style="color:#fff">Laden…</p></div>`;
     m.querySelector('#sgSluit').onclick=()=>{m.remove();document.removeEventListener('keydown',toets)};
     m.querySelector('#sgVorige').onclick=()=>{if(pos>0){pos--;toon()}};
     m.querySelector('#sgVolgende').onclick=()=>{if(pos<lijst.length-1){pos++;toon()}};
     m.querySelector('#sgOrigineel').onclick=async()=>{try{window.open(await fotoUrl(s.pad),'_blank','noopener')}catch(e){}};
+    m.querySelector('#sgWeg').onclick=async()=>{
+      if(!await scansVerwijderen([s.id]))return;
+      lijst.splice(pos,1);if(!lijst.length){m.remove();document.removeEventListener('keydown',toets);return}
+      if(pos>=lijst.length)pos=lijst.length-1;toon();
+    };
     m.querySelector('#sgDraai').onclick=async()=>{
       const k=m.querySelector('#sgDraai');k.disabled=true;k.textContent='Draaien…';
       try{const pag=await scanNaarAfbeeldingen(s);if(pag.length>1&&!confirm('Deze bon heeft '+pag.length+" pagina's. Alleen de eerste pagina wordt gedraaid en bewaard. Doorgaan?")){k.disabled=false;k.textContent='Draaien ↻';return}
@@ -3193,6 +3198,21 @@ function openScanBundel(ids){
     };
   };
   teken();document.body.appendChild(m);
+}
+// Bonnen verwijderen (regel + bestand). Een kopie die al bij een factuur zit, blijft daar gewoon staan.
+async function scansVerwijderen(ids){
+  const lijst=ids.map(id=>DB.get('scans',id)).filter(Boolean);if(!lijst.length)return false;
+  const opFactuur=lijst.filter(x=>x.factuurId).length;
+  if(!confirm((lijst.length===1?'Deze bon':lijst.length+' bonnen')+' definitief verwijderen?'+(opFactuur?'\n\n'+opFactuur+' daarvan zit(ten) al bij een factuur; die kopie blijft bij de factuur staan.':'')+'\n\nDit kan niet ongedaan worden gemaakt.'))return false;
+  for(const s of lijst){
+    if(s.pad&&CONFIG.MODE==='supabase'){try{await opslagVerwijder([s.pad])}catch(e){}}
+    // samengevoegd document: de losse pagina's die erin zitten ook opruimen
+    DB.list('scans').filter(x=>x.status==='samengevoegd'&&x.notitie==='in '+s.id).forEach(x=>{if(x.pad&&CONFIG.MODE==='supabase')opslagVerwijder([x.pad]).catch(()=>{});DB.remove('scans',x.id)});
+    DB.remove('scans',s.id);SCAN.sel.delete(s.id);delete SCAN.thumbs[s.id];
+  }
+  toast((lijst.length===1?'Bon':lijst.length+' bonnen')+' verwijderd','success');
+  if(currentBeheerTab==='scans')renderScans();
+  return true;
 }
 // Bestaande bonnen (foto's) nalopen: liggen ze verkeerd, dan rechtop zetten en de tekst opnieuw lezen
 async function scansRechtop(ids){
@@ -3278,9 +3298,10 @@ function renderScans(){
   const oud=$('scanSelBalk');if(oud)oud.remove();
   [...SCAN.sel].forEach(id=>{const x=DB.get('scans',id);if(!x||!['nieuw','gesorteerd'].includes(x.status))SCAN.sel.delete(id)});
   if(SCAN.sel.size){const bk=document.createElement('div');bk.id='scanSelBalk';bk.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:25;background:#101513;color:#fff;border-radius:14px;padding:10px 12px 10px 18px;display:flex;gap:10px;align-items:center;box-shadow:0 12px 30px rgba(0,0,0,.3);max-width:calc(100vw - 32px);flex-wrap:wrap';
-    bk.innerHTML='<span style="font-size:14px"><strong>'+SCAN.sel.size+'</strong> geselecteerd</span><button type="button" id="ssBundel" style="min-height:42px;padding:0 16px;border-radius:10px;border:0;background:#2f6b45;color:#fff;font-weight:600">'+(SCAN.sel.size>1?'Samenvoegen en koppelen…':'Koppelen aan klant…')+'</button><button type="button" id="ssLeeg" style="min-height:42px;padding:0 14px;border-radius:10px;border:1px solid #556;background:transparent;color:#fff">Wissen</button>';
+    bk.innerHTML='<span style="font-size:14px"><strong>'+SCAN.sel.size+'</strong> geselecteerd</span><button type="button" id="ssBundel" style="min-height:42px;padding:0 16px;border-radius:10px;border:0;background:#2f6b45;color:#fff;font-weight:600">'+(SCAN.sel.size>1?'Samenvoegen en koppelen…':'Koppelen aan klant…')+'</button><button type="button" id="ssWeg" style="min-height:42px;padding:0 14px;border-radius:10px;border:1px solid #7a3b35;background:transparent;color:#ffb4ab">Verwijderen</button><button type="button" id="ssLeeg" style="min-height:42px;padding:0 14px;border-radius:10px;border:1px solid #556;background:transparent;color:#fff">Wissen</button>';
     document.body.appendChild(bk);
     bk.querySelector('#ssLeeg').onclick=()=>{SCAN.sel.clear();renderScans()};
+    bk.querySelector('#ssWeg').onclick=()=>scansVerwijderen([...SCAN.sel]);
     bk.querySelector('#ssBundel').onclick=()=>openScanBundel([...SCAN.sel]);}
   setTimeout(vulVoorbeelden,30);
   if(DB.list('scans').some(x=>x.tekst==null&&x.status!=='genegeerd'))setTimeout(scansTekstAanvullen,100);
