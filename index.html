@@ -720,6 +720,7 @@ function renderInvoer(){
         const oud=DB.get('dagstaten',ds.editId);
         if(!oud){toast('Deze dagstaat bestaat niet meer','error');localStorage.removeItem('uren_concept');renderInvoer();return}
         if(oud.status==='verwerkt'){toast('Deze dag is al verwerkt en kan niet meer gewijzigd worden','error');return}
+        if(oud.status==='goedgekeurd'&&isMedewerker()){toast('Deze dag is al goedgekeurd. Vraag de beheerder als er iets moet veranderen.','error');return}
         if(oud.status==='goedgekeurd'&&!confirm('Deze werkdag was al goedgekeurd. Na je wijziging moet de beheerder hem opnieuw goedkeuren. Doorgaan?'))return;
         DB.update('dagstaten',ds.editId,{...oud,datum,startTime:st,endTime:et,pauzeMin:pauze,vertrek:vertrek||null,nettoUren:Math.round(nettoDag*100)/100,status:'in_afwachting',klussen:klussen.map(k=>({...k}))});
         localStorage.removeItem('uren_concept');
@@ -776,7 +777,7 @@ function renderDagKaart(d){
   const statusLabel=d.status==='in_afwachting'?'In afwachting':d.status==='goedgekeurd'?'Goedgekeurd':'Verwerkt';
   return`<div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 border border-gray-100 dark:border-gray-700"><div class="flex justify-between items-center"><div><span class="font-semibold">${esc(d.medewerkerNaam)}</span> <span class="text-gray-400 text-sm">${datumMetDag(d.datum)}</span></div><span class="badge ${badgeClass}">${statusLabel}</span></div>
   <div class="mt-2 text-sm text-gray-600 dark:text-gray-300">${d.startTime} – ${d.endTime} · pauze ${d.pauzeMin}m · <strong>${fmtNum(d.nettoUren)}u netto</strong> · ${totalKlussen} klus${totalKlussen!==1?'sen':''}${d.vertrek?' · vertrek: '+esc(d.vertrek):''}</div>
-  <div class="flex items-center gap-4 mt-1"><button class="muToggle text-xs text-emerald-600 dark:text-emerald-400 font-medium min-h-[44px]" data-dag-id="${d.id}">Bekijk details</button>${isMedewerker()?(d.status==='verwerkt'?'<span class="text-xs text-gray-400">Verwerkt, niet meer te wijzigen</span>':`<button class="muEdit text-xs text-blue-600 dark:text-blue-400 font-medium min-h-[44px]" data-wijzig-id="${d.id}">Wijzigen</button>`):''}</div>
+  <div class="flex items-center gap-4 mt-1"><button class="muToggle text-xs text-emerald-600 dark:text-emerald-400 font-medium min-h-[44px]" data-dag-id="${d.id}">Bekijk details</button>${isMedewerker()?(d.status!=='in_afwachting'?'<span class="text-xs text-gray-400">'+(d.status==='verwerkt'?'Verwerkt':'Goedgekeurd')+', niet meer te wijzigen</span>':`<button class="muEdit text-xs text-blue-600 dark:text-blue-400 font-medium min-h-[44px]" data-wijzig-id="${d.id}">Wijzigen</button>`):''}</div>
   <div id="muDet_${d.id}" class="hidden mt-3 space-y-2 border-t border-gray-100 dark:border-gray-700 pt-3">${d.klussen.map(k=>{const kd=DB.get('klanten',k.klantId);const dd=DB.get('diensten',k.dienstId);return`<div class="text-sm bg-gray-50 dark:bg-gray-700 rounded-lg p-2"><div class="font-medium text-gray-800 dark:text-gray-100">${kd?esc(kd.naam):'Onbekend'}</div>${kd&&klantAdres(kd)?`<div class="text-xs text-gray-500 dark:text-gray-400">${esc(klantAdres(kd))}</div>`:''}<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">${dd?esc(dd.naam):'Onbekend'} · ${esc(k.kenteken||'—')} · ${esc(k.omschrijving||'—')} · ${klusTijdTekst(k)?esc(klusTijdTekst(k))+' · ':''}${k.aantal} ${esc(k.eenheid||'uur')}</div>${k.wegenMonsteren?'<div class="text-xs mt-1"><span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-medium">Wegen monsteren</span></div>':''}${fotoKnop(k)?'<div class="mt-1">'+fotoKnop(k)+'</div>':''}</div>`}).join('')}</div></div>`;
 }
 
@@ -4636,6 +4637,12 @@ function renderExports(){
    <p style="font-size:13px;color:#5a655e;margin:0 0 12px">Eén zip-bestand voor op je eigen computer of een usb-stick: alle gegevens, alle foto's en bijlagen, en elke definitieve factuur als pdf. Handig om bijvoorbeeld eens per maand te doen. (Daarnaast maakt de app elke nacht zelf een back-up in de database, ook van de foto's en bijlagen.)</p>
    <button id="btnVolledigeBackup" class="zk-hoofd">Back-up downloaden (zip)</button>
   </div>
+  ${(()=>{const st=(DB.get('instellingen','backup_status')||{}).waarde;const c=st&&st.controle;const m=st&&st.mail;
+   return `<div class="zk-kaart" style="padding:18px 20px">
+   <div style="font-size:15px;font-weight:600;margin-bottom:4px">Automatische back-up</div>
+   <p style="font-size:13px;color:#5a655e;margin:0 0 10px">Elke nacht een back-up in Supabase, die meteen wordt teruggelezen en gecontroleerd. Elke zondagnacht gaat er ook een kopie naar je Gmail, zodat er altijd een exemplaar buiten Supabase is.</p>
+   <div id="bkStatus" style="font-size:13px;margin-bottom:12px">${st?`Laatste: <strong>${esc(tijdKort(st.op))}</strong> · ${c&&c.ok?`<span style="color:#245a39">gecontroleerd, ${c.rijen} regels in orde</span>`:`<span style="color:#b42318">controle mislukt${c&&(c.fout||(c.verschil||[]).join(', '))?': '+esc(c.fout||c.verschil.join(', ')):''}</span>`}${m?(m.ok?' · <span style="color:#245a39">kopie gemaild</span>':' · <span style="color:#b42318">mailen mislukt: '+esc(m.fout||'')+'</span>'):''}`:'<span style="color:#5a655e">Nog geen uitslag bekend (verschijnt na de eerstvolgende nacht).</span>'}</div>
+   <button id="btnBackupMail" class="zk-knop">Nu back-up maken en mailen</button></div>`})()}
   <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-6 text-center">
   <p class="text-sm text-gray-500 mb-2">JSON backup importeren</p>
   <label class="inline-block px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl cursor-pointer min-h-[48px] flex items-center gap-2"><span>Kies bestand</span><input type="file" id="importJSON" accept=".json" class="hidden"></label>
@@ -4643,6 +4650,14 @@ function renderExports(){
   </div></div>`;
   $('btnExportCSV').onclick=()=>exportCSV(dagstaten,werknemers,klanten,diensten);
   if($('btnVolledigeBackup'))$('btnVolledigeBackup').onclick=e=>downloadVolledigeBackup(e.currentTarget);
+  if($('btnBackupMail'))$('btnBackupMail').onclick=async e=>{const k=e.currentTarget;if(CONFIG.MODE!=='supabase'){toast('Alleen in de echte omgeving','error');return}
+    k.disabled=true;k.textContent='Bezig… (tot een minuut)';
+    try{await zorgVoorToken();const r=await fetch('/api/backup?mail=1',{method:'POST',headers:{Authorization:'Bearer '+AUTH_TOKEN}});let j={};try{j=await r.json()}catch(x){}
+      if(!r.ok)throw new Error(j.error||('Fout '+r.status));
+      const nu={id:'backup_status',waarde:{op:new Date().toISOString(),bestand:j.bestand,controle:j.controle,mail:j.mail}};
+      if(DB.get('instellingen','backup_status'))CACHE.instellingen=CACHE.instellingen.map(x=>x.id==='backup_status'?nu:x);else (CACHE.instellingen=CACHE.instellingen||[]).push(nu);
+      toast(j.mail&&j.mail.ok?'Back-up gemaakt, gecontroleerd en gemaild':'Back-up gemaakt'+(j.mail&&!j.mail.ok?', maar mailen mislukt: '+j.mail.fout:''),j.mail&&j.mail.ok?'success':'error');renderExports()}
+    catch(x){toast('Back-up mislukt: '+x.message,'error');k.disabled=false;k.textContent='Nu back-up maken en mailen'}};
   $('btnExportJSON').onclick=()=>exportJSON();
   $('importJSON').onchange=e=>importJSON(e);
 }
@@ -4885,7 +4900,10 @@ async function laadAlles(){
   for (const t of TABELLEN) {
     let alles = [], van = 0;
     for (;;) {
-      const rijen = await sbREST('/rest/v1/' + t + '?select=*&order=id.asc&limit=1000&offset=' + van);
+      // Medewerkers krijgen van klanten alleen naam en plaats (geen e-mail, telefoon of btw-nummer)
+      const rijen = (t === 'klanten' && !isBeheer())
+        ? (van ? [] : await sbREST('/rest/v1/rpc/klanten_basis', { method: 'POST', body: {} }))
+        : await sbREST('/rest/v1/' + t + '?select=*&order=id.asc&limit=1000&offset=' + van);
       if (!Array.isArray(rijen)) break;
       alles = alles.concat(rijen);
       if (rijen.length < 1000) break;
