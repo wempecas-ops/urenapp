@@ -2961,18 +2961,52 @@ function scanDatumUit(tekst){
 // Tekst lezen: pdf-tekst, anders OCR (Tesseract, wordt bij eerste gebruik geladen)
 let OCR_KLAAR=null;
 function ocrKlaarmaken(){if(!OCR_KLAAR)OCR_KLAAR=(async()=>{if(!window.Tesseract)await laadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');return window.Tesseract})().catch(e=>{OCR_KLAAR=null;throw e});return OCR_KLAAR}
+// Canvas draaien (90/180/270 graden met de klok mee)
+function draaiCanvas(c,graden){
+  const d=((graden%360)+360)%360;if(!d)return c;
+  const n=document.createElement('canvas');const kw=d===90||d===270;n.width=kw?c.height:c.width;n.height=kw?c.width:c.height;
+  const x=n.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,n.width,n.height);x.translate(n.width/2,n.height/2);x.rotate(d*Math.PI/180);x.drawImage(c,-c.width/2,-c.height/2);return n;
+}
+// Tekst lezen in de stand waarin de bon het best leesbaar is (rechtop, ondersteboven of op zijn kant)
+async function ocrBesteRichting(c){
+  const T=await ocrKlaarmaken();
+  let best={graden:0,canvas:c,r:await T.recognize(c,'nld')};
+  if(best.r.data.confidence<65){
+    for(const g of [180,90,270]){
+      const rc=draaiCanvas(c,g);const r=await T.recognize(rc,'nld');
+      if(r.data.confidence>best.r.data.confidence+8)best={graden:g,canvas:rc,r};
+      if(best.r.data.confidence>=75)break;
+    }
+  }
+  return {tekst:best.r.data.text||'',graden:best.graden,canvas:best.canvas};
+}
+async function blobNaarCanvas(blob){
+  const url=URL.createObjectURL(blob);
+  try{const img=await new Promise((ok,f)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=f;i.src=url});const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0);return c}
+  finally{URL.revokeObjectURL(url)}
+}
+// Geeft {tekst, gedraaid: canvas|null}. gedraaid is gezet als de bon gedraaid moet worden opgeslagen.
 async function scanTekstLezen(scan){
   const url=await fotoUrl(scan.pad);const blob=await (await fetch(url)).blob();
-  let tekst='';
+  let tekst='',gedraaid=null;
   if(/pdf/.test(scan.type||'')||/\.pdf$/i.test(scan.bestandsnaam||'')){
     const lib=await pdfjsKlaarmaken();const doc=await lib.getDocument({data:new Uint8Array(await blob.arrayBuffer()),isEvalSupported:false}).promise;
     for(let i=1;i<=Math.min(doc.numPages,4);i++){const tc=await (await doc.getPage(i)).getTextContent();tekst+=tc.items.map(x=>x.str).join(' ')+'\n'}
-    if(tekst.replace(/\s/g,'').length<40){                 // gescande pdf zonder tekstlaag: eerste pagina's als plaatje lezen
-      const T=await ocrKlaarmaken();tekst='';
-      for(let i=1;i<=Math.min(doc.numPages,2);i++){const pg=await doc.getPage(i);const vp=pg.getViewport({scale:2});const c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;await pg.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;const r=await T.recognize(c,'nld');tekst+=r.data.text+'\n'}
+    if(tekst.replace(/\s/g,'').length<40){                 // gescande pdf zonder tekstlaag: als plaatje lezen
+      tekst='';
+      const pg=await doc.getPage(1);const vp=pg.getViewport({scale:2});const c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;const cx=c.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,c.width,c.height);await pg.render({canvasContext:cx,viewport:vp}).promise;
+      const r=await ocrBesteRichting(c);tekst=r.tekst;if(r.graden&&doc.numPages===1)gedraaid=r.canvas;
     }
-  }else{const T=await ocrKlaarmaken();const r=await T.recognize(blob,'nld');tekst=r.data.text}
-  return tekst.replace(/[ \t]+/g,' ').trim().slice(0,20000);
+  }else{const r=await ocrBesteRichting(await blobNaarCanvas(blob));tekst=r.tekst;if(r.graden)gedraaid=r.canvas}
+  return {tekst:tekst.replace(/[ \t]+/g,' ').trim().slice(0,20000),gedraaid};
+}
+// Gedraaide versie opslaan als jpg en de scan daarnaar laten wijzen
+async function scanVervangDoorCanvas(s,c){
+  const blob=await new Promise(ok=>c.toBlob(ok,'image/jpeg',0.85));
+  const naam=(s.bestandsnaam||'scan').replace(/\.(pdf|jpe?g|png|tiff?)$/i,'')+'.jpg';
+  const pad=await opslagUpload('scans/'+String(s.ontvangenOp||today()).slice(0,7)+'/'+uid()+'-'+veiligBestand(naam),blob,'image/jpeg');
+  delete SCAN.thumbs[s.id];
+  return {pad,type:'image/jpeg',bestandsnaam:naam,grootte:blob.size};
 }
 async function scansOphalen(stil){
   if(CONFIG.MODE!=='supabase')return;
@@ -3004,8 +3038,9 @@ async function scanSplitsen(s,doc,voortgang){
     const cx=c.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,c.width,c.height);await pg.render({canvasContext:cx,viewport:vp}).promise;
     if(canvasLeeg(c))continue;
     let tekst='';try{const tc=await pg.getTextContent();tekst=tc.items.map(x=>x.str).join(' ')}catch(e){}
-    if(tekst.replace(/\s/g,'').length<40&&T){try{tekst=(await T.recognize(c,'nld')).data.text}catch(e){}}
-    const blob=await new Promise(ok=>c.toBlob(ok,'image/jpeg',0.82));
+    let opslaan=c;
+    if(tekst.replace(/\s/g,'').length<40&&T){try{const r=await ocrBesteRichting(c);tekst=r.tekst;opslaan=r.canvas}catch(e){}}
+    const blob=await new Promise(ok=>opslaan.toBlob(ok,'image/jpeg',0.82));
     const id=uid(),naam=basis+' - p'+i+'.jpg';
     const pad=await opslagUpload('scans/'+String(s.ontvangenOp||today()).slice(0,7)+'/'+id+'-'+veiligBestand(naam),blob,'image/jpeg');
     const nieuw=DB.insert('scans',{id,messageId:(s.messageId||s.id)+'#p'+i,ontvangenOp:s.ontvangenOp,afzender:s.afzender,onderwerp:s.onderwerp,bestandsnaam:naam,pad,type:'image/jpeg',grootte:blob.size,tekst:tekst.replace(/[ \t]+/g,' ').trim().slice(0,20000),datum:scanDatumUit(tekst),status:'nieuw'});
@@ -3036,9 +3071,10 @@ async function scansTekstAanvullen(){
         try{const url=await fotoUrl(s.pad);const lib=await pdfjsKlaarmaken();const doc=await lib.getDocument({data:new Uint8Array(await (await fetch(url)).arrayBuffer()),isEvalSupported:false}).promise;
           if(doc.numPages>1){await scanSplitsen(s,doc,t=>zet('Scan '+nr+' van '+tot+': '+t));if(currentBeheerTab==='scans')renderScans();continue}}catch(e){}
       }
-      let tekst='';try{tekst=await scanTekstLezen(s)}catch(e){tekst=''}
+      let tekst='',extra={};
+      try{const r=await scanTekstLezen(s);tekst=r.tekst;if(r.gedraaid){try{extra=await scanVervangDoorCanvas(s,r.gedraaid);extra.notitie='automatisch gedraaid'}catch(e){}}}catch(e){tekst=''}
       const datum=s.datum||scanDatumUit(tekst);
-      const nieuw={...DB.get('scans',s.id),tekst,datum};DB.update('scans',s.id,nieuw);scanAutoSorteer(nieuw);
+      const nieuw={...DB.get('scans',s.id),...extra,tekst,datum};DB.update('scans',s.id,nieuw);scanAutoSorteer(nieuw);
       if(currentBeheerTab==='scans')renderScans();
     }
   }finally{SCAN.ocrBezig=false;zet('')}
@@ -3069,12 +3105,20 @@ async function scanGroot(id){
     const s=DB.get('scans',lijst[pos]);if(!s)return;
     m.innerHTML=`<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:#fff"><strong style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.bestandsnaam||'scan')}${s.klantNaam?' · '+esc(s.klantNaam):''}</strong><span style="font-size:13px;opacity:.75">${pos+1} / ${lijst.length}</span>
       <button type="button" id="sgVorige" style="min-height:40px;padding:0 14px;border-radius:10px;border:1px solid #556;background:transparent;color:#fff" ${pos?'':'disabled'} aria-label="Vorige bon">‹</button><button type="button" id="sgVolgende" style="min-height:40px;padding:0 14px;border-radius:10px;border:1px solid #556;background:transparent;color:#fff" ${pos<lijst.length-1?'':'disabled'} aria-label="Volgende bon">›</button>
-      <button type="button" id="sgOrigineel" style="min-height:40px;padding:0 14px;border-radius:10px;border:1px solid #556;background:transparent;color:#fff">Origineel</button><button type="button" id="sgSluit" style="min-height:40px;padding:0 14px;border-radius:10px;border:0;background:#fff;color:#111;font-weight:600">Sluiten</button></div>
+       <button type="button" id="sgDraai" style="min-height:40px;padding:0 14px;border-radius:10px;border:1px solid #556;background:transparent;color:#fff" title="Kwartslag met de klok mee draaien en opslaan">Draaien ↻</button><button type="button" id="sgOrigineel" style="min-height:40px;padding:0 14px;border-radius:10px;border:1px solid #556;background:transparent;color:#fff">Origineel</button><button type="button" id="sgSluit" style="min-height:40px;padding:0 14px;border-radius:10px;border:0;background:#fff;color:#111;font-weight:600">Sluiten</button></div>
       <div id="sgVak" style="flex:1;overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:0 14px 14px"><p style="color:#fff">Laden…</p></div>`;
     m.querySelector('#sgSluit').onclick=()=>{m.remove();document.removeEventListener('keydown',toets)};
     m.querySelector('#sgVorige').onclick=()=>{if(pos>0){pos--;toon()}};
     m.querySelector('#sgVolgende').onclick=()=>{if(pos<lijst.length-1){pos++;toon()}};
     m.querySelector('#sgOrigineel').onclick=async()=>{try{window.open(await fotoUrl(s.pad),'_blank','noopener')}catch(e){}};
+    m.querySelector('#sgDraai').onclick=async()=>{
+      const k=m.querySelector('#sgDraai');k.disabled=true;k.textContent='Draaien…';
+      try{const pag=await scanNaarAfbeeldingen(s);if(pag.length>1&&!confirm('Deze bon heeft '+pag.length+" pagina's. Alleen de eerste pagina wordt gedraaid en bewaard. Doorgaan?")){k.disabled=false;k.textContent='Draaien ↻';return}
+        const c=await blobNaarCanvas(await (await fetch(pag[0].src)).blob());
+        const extra=await scanVervangDoorCanvas(s,draaiCanvas(c,90));DB.update('scans',s.id,{...DB.get('scans',s.id),...extra});toon();
+        if(currentBeheerTab==='scans')renderScans();
+      }catch(e){toast('Draaien mislukt: '+e.message,'error');k.disabled=false;k.textContent='Draaien ↻'}
+    };
     const vak=m.querySelector('#sgVak');
     try{
       let src;
