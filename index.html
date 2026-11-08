@@ -3205,9 +3205,9 @@ async function scansVerwijderen(ids){
   const opFactuur=lijst.filter(x=>x.factuurId).length;
   if(!confirm((lijst.length===1?'Deze bon':lijst.length+' bonnen')+' definitief verwijderen?'+(opFactuur?'\n\n'+opFactuur+' daarvan zit(ten) al bij een factuur; die kopie blijft bij de factuur staan.':'')+'\n\nDit kan niet ongedaan worden gemaakt.'))return false;
   for(const s of lijst){
-    if(s.pad&&CONFIG.MODE==='supabase'){try{await opslagVerwijder([s.pad])}catch(e){}}
+    if(s.pad&&CONFIG.MODE==='supabase'){try{await opslagVerwijder(s.pad)}catch(e){}}
     // samengevoegd document: de losse pagina's die erin zitten ook opruimen
-    DB.list('scans').filter(x=>x.status==='samengevoegd'&&x.notitie==='in '+s.id).forEach(x=>{if(x.pad&&CONFIG.MODE==='supabase')opslagVerwijder([x.pad]).catch(()=>{});DB.remove('scans',x.id)});
+    DB.list('scans').filter(x=>x.status==='samengevoegd'&&x.notitie==='in '+s.id).forEach(x=>{if(x.pad&&CONFIG.MODE==='supabase')opslagVerwijder(x.pad).catch(()=>{});DB.remove('scans',x.id)});
     DB.remove('scans',s.id);SCAN.sel.delete(s.id);delete SCAN.thumbs[s.id];
   }
   toast((lijst.length===1?'Bon':lijst.length+' bonnen')+' verwijderd','success');
