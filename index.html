@@ -3103,26 +3103,35 @@ async function vulVoorbeelden(){
   if(nieuweHash&&currentBeheerTab==='scans'&&!document.querySelector('#scanGroot,#scanSorteer,#scanBundel')&&DB.list('scans').some(x=>scanDubbel(x)))renderScans();
 }
 // Zweefvoorbeeld: muis op een plaatje = de bon meteen groot ernaast, zonder klikken
-const ZWEEF={id:null,timer:null,scherp:{}};
+const ZWEEF={id:null,timer:null,scherp:{},fractie:0};
+// muis bovenaan het plaatje = bovenkant van de bon, onderaan = onderkant
+function zweefSchuif(){const e=document.getElementById('scanZweef');const i=e&&e.querySelector('img');if(!i)return;
+  const over=i.offsetHeight-e.clientHeight;i.style.transform=over>0?'translateY('+(-over*ZWEEF.fractie)+'px)':'';
+  if(over<=0){i.style.marginTop=Math.max(0,(e.clientHeight-i.offsetHeight)/2)+'px'}}
 function zweefWeg(){clearTimeout(ZWEEF.timer);ZWEEF.id=null;const e=document.getElementById('scanZweef');if(e)e.remove()}
 function zweefToon(id,muisX){
   const s=DB.get('scans',id);const klein=SCAN.thumbs[id];if(!s||!klein)return;
   let e=document.getElementById('scanZweef');
   if(!e){e=document.createElement('div');e.id='scanZweef';document.body.appendChild(e)}
-  const links=muisX>window.innerWidth/2;   // toon aan de kant waar de muis niet is
-  e.style.cssText='position:fixed;top:2vh;height:96vh;width:min(46vw,760px);'+(links?'left:2vw':'right:2vw')+';z-index:35;pointer-events:none;display:flex;align-items:center;justify-content:center';
+  // zo groot mogelijk: alle ruimte aan de kant van het scherm waar de muis niet is
+  const W=window.innerWidth,marge=16,links=muisX>W/2;
+  const breed=Math.max(320,links?muisX-48-marge:W-muisX-48-marge);
+  e.style.cssText='position:fixed;top:1vh;height:98vh;width:'+breed+'px;'+(links?'left:'+marge+'px':'right:'+marge+'px')+';z-index:35;pointer-events:none;overflow:hidden;border-radius:8px;box-shadow:0 12px 50px rgba(0,0,0,.45);border:1px solid #cfd5cc;background:#fff';
   const scherp=ZWEEF.scherp[id];
-  e.innerHTML='<img alt="" src="'+(scherp||klein.src)+'" style="max-width:100%;max-height:100%;background:#fff;border-radius:8px;box-shadow:0 12px 50px rgba(0,0,0,.45);border:1px solid #cfd5cc">';
+  // op volle breedte, zodat de tekst leesbaar is; is de bon hoger dan het scherm, dan schuift hij mee met de muis
+  e.innerHTML='<img alt="" src="'+(scherp||klein.src)+'" style="display:block;width:100%;height:auto;will-change:transform" onload="zweefSchuif()">';
+  zweefSchuif();
   // pdf-voorbeelden zijn klein opgeslagen: scherpe versie erachteraan laden
   if(!scherp&&/^data:/.test(klein.src)){scanNaarAfbeeldingen(s).then(p=>{if(!p[0])return;ZWEEF.scherp[id]=p[0].src;const k=Object.keys(ZWEEF.scherp);if(k.length>12)delete ZWEEF.scherp[k[0]];
-    const nu=document.querySelector('#scanZweef img');if(ZWEEF.id===id&&nu)nu.src=p[0].src}).catch(()=>{})}
+    const nu=document.querySelector('#scanZweef img');if(ZWEEF.id===id&&nu){nu.onload=zweefSchuif;nu.src=p[0].src}}).catch(()=>{})}
 }
 if(window.matchMedia&&matchMedia('(hover:hover)').matches){
   document.addEventListener('mousemove',e=>{
     const el=e.target&&e.target.closest?e.target.closest('[data-scanzie],[data-tegel]'):null;
     const id=el?(el.dataset.scanzie||el.dataset.tegel):null;
     if(!id){if(ZWEEF.id||ZWEEF.timer)zweefWeg();return}
-    if(id===ZWEEF.id)return;
+    const r=el.getBoundingClientRect();ZWEEF.fractie=Math.min(1,Math.max(0,(e.clientY-r.top-r.height*0.1)/(r.height*0.8)));
+    if(id===ZWEEF.id){zweefSchuif();return}
     clearTimeout(ZWEEF.timer);ZWEEF.id=id;const x=e.clientX;
     const oud=document.getElementById('scanZweef');
     // eerste keer een korte wachttijd (niet flitsen bij langs bewegen); daarna direct wisselen
