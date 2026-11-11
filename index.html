@@ -210,6 +210,38 @@ CONFIG.MODE=(CONFIG.SUPABASE_URL&&CONFIG.SUPABASE_ANON_KEY)?'supabase':'local';
 // === HELPERS ===
 const $=id=>document.getElementById(id);
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+// Slim zoeken in klanten: negeert hoofdletters, puntjes en accenten, zoekt op begin van woorden,
+// midden in namen ("rooz" vindt "B.roozendaal") en vergeeft een tikfout ("rozendaal").
+// Volgorde: alfabetisch op naam; namen die alleen door een tikfout passen komen onderaan.
+const zoekNorm=v=>String(v||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9@]+/g,' ').trim();
+function tikAfstand(a,b,max){if(Math.abs(a.length-b.length)>max)return max+1;let v=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){const w=[i];let rij=i;for(let j=1;j<=b.length;j++){w[j]=Math.min(v[j]+1,w[j-1]+1,v[j-1]+(a[i-1]===b[j-1]?0:1));rij=Math.min(rij,w[j])}if(rij>max)return max+1;v=w}return v[b.length]}
+function klantenZoeken(lijst,q){
+  const abc=(a,b)=>String(a.naam||'').localeCompare(String(b.naam||''),'nl',{sensitivity:'base'});
+  const t=zoekNorm(q).split(' ').filter(Boolean);
+  if(!t.length)return lijst.slice().sort(abc);
+  const uit=[];
+  lijst.forEach(k=>{
+    const velden=[k.naam,k.contact,k.klantcode,k.plaats,k.adres,k.postcode,String(k.email||'').split('@')[0],k.kvk];
+    let tikfout=false;
+    for(const w of t){
+      let best=0;
+      for(const v of velden){
+        const n=zoekNorm(v);if(!n)continue;
+        const woorden=n.split(' '),plat=n.replace(/ /g,'');
+        let sc=0;
+        if(woorden.includes(w))sc=100;
+        else if(woorden.some(x=>x.startsWith(w)))sc=85;
+        else if(plat.includes(w))sc=65;
+        else if(w.length>=4){const max=w.length>=8?2:1;if(woorden.some(x=>tikAfstand(w,x,max)<=max||tikAfstand(w,x.slice(0,w.length),max)<=max))sc=45}
+        if(sc)best=Math.max(best,sc);
+      }
+      if(!best)return;
+      if(best<65)tikfout=true;
+    }
+    uit.push([tikfout?1:0,k]);
+  });
+  return uit.sort((a,b)=>a[0]-b[0]||abc(a[1],b[1])).map(x=>x[1]);
+}
 const iso=d=>d.toISOString().slice(0,10);
 const lokaalIso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const today=()=>iso(new Date());
@@ -573,9 +605,7 @@ function renderInvoer(){
   function getKlussen(){return ds.klussen.map(k=>({...k, wegenMonsteren:($('wm_'+k.id)?$('wm_'+k.id).checked:!!k.wegenMonsteren), klantId:$('klant_'+k.id)?.value||k.klantId, dienstId:($('dienst_'+k.id)?$('dienst_'+k.id).value:'')||k.dienstId||(diensten[0]?diensten[0].id:''), kenteken:$('ket_'+k.id)?.value||k.kenteken, omschrijving:$('oms_'+k.id)?.value||k.omschrijving, aantal:+($('aant_'+k.id)?.value||k.aantal||1), eenheid:$('een_'+k.id)?.value||k.eenheid||'uur', startTijd:$('kbeg_'+k.id)?$('kbeg_'+k.id).value:(k.startTijd||''), eindTijd:$('keind_'+k.id)?$('keind_'+k.id).value:(k.eindTijd||''), pauzeMin:$('kpauze_'+k.id)?(+$('kpauze_'+k.id).value||0):(+k.pauzeMin||0)}))}
   function klantZoek(q){
     const all=DB.list('klanten').filter(k=>k.actief!==false);
-    const t=(q||'').trim().toLowerCase();
-    if(!t)return all;
-    return all.filter(k=>[k.klantcode,k.naam,k.plaats,k.adres,k.postcode,k.contact].some(v=>(v||'').toLowerCase().includes(t)));
+    return klantenZoeken(all,q);
   }
   function klantResultaat(kid){
     const box=$('kres_'+kid);if(!box)return;
@@ -3800,7 +3830,7 @@ function renderKlanten(){
   KLANT_OPEN=null;
   const items=DB.list('klanten');
   const q=KLQ.q.trim().toLowerCase();
-  const zichtbaar=q?items.filter(k=>[k.klantcode,k.naam,k.adres,k.postcode,k.plaats,k.contact,k.email,k.telefoon].join(' ').toLowerCase().includes(q)):items;
+  const zichtbaar=klantenZoeken(items,q);
   $("main").innerHTML=`<div class="max-w-full mx-auto"><h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Klanten</h2>
   <div class="flex flex-wrap gap-2 mb-4">
     <button id="btnAddKlant" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 min-h-[48px] font-medium">+ Nieuwe klant</button>
