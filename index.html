@@ -3768,7 +3768,7 @@ function renderKlantPagina(id){
    <div style="font-size:13px;color:#5a655e;margin-bottom:8px"><a href="#" id="koTerug" style="color:#2f6b45;text-decoration:none;font-weight:500">Klanten</a> <span aria-hidden="true">/</span> ${esc(k.naam)}</div>
    <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h1 style="margin:0;font-size:28px;font-weight:600;letter-spacing:-.01em">${esc(k.naam)}</h1>${k.klantcode?`<span class="zk-pil" style="background:#eceeea;color:#3e4842">${esc(k.klantcode)}</span>`:''}${k.actief===false?'<span class="zk-pil" style="background:#fdecea;color:#b42318">Niet actief</span>':''}</div>
-    <div style="display:flex;flex-wrap:wrap;gap:10px"><button type="button" id="koWijzig" class="zk-knop">Gegevens wijzigen</button><button type="button" id="koFactuur" class="zk-hoofd">+ Nieuwe factuur${openKl.length?' ('+openKl.length+' open klus'+(openKl.length===1?'':'sen')+')':''}</button></div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px"><button type="button" id="koWijzig" class="zk-knop">Gegevens wijzigen</button><button type="button" id="koKopieer" class="zk-knop" title="Naam, adres, telefoon en e-mail kopiëren">Gegevens kopiëren</button>${navigator.share?'<button type="button" id="koDeel" class="zk-knop">Delen…</button>':''}<button type="button" id="koFactuur" class="zk-hoofd">+ Nieuwe factuur${openKl.length?' ('+openKl.length+' open klus'+(openKl.length===1?'':'sen')+')':''}</button></div>
    </div>
    <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
     <div style="flex:999 1 560px;min-width:0;display:flex;flex-direction:column;gap:20px">
@@ -3815,6 +3815,7 @@ function renderKlantPagina(id){
    </div></div>`;
   $('koTerug').onclick=e=>{e.preventDefault();KLANT_OPEN=null;renderKlanten()};
   $('koWijzig').onclick=()=>openKlantEditor(id,DB.list('klanten'));
+  $('koKopieer').onclick=()=>kopieerKlant(id,false);if($('koDeel'))$('koDeel').onclick=()=>kopieerKlant(id,true);
   $('koFactuur').onclick=()=>{
     if(openKl.length){factureerKlussen(openKl.map(x=>({dagId:x.dagId,klusId:x.id})));return}
     const b=bedrijf(),datum=vandaagIso();
@@ -3825,6 +3826,18 @@ function renderKlantPagina(id){
 }
 
 const KLQ={q:''};
+// Klantgegevens als nette tekst, om te kopiëren of te delen (WhatsApp, mail)
+function klantTekst(k){
+  return [k.naam,k.contact&&k.contact!==k.naam?'t.a.v. '+k.contact:'',k.adres,[k.postcode,k.plaats].filter(Boolean).join('  '),
+    k.telefoon?'Tel: '+k.telefoon:'',k.email?'E-mail: '+k.email:'',k.btwnummer?'Btw-nummer: '+k.btwnummer:'']
+    .map(x=>String(x||'').trim()).filter(Boolean).join('\n');
+}
+async function kopieerKlant(id,delen){
+  const k=DB.get('klanten',id);if(!k)return;const t=klantTekst(k);
+  if(delen&&navigator.share){try{await navigator.share({title:k.naam,text:t});return}catch(e){if(e&&e.name==='AbortError')return}}
+  try{await navigator.clipboard.writeText(t)}catch(e){const ta=document.createElement('textarea');ta.value=t;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove()}
+  toast('Gegevens van '+k.naam+' gekopieerd','success');
+}
 function renderKlanten(){
   if(KLANT_OPEN&&DB.get('klanten',KLANT_OPEN))return renderKlantPagina(KLANT_OPEN);
   KLANT_OPEN=null;
@@ -3844,7 +3857,7 @@ function renderKlanten(){
   </tr></thead><tbody>${zichtbaar.length?'':'<tr><td colspan="9" class="px-3 py-8 text-center text-gray-400">Geen klanten gevonden</td></tr>'}${zichtbaar.map(k=>`<tr class="border-t border-gray-100 dark:border-gray-700">
   <td class="px-3 py-2 whitespace-nowrap text-gray-500">${esc(k.klantcode)}</td><td class="px-3 py-2"><button type="button" data-klant-open="${k.id}" class="font-medium underline decoration-gray-300 hover:text-emerald-700 text-left" style="min-height:32px">${esc(k.naam)}</button></td><td class="px-3 py-2">${esc(k.adres)}${k.postcode?'<br><span class="text-xs text-gray-500">'+esc(k.postcode)+'</span>':''}</td><td class="px-3 py-2">${esc(k.plaats)}</td><td class="px-3 py-2">${esc(k.contact)}</td><td class="px-3 py-2">${esc(k.email)}</td><td class="px-3 py-2">${esc(k.telefoon)}</td>
   <td class="px-3 py-2 text-center">${k.actief!==false?'<span class="text-emerald-700 dark:text-emerald-400 font-medium">Ja</span>':'<span class="text-gray-400">Nee</span>'}</td>
-  <td class="px-3 py-2"><button data-edit-klant="${k.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">Wijzig</button><button data-del-klant="${k.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">Verwijder</button></td></tr>`).join('')}
+  <td class="px-3 py-2 whitespace-nowrap"><button type="button" data-kop-klant="${k.id}" class="text-emerald-700 hover:text-emerald-900 text-xs mr-2 min-h-[48px]" title="Naam, adres, telefoon en e-mail kopiëren">Kopieer</button><button data-edit-klant="${k.id}" class="text-blue-600 hover:text-blue-800 text-xs mr-2 min-h-[48px]">Wijzig</button><button data-del-klant="${k.id}" class="text-red-500 hover:text-red-700 text-xs min-h-[48px]" aria-label="Verwijder">Verwijder</button></td></tr>`).join('')}
   </tbody></table></div></div>`;
   bindKlantenCRUD(items);
   document.querySelectorAll('[data-klant-open]').forEach(b=>b.onclick=()=>openKlantOverzicht(b.dataset.klantOpen));
@@ -3853,6 +3866,7 @@ function renderKlanten(){
 function bindKlantenCRUD(items){
   $('btnAddKlant').onclick=()=>openKlantEditor(null,items);
   $('btnImportKlant').onclick=()=>openKlantImport();
+  document.querySelectorAll('[data-kop-klant]').forEach(b=>b.onclick=()=>kopieerKlant(b.dataset.kopKlant,false));
   document.querySelectorAll('[data-edit-klant]').forEach(b=>b.onclick=e=>openKlantEditor(e.target.dataset.editKlant,items));
   document.querySelectorAll('[data-del-klant]').forEach(b=>b.onclick=e=>{if(confirm('Klant verwijderen?')){DB.remove('klanten',e.target.dataset.delKlant);toast('Klant verwijderd','success');renderCurrentView()}});
 }
