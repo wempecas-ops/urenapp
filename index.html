@@ -3106,8 +3106,9 @@ async function vulVoorbeelden(){
 const ZWEEF={id:null,timer:null,scherp:{},fractie:0};
 // muis bovenaan het plaatje = bovenkant van de bon, onderaan = onderkant
 function zweefSchuif(){const e=document.getElementById('scanZweef');const i=e&&e.querySelector('img');if(!i)return;
+  if(!i.complete||!i.naturalWidth)return;   // nog aan het laden: onload roept dit opnieuw aan
   const over=i.offsetHeight-e.clientHeight;i.style.transform=over>0?'translateY('+(-over*ZWEEF.fractie)+'px)':'';
-  if(over<=0){i.style.marginTop=Math.max(0,(e.clientHeight-i.offsetHeight)/2)+'px'}}
+  i.style.marginTop=over>0?'0px':Math.max(0,(e.clientHeight-i.offsetHeight)/2)+'px'}
 function zweefWeg(){clearTimeout(ZWEEF.timer);ZWEEF.id=null;const e=document.getElementById('scanZweef');if(e)e.remove()}
 function zweefToon(id,muisX){
   const s=DB.get('scans',id);const klein=SCAN.thumbs[id];if(!s||!klein)return;
@@ -3115,7 +3116,7 @@ function zweefToon(id,muisX){
   if(!e){e=document.createElement('div');e.id='scanZweef';document.body.appendChild(e)}
   // zo groot mogelijk: alle ruimte aan de kant van het scherm waar de muis niet is
   const W=window.innerWidth,marge=16,links=muisX>W/2;
-  const breed=Math.max(320,links?muisX-48-marge:W-muisX-48-marge);
+  const breed=Math.max(320,Math.round((links?muisX-48-marge:W-muisX-48-marge)*0.85));
   e.style.cssText='position:fixed;top:1vh;height:98vh;width:'+breed+'px;'+(links?'left:'+marge+'px':'right:'+marge+'px')+';z-index:35;pointer-events:none;overflow:hidden;border-radius:8px;box-shadow:0 12px 50px rgba(0,0,0,.45);border:1px solid #cfd5cc;background:#fff';
   const scherp=ZWEEF.scherp[id];
   // op volle breedte, zodat de tekst leesbaar is; is de bon hoger dan het scherm, dan schuift hij mee met de muis
