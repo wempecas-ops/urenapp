@@ -3102,6 +3102,36 @@ async function vulVoorbeelden(){
   // nieuwe vingerafdrukken: lijst opnieuw tekenen zodat 'mogelijk dubbel' zichtbaar wordt
   if(nieuweHash&&currentBeheerTab==='scans'&&!document.querySelector('#scanGroot,#scanSorteer,#scanBundel')&&DB.list('scans').some(x=>scanDubbel(x)))renderScans();
 }
+// Zweefvoorbeeld: muis op een plaatje = de bon meteen groot ernaast, zonder klikken
+const ZWEEF={id:null,timer:null,scherp:{}};
+function zweefWeg(){clearTimeout(ZWEEF.timer);ZWEEF.id=null;const e=document.getElementById('scanZweef');if(e)e.remove()}
+function zweefToon(id,muisX){
+  const s=DB.get('scans',id);const klein=SCAN.thumbs[id];if(!s||!klein)return;
+  let e=document.getElementById('scanZweef');
+  if(!e){e=document.createElement('div');e.id='scanZweef';document.body.appendChild(e)}
+  const links=muisX>window.innerWidth/2;   // toon aan de kant waar de muis niet is
+  e.style.cssText='position:fixed;top:2vh;height:96vh;width:min(46vw,760px);'+(links?'left:2vw':'right:2vw')+';z-index:35;pointer-events:none;display:flex;align-items:center;justify-content:center';
+  const scherp=ZWEEF.scherp[id];
+  e.innerHTML='<img alt="" src="'+(scherp||klein.src)+'" style="max-width:100%;max-height:100%;background:#fff;border-radius:8px;box-shadow:0 12px 50px rgba(0,0,0,.45);border:1px solid #cfd5cc">';
+  // pdf-voorbeelden zijn klein opgeslagen: scherpe versie erachteraan laden
+  if(!scherp&&/^data:/.test(klein.src)){scanNaarAfbeeldingen(s).then(p=>{if(!p[0])return;ZWEEF.scherp[id]=p[0].src;const k=Object.keys(ZWEEF.scherp);if(k.length>12)delete ZWEEF.scherp[k[0]];
+    const nu=document.querySelector('#scanZweef img');if(ZWEEF.id===id&&nu)nu.src=p[0].src}).catch(()=>{})}
+}
+if(window.matchMedia&&matchMedia('(hover:hover)').matches){
+  document.addEventListener('mousemove',e=>{
+    const el=e.target&&e.target.closest?e.target.closest('[data-scanzie],[data-tegel]'):null;
+    const id=el?(el.dataset.scanzie||el.dataset.tegel):null;
+    if(!id){if(ZWEEF.id||ZWEEF.timer)zweefWeg();return}
+    if(id===ZWEEF.id)return;
+    clearTimeout(ZWEEF.timer);ZWEEF.id=id;const x=e.clientX;
+    const oud=document.getElementById('scanZweef');
+    // eerste keer een korte wachttijd (niet flitsen bij langs bewegen); daarna direct wisselen
+    if(oud)zweefToon(id,x);else ZWEEF.timer=setTimeout(()=>{if(ZWEEF.id===id)zweefToon(id,x)},130);
+  },{passive:true});
+  document.addEventListener('mousedown',zweefWeg,true);
+  document.addEventListener('scroll',zweefWeg,true);
+  document.addEventListener('keydown',zweefWeg,true);
+}
 // Vingerafdruk van een bon (dHash, 64 bits): twee scans van hetzelfde papier geven (bijna) dezelfde waarde
 async function scanHash(src){
   const blob=await (await fetch(src)).blob();const bm=await createImageBitmap(blob);
