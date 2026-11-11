@@ -37,6 +37,9 @@
     "api/scans.js": {
       "maxDuration": 60,
       "memory": 1024
+    },
+    "api/kvk.js": {
+      "maxDuration": 20
     }
   }
 }

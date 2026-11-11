@@ -1426,7 +1426,7 @@ function factuurStatus(f){
   return 'open';
 }
 const F_STATUS={concept:['Concept','bg-gray-200 text-gray-800'],open:['Open','bg-blue-100 text-blue-800'],verlopen:['Verlopen','bg-red-100 text-red-800'],betaald:['Betaald','bg-emerald-100 text-emerald-800'],gecrediteerd:['Gecrediteerd','bg-purple-100 text-purple-800'],credit:['Creditnota','bg-purple-100 text-purple-800']};
-const klantSnapshot=k=>k?{naam:k.naam||'',adres:k.adres||'',postcode:k.postcode||'',plaats:k.plaats||'',klantcode:k.klantcode||'',btwnummer:k.btwnummer||'',email:k.email||''}:null;
+const klantSnapshot=k=>k?{naam:k.naam||'',adres:k.adres||'',postcode:k.postcode||'',plaats:k.plaats||'',klantcode:k.klantcode||'',btwnummer:k.btwnummer||'',kvk:k.kvk||'',email:k.email||''}:null;
 
 // ---- Regels maken uit klussen ----
 function regelUitKlus(k){
@@ -3772,6 +3772,7 @@ function renderKlantPagina(id){
        <dt style="color:#5a655e">Contact</dt><dd style="margin:0">${esc(k.contact||'—')}</dd>
        <dt style="color:#5a655e">E-mail</dt><dd style="margin:0;word-break:break-all">${k.email?`<a href="mailto:${esc(k.email)}">${esc(k.email)}</a>`:'<span style="color:#8a5a12">nog niet ingevuld</span>'}</dd>
        <dt style="color:#5a655e">Telefoon</dt><dd style="margin:0">${k.telefoon?`<a href="tel:${esc(k.telefoon)}">${esc(k.telefoon)}</a>`:'—'}</dd>
+       <dt style="color:#5a655e">KvK</dt><dd style="margin:0">${esc(k.kvk||'—')}</dd>
        <dt style="color:#5a655e">Btw-nr</dt><dd style="margin:0">${esc(k.btwnummer||'—')}</dd>
       </dl>
      </section>
@@ -3948,19 +3949,39 @@ function openKlantImport(){
   };
   $('kiCancel').onclick=()=>document.getElementById('klantImport').remove();
 }
+// KvK: gegevens ophalen via /api/kvk en in het klantformulier zetten
+async function kvkOphalen(){
+  const q=$('kl_kvk').value.trim(),res=$('kl_kvk_res'),knop=$('klKvk');
+  if(!q){toast('Vul een KvK-nummer of bedrijfsnaam in','error');return}
+  const vul=r=>{$('kl_kvk').value=r.kvk||'';['naam','adres','postcode','plaats'].forEach(f=>{if(r[f])$('kl_'+f).value=r[f]});res.innerHTML='<span style="color:#245a39">Gegevens van de KvK ingevuld. Controleer ze en vul e-mail en telefoon zelf aan.</span>'};
+  knop.disabled=true;knop.textContent='Bezig…';res.textContent='';
+  try{
+    await zorgVoorToken();
+    const r=await fetch('/api/kvk?q='+encodeURIComponent(q),{headers:{Authorization:'Bearer '+AUTH_TOKEN}});
+    let j={};try{j=await r.json()}catch(e){}
+    if(!r.ok){res.innerHTML='<span style="color:#b42318">'+esc(j.fout||('Ophalen mislukt ('+r.status+')'))+'</span>';return}
+    const lijst=j.resultaten||[];
+    if(lijst.length===1){vul(lijst[0]);return}
+    res.innerHTML='<div class="mb-1 text-gray-600 dark:text-gray-300">Kies het juiste bedrijf:</div>'+lijst.map((x,i)=>`<button type="button" data-kvkres="${i}" class="block w-full text-left border rounded-lg px-2 py-1 mb-1 hover:bg-emerald-50 dark:border-gray-600"><b>${esc(x.naam)}</b> · ${esc(x.kvk)}<br><span class="text-gray-500">${esc([x.adres,x.postcode,x.plaats].filter(Boolean).join(', '))}</span></button>`).join('');
+    res.querySelectorAll('[data-kvkres]').forEach(b=>b.onclick=()=>vul(lijst[+b.dataset.kvkres]));
+  }catch(e){res.innerHTML='<span style="color:#b42318">KvK niet bereikbaar</span>'}
+  finally{knop.disabled=false;knop.textContent='Ophalen bij KvK'}
+}
 function openKlantEditor(id,items){
   const existing=id?items.find(k=>k.id===id):null;
-  const fields=['klantcode','naam','adres','postcode','plaats','contact','email','telefoon','btwnummer'];
-  const labels=['Klantcode','Naam','Adres (straat + nr)','Postcode','Plaats','Contactpersoon','E-mail (facturen gaan hierheen)','Telefoon','Btw-nummer (nodig bij btw verlegd)'];
+  const fields=['klantcode','kvk','naam','adres','postcode','plaats','contact','email','telefoon','btwnummer'];
+  const labels=['Klantcode','KvK-nummer (of bedrijfsnaam om te zoeken)','Naam','Adres (straat + nr)','Postcode','Plaats','Contactpersoon','E-mail (facturen gaan hierheen)','Telefoon','Btw-nummer (nodig bij btw verlegd)'];
   const values=existing?fields.map(f=>existing[f]||''):fields.map(f=>f==='klantcode'?nieuweKlantcode():'');
   const actief=existing?existing.actief!==false:true;
   const html=`<div class="fixed inset-0 bg-black/50 z-30 overflow-auto p-3" id="klantEditor"><div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-md mx-auto my-4"><h3 class="font-bold mb-4">${existing?'Klant bewerken':'Nieuwe klant'}</h3>
-  ${fields.map((f,i)=>`<label class="block text-sm font-medium mb-1">${labels[i]}</label><input id="kl_${f}" value="${esc(values[i])}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">`).join('')}
+  ${fields.map((f,i)=>f==='kvk'?`<label class="block text-sm font-medium mb-1">${labels[i]}</label><div class="flex gap-2 mb-1"><input id="kl_kvk" value="${esc(values[i])}" inputmode="numeric" placeholder="8 cijfers of bedrijfsnaam" class="flex-1 min-w-0 border rounded-xl px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600"><button type="button" id="klKvk" class="px-3 py-2 bg-emerald-600 text-white rounded-xl font-medium whitespace-nowrap">Ophalen bij KvK</button></div><div id="kl_kvk_res" class="text-xs mb-2"></div>`:`<label class="block text-sm font-medium mb-1">${labels[i]}</label><input id="kl_${f}" value="${esc(values[i])}" class="w-full border rounded-xl px-3 py-2 mb-2 bg-white dark:bg-gray-700 dark:border-gray-600">`).join('')}
   <label class="flex items-center gap-2 mb-2"><input type="checkbox" id="kl_diesel" ${existing&&existing.dieseltoeslag?'checked':''}> Altijd dieseltoeslag (komt automatisch op de factuur)</label>
   <label class="flex items-center gap-2 mb-4"><input type="checkbox" id="kl_actief" ${actief?'checked':''}> Actief</label>
   <div class="flex gap-2"><button id="klSave" class="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-medium min-h-[48px]">Opslaan</button><button id="klCancel" class="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-xl font-medium min-h-[48px]">Annuleren</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
-  $('klSave').onclick=()=>{const data={klantcode:$('kl_klantcode').value.trim(),naam:$('kl_naam').value,adres:$('kl_adres').value,postcode:$('kl_postcode').value,plaats:$('kl_plaats').value,contact:$('kl_contact').value,email:$('kl_email').value,telefoon:$('kl_telefoon').value,btwnummer:$('kl_btwnummer').value.trim(),dieseltoeslag:$('kl_diesel').checked,actief:$('kl_actief').checked};if(!data.naam){toast('Naam is verplicht','error');return}if(!data.klantcode)data.klantcode=nieuweKlantcode();if(DB.list('klanten').some(k=>k.klantcode===data.klantcode&&k.id!==id)){toast('Deze klantcode bestaat al','error');return}if(existing)DB.update('klanten',id,data);else DB.insert('klanten',data);toast('Klant opgeslagen','success');document.getElementById('klantEditor').remove();renderCurrentView()};
+  $('klKvk').onclick=()=>kvkOphalen();
+  $('kl_kvk').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();kvkOphalen()}};
+  $('klSave').onclick=()=>{const kvkIn=$('kl_kvk').value.trim(),kvkNr=/^[\d\s.]+$/.test(kvkIn)?kvkIn.replace(/\D/g,''):'';if(kvkIn&&!/^\d{8}$/.test(kvkNr)){toast('Een KvK-nummer heeft 8 cijfers (of druk eerst op Ophalen bij KvK)','error');return}const data={klantcode:$('kl_klantcode').value.trim(),kvk:kvkNr,naam:$('kl_naam').value,adres:$('kl_adres').value,postcode:$('kl_postcode').value,plaats:$('kl_plaats').value,contact:$('kl_contact').value,email:$('kl_email').value,telefoon:$('kl_telefoon').value,btwnummer:$('kl_btwnummer').value.trim(),dieseltoeslag:$('kl_diesel').checked,actief:$('kl_actief').checked};if(!data.naam){toast('Naam is verplicht','error');return}if(!data.klantcode)data.klantcode=nieuweKlantcode();if(DB.list('klanten').some(k=>k.klantcode===data.klantcode&&k.id!==id)){toast('Deze klantcode bestaat al','error');return}if(existing)DB.update('klanten',id,data);else DB.insert('klanten',data);toast('Klant opgeslagen','success');document.getElementById('klantEditor').remove();renderCurrentView()};
   $('klCancel').onclick=()=>document.getElementById('klantEditor').remove();
 }
 
