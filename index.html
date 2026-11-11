@@ -3829,7 +3829,7 @@ const KLQ={q:''};
 // Klantgegevens als nette tekst, om te kopiëren of te delen (WhatsApp, mail)
 function klantTekst(k){
   return [k.naam,k.contact&&k.contact!==k.naam?'t.a.v. '+k.contact:'',k.adres,[k.postcode,k.plaats].filter(Boolean).join('  '),
-    k.telefoon?'Tel: '+k.telefoon:'',k.email?'E-mail: '+k.email:'',k.btwnummer?'Btw-nummer: '+k.btwnummer:'']
+    k.telefoon?'Tel: '+k.telefoon:'',k.email?'E-mail: '+k.email:'',k.kvk?'KvK: '+k.kvk:'',k.btwnummer?'Btw-nummer: '+k.btwnummer:'']
     .map(x=>String(x||'').trim()).filter(Boolean).join('\n');
 }
 async function kopieerKlant(id,delen){
