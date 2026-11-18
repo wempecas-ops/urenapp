@@ -94,7 +94,7 @@ module.exports = async (req, res) => {
       const gebruikersnaam = String(body.gebruikersnaam || '').trim().toLowerCase();
       const naam = String(body.naam || '').trim();
       const wachtwoord = String(body.wachtwoord || '');
-      const rol = ['beheer', 'mts'].includes(body.rol) ? body.rol : 'medewerker';   // mts = alleen facturen Mts. C.J. Wempe
+      const rol = ['beheer', 'mts', 'container'].includes(body.rol) ? body.rol : 'medewerker';   // mts = alleen facturen Wempe B.V.; container = alleen containers doorgeven
       const werknemerId = body.werknemer_id || null;
       if (!gebruikersnaam || !wachtwoord) return stuur(400, { fout: 'Gebruikersnaam en wachtwoord zijn verplicht' });
       if (wachtwoord.length < 6) return stuur(400, { fout: 'Kies een wachtwoord van minstens 6 tekens' });

@@ -173,11 +173,12 @@ textarea.zk-invoer{padding:10px 12px}
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="vrachten">eVDM</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="kaart">Kaart</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="scans">Scans</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="containers">Containers</button>
 <div class="nav-groep" aria-hidden="true">Financieel</div>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="facturen">Facturen</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="producten">Producten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="tol">Tol</button>
-<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="mts">Facturen Mts. Wempe</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="mts">Facturen Wempe B.V.</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="klanten">Klanten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="diensten">Diensten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="export">Export</button>
@@ -191,6 +192,7 @@ textarea.zk-invoer{padding:10px 12px}
 <nav id="bottomNav" class="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-around py-2 z-20 md:hidden">
 <button class="flex flex-col items-center text-xs py-1 px-3 text-emerald-700 dark:text-emerald-400" data-view="invoer">Invoer</button>
 <button class="flex flex-col items-center text-xs py-1 px-3 text-gray-500 dark:text-gray-400" data-view="mijnuren">Mijn uren</button>
+<button class="flex flex-col items-center text-xs py-1 px-3 text-gray-500 dark:text-gray-400" data-view="containers">Containers</button>
 </nav>
 <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 items-center pointer-events-none"></div>
 <div id="loginScreen" class="fixed inset-0 z-40 bg-white dark:bg-gray-900 overflow-auto"></div>
@@ -2158,11 +2160,104 @@ async function factuurPdf(id,actie){
 }
 
 // ============================================================================
+// === CONTAINERS (containerauto, samen met Wempe B.V.) ======================
+// Chauffeurs geven per opgehaalde container door: klant + aantal. Geen uren.
+const CT={maand:null,aantal:1,datum:null,openLijst:false};
+let CT_NAMEN=[];   // namen die andere chauffeurs al eens gebruikten (alleen de naam)
+function ctNamen(){
+  // eerst klanten die al eens een container hadden (meest recent eerst), daarna de klantenlijst
+  const gezien=new Map();
+  DB.list('containers').slice().sort((a,b)=>String(b.createdAt||b.datum).localeCompare(String(a.createdAt||a.datum))).forEach(c=>{const n=String(c.klant||'').trim();if(n&&!gezien.has(n.toLowerCase()))gezien.set(n.toLowerCase(),n)});
+  CT_NAMEN.forEach(n=>{n=String(n||'').trim();if(n&&!gezien.has(n.toLowerCase()))gezien.set(n.toLowerCase(),n)});
+  DB.list('klanten').forEach(k=>{const n=String(k.naam||'').trim();if(n&&k.actief!==false&&!gezien.has(n.toLowerCase()))gezien.set(n.toLowerCase(),n)});
+  return [...gezien.values()];
+}
+function ctTotalen(lijst){const t=new Map();lijst.forEach(c=>{const k=String(c.klant||'').trim();const key=k.toLowerCase();const o=t.get(key)||{klant:k,aantal:0,keer:0};o.aantal+=Number(c.aantal)||0;o.keer++;t.set(key,o)});return [...t.values()].sort((a,b)=>b.aantal-a.aantal||a.klant.localeCompare(b.klant))}
+function renderContainers(){
+  const baas=isBeheer()||isMts();
+  if(!CT.maand)CT.maand=vandaagIso().slice(0,7);
+  if(!CT.datum)CT.datum=vandaagIso();
+  const alle=DB.list('containers').slice().sort((a,b)=>String(b.datum).localeCompare(String(a.datum))||String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
+  const namen=ctNamen();const snel=namen.slice(0,6);
+  const mijn=alle.filter(c=>!baas||c.userId===(SESSIE&&SESSIE.id)).slice(0,10);
+  const inMaand=alle.filter(c=>String(c.datum||'').slice(0,7)===CT.maand);
+  const tot=ctTotalen(inMaand);const som=tot.reduce((x,o)=>x+o.aantal,0);
+  const rij=(c,metNaam)=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #eef0ec">
+      <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:15px">${Number(c.aantal)||1}× ${esc(c.klant)}</div>
+      <div style="font-size:12px;color:#5a655e">${esc(datumNL(c.datum))}${metNaam&&c.chauffeur?' · '+esc(c.chauffeur):''}${c.opmerking?' · '+esc(c.opmerking):''}</div></div>
+      <button type="button" data-ctweg="${esc(c.id)}" class="zk-knop" style="min-height:40px;color:#b42318" aria-label="Verwijderen">Verwijder</button></div>`;
+  $('main').innerHTML=`<div style="max-width:${baas?'1100px':'560px'};margin:0 auto;padding:4px 4px 40px">
+   <div class="zk-label">Containerauto</div><h1 style="margin:6px 0 14px;font-size:26px;font-weight:600">Containers</h1>
+   <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+   <div class="zk-kaart" style="padding:18px;flex:1 1 320px;max-width:560px">
+    <div style="font-size:15px;font-weight:600;margin-bottom:10px">Container doorgeven</div>
+    <label for="ctKlant" style="font-size:13px;color:#5a655e">Klant</label>
+    <input id="ctKlant" list="ctLijst" autocomplete="off" placeholder="Bijv. ACM Smit" class="zk-invoer" style="width:100%;min-height:52px;font-size:17px;margin:4px 0 8px">
+    <datalist id="ctLijst">${namen.map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>
+    ${snel.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${snel.map(n=>`<button type="button" data-ctsnel="${esc(n)}" class="zk-knop" style="min-height:38px;font-size:13px">${esc(n)}</button>`).join('')}</div>`:''}
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+     <div><div style="font-size:13px;color:#5a655e;margin-bottom:4px">Aantal</div>
+      <div style="display:flex;align-items:center;gap:6px"><button type="button" id="ctMin" class="zk-knop" style="min-height:48px;min-width:48px;font-size:20px" aria-label="Eén minder">−</button>
+      <span id="ctAantal" style="min-width:36px;text-align:center;font-size:22px;font-weight:600">${CT.aantal}</span>
+      <button type="button" id="ctPlus" class="zk-knop" style="min-height:48px;min-width:48px;font-size:20px" aria-label="Eén meer">+</button></div></div>
+     <div><label for="ctDatum" style="font-size:13px;color:#5a655e;display:block;margin-bottom:4px">Datum</label><input id="ctDatum" type="date" value="${esc(CT.datum)}" class="zk-invoer" style="min-height:48px"></div>
+    </div>
+    <input id="ctOpm" placeholder="Opmerking (mag leeg)" class="zk-invoer" style="width:100%;min-height:44px;margin-bottom:12px">
+    <button type="button" id="ctOpslaan" class="zk-hoofd" style="width:100%;min-height:54px;font-size:17px">Opslaan</button>
+   </div>
+   ${baas?`<div class="zk-kaart" style="padding:18px;flex:1 1 380px">
+     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-size:15px;font-weight:600">Telling per klant</div>
+      <div style="display:flex;gap:8px;align-items:center"><input id="ctMaand" type="month" value="${esc(CT.maand)}" class="zk-invoer" style="min-height:40px"><button type="button" id="ctPdf" class="zk-knop" style="min-height:40px" ${inMaand.length?'':'disabled'}>Pdf</button></div></div>
+     ${tot.length?`<table style="width:100%;font-size:14px;border-collapse:collapse"><thead><tr style="text-align:left;color:#5a655e;font-size:12px"><th style="padding:6px 0">Klant</th><th style="padding:6px 0;text-align:right">Containers</th></tr></thead><tbody>
+      ${tot.map(o=>`<tr style="border-top:1px solid #eef0ec"><td style="padding:8px 0">${esc(o.klant)}</td><td style="padding:8px 0;text-align:right;font-weight:600">${o.aantal}</td></tr>`).join('')}
+      <tr style="border-top:2px solid #cfd5cc"><td style="padding:8px 0;font-weight:600">Totaal</td><td style="padding:8px 0;text-align:right;font-weight:700">${som}</td></tr></tbody></table>`
+      :'<p style="color:#5a655e;font-size:14px;margin:6px 0">Nog geen containers in deze maand.</p>'}
+     ${inMaand.length?`<button type="button" id="ctToon" class="zk-knop" style="margin-top:12px;min-height:38px;font-size:13px">${CT.openLijst?'Verberg':'Toon'} alle ${inMaand.length} meldingen</button>
+      ${CT.openLijst?`<div style="margin-top:6px">${inMaand.map(c=>rij(c,true)).join('')}</div>`:''}`:''}
+   </div>`:''}
+   </div>
+   ${!baas?`<div class="zk-kaart" style="padding:18px;margin-top:16px;max-width:560px">
+     <div style="font-size:15px;font-weight:600;margin-bottom:4px">Mijn laatste</div>
+     ${mijn.length?mijn.map(c=>rij(c,false)).join(''):'<p style="color:#5a655e;font-size:14px;margin:6px 0">Nog niets doorgegeven.</p>'}</div>`:''}
+  </div>`;
+  const zetAantal=n=>{CT.aantal=Math.max(1,Math.min(50,n));$('ctAantal').textContent=CT.aantal};
+  $('ctMin').onclick=()=>zetAantal(CT.aantal-1);$('ctPlus').onclick=()=>zetAantal(CT.aantal+1);
+  $('ctDatum').onchange=e=>{CT.datum=e.target.value||vandaagIso()};
+  document.querySelectorAll('[data-ctsnel]').forEach(b=>b.onclick=()=>{$('ctKlant').value=b.dataset.ctsnel;$('ctOpslaan').focus()});
+  $('ctKlant').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$('ctOpslaan').click()}};
+  $('ctOpslaan').onclick=()=>{
+    const ruw=$('ctKlant').value.trim();if(!ruw){toast('Vul de klant in','error');$('ctKlant').focus();return}
+    // zelfde schrijfwijze als eerder gebruikt (acm smit -> ACM Smit)
+    const klant=namen.find(n=>n.toLowerCase()===ruw.toLowerCase())||ruw;
+    const datum=$('ctDatum').value||vandaagIso();
+    DB.insert('containers',{datum,klant,aantal:CT.aantal,opmerking:$('ctOpm').value.trim()||null,chauffeur:SESSIE?SESSIE.naam:'Beheer',userId:SESSIE?SESSIE.id:null,createdAt:new Date().toISOString()});
+    toast(CT.aantal+'× container voor '+klant+' opgeslagen','success');
+    CT.aantal=1;CT.maand=datum.slice(0,7);renderContainers();
+  };
+  document.querySelectorAll('[data-ctweg]').forEach(b=>b.onclick=()=>{const c=DB.get('containers',b.dataset.ctweg);if(!c)return;
+    if(confirm('Verwijderen: '+(Number(c.aantal)||1)+'× '+c.klant+' op '+datumNL(c.datum)+'?')){DB.remove('containers',c.id);toast('Verwijderd','success');renderContainers()}});
+  if(baas){
+    $('ctMaand').onchange=e=>{CT.maand=e.target.value||vandaagIso().slice(0,7);renderContainers()};
+    if($('ctToon'))$('ctToon').onclick=()=>{CT.openLijst=!CT.openLijst;renderContainers()};
+    $('ctPdf').onclick=async()=>{
+      try{await pdfKlaarmaken();
+        const [j,m]=CT.maand.split('-');const titel='Containers '+['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'][Number(m)-1]+' '+j;
+        const def={pageSize:'A4',pageMargins:[40,40,40,40],defaultStyle:{fontSize:10},content:[
+          {text:titel,fontSize:16,bold:true,margin:[0,0,0,4]},{text:'Containerauto · Cas Wempe en Wempe B.V.',color:'#5a655e',margin:[0,0,0,14]},
+          {text:'Per klant',bold:true,margin:[0,0,0,4]},
+          {table:{headerRows:1,widths:['*',80],body:[[{text:'Klant',bold:true},{text:'Containers',bold:true,alignment:'right'}],...tot.map(o=>[o.klant,{text:String(o.aantal),alignment:'right'}]),[{text:'Totaal',bold:true},{text:String(som),bold:true,alignment:'right'}]]},layout:'lightHorizontalLines',margin:[0,0,0,16]},
+          {text:'Alle meldingen',bold:true,margin:[0,0,0,4]},
+          {table:{headerRows:1,widths:[60,'*',40,90,'*'],body:[['Datum','Klant','Aantal','Chauffeur','Opmerking'].map(t=>({text:t,bold:true})),...inMaand.slice().reverse().map(c=>[datumNL(c.datum),c.klant||'',{text:String(Number(c.aantal)||1),alignment:'right'},c.chauffeur||'',c.opmerking||''])]},layout:'lightHorizontalLines',fontSize:9}]};
+        pdfMake.createPdf(def).download(titel+'.pdf');
+      }catch(e){toast('Pdf maken mislukt: '+e.message,'error')}};
+  }
+}
 // === FACTUREN MTS. C.J. WEMPE (melkveebedrijf van de broer) =================
 // Bewust eenvoudig: klant en regels zelf invullen, pdf downloaden en zelf mailen.
 // Los van de eigen facturatie (eigen tabel, eigen nummering, eigen gegevens).
 // ============================================================================
-const MTS_STANDAARD={naam:'Mts. C.J. Wempe',onderNaam:'Melkveebedrijf Wempe',adres:'Slikkerdijk 6',postcode:'1766 GK',plaats:'Wieringerwaard',email:'mtswempe@hotmail.com',telefoon:'06 55961891 (Giel) · 06 41653143 (Kees)',kvk:'317157226',iban:'NL65 ABNA 0435 0461 36',tenaamstelling:'Mts. C.J. Wempe',btw:'NL817136915B01',termijn:'30',volgendNummer:'2026036'};
+const MTS_STANDAARD={naam:'Wempe B.V.',onderNaam:'Melkveebedrijf Wempe',adres:'Slikkerdijk 6',postcode:'1766 GK',plaats:'Wieringerwaard',email:'mtswempe@hotmail.com',telefoon:'06 55961891 (Giel) · 06 41653143 (Kees)',kvk:'317157226',iban:'NL65 ABNA 0435 0461 36',tenaamstelling:'Mts. C.J. Wempe',btw:'NL817136915B01',termijn:'30',volgendNummer:'2026036'};
 const MTS_GROEN='#4f7d36',MTS_TINT='#eef4e8';
 // Eenheden om uit te kiezen; zelf iets anders typen mag ook
 const MTS_EENHEDEN=['ton','kg','stuk','stuks','uur','dag','m³','ha','km','ritten','vracht','kuub','baal','liter','koe','kalf','pink'];
@@ -4805,6 +4900,8 @@ const isBeheer = () => !!SESSIE && SESSIE.rol === 'beheer';
 const isMedewerker = () => !!SESSIE && SESSIE.rol === 'medewerker';
 // Account dat alleen bij de facturen van Mts. C.J. Wempe mag (voor de broer)
 const isMts = () => !!SESSIE && SESSIE.rol === 'mts';
+// Account dat alleen containers mag doorgeven (chauffeurs van Wempe B.V.)
+const isContainerRol = () => !!SESSIE && SESSIE.rol === 'container';
 const naarEmail = g => { g = String(g || '').trim().toLowerCase(); return g.includes('@') ? g : g + '@' + EMAIL_DOMEIN };
 // Alleen voor de demo-modus; echte wachtwoorden worden door Supabase beheerd.
 function hashWachtwoord(p){ let h = 5381; const s = String(p) + '|urenapp'; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return 'demo-' + h.toString(16) }
@@ -5021,7 +5118,10 @@ async function laadAlles(){
     const m = await sbREST('/rest/v1/materieel?select=*&order=kenteken.asc&limit=1000');
     CACHE.materieel = Array.isArray(m) ? m : [];
   } catch (e) { CACHE.materieel = CACHE.materieel || [] }
-  // Account voor Mts. Wempe: alleen de eigen facturen en gegevens
+  // Containers (tellen voor de containerauto): iedereen; de database bepaalt wat je ziet
+  try { const o = await sbREST('/rest/v1/containers?select=*&order=created_at.desc&limit=5000'); CACHE.containers = Array.isArray(o) ? o : [] } catch (e) { CACHE.containers = CACHE.containers || [] }
+  try { const o = await sbREST('/rest/v1/rpc/container_klanten', { method: 'POST', body: {} }); CT_NAMEN = Array.isArray(o) ? o.map(x => x.klant).filter(Boolean) : [] } catch (e) { }
+  // Account voor Wempe B.V. (voorheen Mts. Wempe): alleen de eigen facturen en gegevens
   if (isMts()) {
     for (const t of ['facturen_mts', 'instellingen']) { try { const o = await sbREST('/rest/v1/' + t + '?select=*&limit=1000'); CACHE[t] = Array.isArray(o) ? o : [] } catch (e) { CACHE[t] = CACHE[t] || [] } }
   }
@@ -5197,14 +5297,23 @@ function openWachtwoordWijzigen(){
 }
 // ---- rol toepassen op de interface ----
 function pasRolToe(){
+  if (isContainerRol()) {
+    currentMode = 'medewerker'; currentView = 'containers';
+    const mt0 = $('modeToggle'); if (mt0) mt0.classList.add('hidden');
+    const bn = $('bottomNav'); if (bn) bn.style.display = 'none';
+    const bh = $('beheerNav'); if (bh) bh.style.display = 'none';
+    const pw0 = $('pwBtn'); if (pw0 && CONFIG.MODE === 'supabase') { pw0.classList.remove('hidden'); pw0.onclick = openWachtwoordWijzigen }
+    const ch = $('userChip'); if (ch && SESSIE) ch.textContent = SESSIE.naam + ' · Containers';
+    return;
+  }
   if (isMts()) {
     currentMode = 'beheer'; currentBeheerTab = 'mts';
     const mt0 = $('modeToggle'); if (mt0) mt0.classList.add('hidden');
-    document.querySelectorAll('#beheerNav .tab-btn,#beheerNav .nav-groep').forEach(el => { el.style.display = el.dataset && el.dataset.tab === 'mts' ? '' : 'none' });
-    const nl = document.querySelector('#beheerNav .nav-logo div'); if (nl) nl.textContent = 'Facturen Mts. Wempe';
+    document.querySelectorAll('#beheerNav .tab-btn,#beheerNav .nav-groep').forEach(el => { el.style.display = el.dataset && (el.dataset.tab === 'mts' || el.dataset.tab === 'containers') ? '' : 'none' });
+    const nl = document.querySelector('#beheerNav .nav-logo div'); if (nl) nl.textContent = 'Wempe B.V.';
     const li = document.querySelector('#beheerNav .nav-logo img'); if (li && !/mts-logo/.test(li.src)) { li.src = '/mts-logo.jpg'; li.alt = 'Melkveebedrijf Wempe'; li.style.cssText = 'width:96px;height:auto;background:#fff;border-radius:10px;padding:6px' }
     const pw0 = $('pwBtn'); if (pw0 && CONFIG.MODE === 'supabase') { pw0.classList.remove('hidden'); pw0.onclick = openWachtwoordWijzigen }
-    const ch = $('userChip'); if (ch && SESSIE) ch.textContent = SESSIE.naam + ' · Mts.';
+    const ch = $('userChip'); if (ch && SESSIE) ch.textContent = SESSIE.naam + ' · Wempe B.V.';
     return;
   }
   const mw = isMedewerker();
@@ -5249,7 +5358,7 @@ function renderAccounts(){
       <div><label class="block text-xs text-gray-500 mb-1" for="naGebruiker">Gebruikersnaam</label><input id="naGebruiker" autocapitalize="none" class="${SEL_S} w-full bg-white dark:bg-gray-700" placeholder="bijv. jan"></div>
       <div><label class="block text-xs text-gray-500 mb-1" for="naNaam">Naam</label><input id="naNaam" class="${SEL_S} w-full bg-white dark:bg-gray-700" placeholder="Jan de Boer"></div>
       <div><label class="block text-xs text-gray-500 mb-1" for="naWachtwoord">Wachtwoord</label><input id="naWachtwoord" type="text" class="${SEL_S} w-full bg-white dark:bg-gray-700" placeholder="min. 6 tekens"></div>
-      <div><label class="block text-xs text-gray-500 mb-1" for="naRol">Rol</label><select id="naRol" class="${SEL_S} w-full bg-white dark:bg-gray-700"><option value="medewerker">Medewerker</option><option value="beheer">Beheerder</option><option value="mts">Alleen facturen Mts. Wempe</option></select></div>
+      <div><label class="block text-xs text-gray-500 mb-1" for="naRol">Rol</label><select id="naRol" class="${SEL_S} w-full bg-white dark:bg-gray-700"><option value="medewerker">Medewerker</option><option value="beheer">Beheerder</option><option value="mts">Alleen Wempe B.V. (facturen + containers)</option><option value="container">Alleen containers doorgeven</option></select></div>
       <div class="md:col-span-2"><label class="block text-xs text-gray-500 mb-1" for="naWerknemer">Koppelen aan werknemer (voor medewerkers)</label>
         <select id="naWerknemer" class="${SEL_S} w-full bg-white dark:bg-gray-700"><option value="">— geen —</option>${werknemers.map(w => `<option value="${w.id}">${esc(w.naam)}</option>`).join('')}</select></div>
     </div>
@@ -5311,7 +5420,7 @@ async function vulAccountLijst(){
   body.innerHTML = rijen.map(a => `<tr class="border-t border-gray-100 dark:border-gray-700">
     <td class="px-3 py-2 font-medium">${esc(a.gebruikersnaam)}</td>
     <td class="px-3 py-2">${esc(a.naam)}</td>
-    <td class="px-3 py-2">${a.rol === 'beheer' ? '<span class="badge bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">Beheerder</span>' : a.rol === 'mts' ? '<span class="badge bg-emerald-100 text-emerald-800">Alleen facturen Mts.</span>' : 'Medewerker'}</td>
+    <td class="px-3 py-2">${a.rol === 'beheer' ? '<span class="badge bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">Beheerder</span>' : a.rol === 'mts' ? '<span class="badge bg-emerald-100 text-emerald-800">Wempe B.V.</span>' : a.rol === 'container' ? '<span class="badge bg-amber-100 text-amber-800">Alleen containers</span>' : 'Medewerker'}</td>
     <td class="px-3 py-2">${a.werknemer_id && wMap[a.werknemer_id] ? esc(wMap[a.werknemer_id]) : '—'}</td>
     <td class="px-3 py-2 text-center">${a.actief !== false ? '<span class="text-emerald-700 dark:text-emerald-400 font-medium">Ja</span>' : '<span class="text-gray-400">Nee</span>'}</td>
     <td class="px-3 py-2 whitespace-nowrap">
@@ -5347,7 +5456,7 @@ async function vulAccountLijst(){
 let currentView='invoer', currentBeheerTab='dashboard', currentMode='medewerker';
 function renderCurrentView(){
   const main=$('main');
-  if(isMts()){currentMode='beheer';currentBeheerTab='mts'}
+  if(isMts()){currentMode='beheer';if(currentBeheerTab!=='containers')currentBeheerTab='mts'}
   // Oude handlers van het invoerformulier opruimen: anders reageren ze ook op
   // andere schermen (en crashen ze op velden die daar niet bestaan).
   main.oninput=null;main.onchange=null;main.onclick=null;
@@ -5355,6 +5464,7 @@ function renderCurrentView(){
   if(currentMode==='medewerker'){
     if(currentView==='invoer')renderInvoer();
     else if(currentView==='mijnuren')renderMijnUren();
+    else if(currentView==='containers')renderContainers();
   } else {
     switch(currentBeheerTab){
       case 'dashboard':renderDashboard();break;
@@ -5363,6 +5473,7 @@ function renderCurrentView(){
       case 'facturen':renderFacturen();break;
       case 'producten':renderProducten();break;
       case 'mts':renderMts();break;
+      case 'containers':renderContainers();break;
       case 'vrachten':renderVrachten();break;
       case 'tol':renderTol();break;
       case 'kaart':renderKaart();break;
@@ -5383,14 +5494,14 @@ function renderCurrentView(){
   naRender();
 }
 function renderBottomNav(){
-  $('bottomNav').style.display=currentMode==='medewerker'?'flex':'none';
+  $('bottomNav').style.display=currentMode==='medewerker'&&!isContainerRol()?'flex':'none';
   $('beheerNav').style.display=currentMode==='beheer'?'flex':'none';
   document.body.classList.toggle('beheer-modus',currentMode==='beheer');
 }
 // Na elke render de rolregels toepassen (medewerker = alleen eigen uren)
 function naRender(){ try{pasRolToe()}catch(e){} }
 // Terugknop van de browser: elke pagina (tabblad) krijgt een eigen plek in de browsergeschiedenis.
-const BEHEER_TABS=['dashboard','klussen','facturen','producten','mts','vrachten','tol','kaart','scans','orders','klanten','diensten','materieel','keuringen','werknemers','planning','planarchief','uren','export','accounts'];
+const BEHEER_TABS=['containers','dashboard','klussen','facturen','producten','mts','vrachten','tol','kaart','scans','orders','klanten','diensten','materieel','keuringen','werknemers','planning','planarchief','uren','export','accounts'];
 const BEHEER_ALLEEN=['accounts','orders','planarchief','keuringen','facturen','producten','mts','vrachten','tol','kaart','scans'];
 function navStaat(){return {m:currentMode,v:currentView,t:currentBeheerTab}}
 function navPush(vervang){
@@ -5412,7 +5523,7 @@ window.addEventListener('popstate',e=>{
 function switchView(view){currentView=view;navPush();renderCurrentView();verversAchtergrond('tab')}
 function switchTab(tab){
   {const b=document.getElementById('scanSelBalk');if(b&&tab!=='scans')b.remove()}
-  if(isMts())tab='mts';
+  if(isMts()&&tab!=='containers')tab='mts';
   if(BEHEER_ALLEEN.includes(tab)&&!isBeheer()&&!(tab==='mts'&&isMts())){toast('Alleen voor beheerders','error');return}
   // Een beheertabblad aanklikken betekent ook echt naar de beheermodus.
   currentMode='beheer';
@@ -5453,7 +5564,7 @@ function startApp(){
   const mh=/^#\/(beheer|medewerker)\/([\w-]+)/.exec(location.hash||'');
   if(mh){
     if(mh[1]==='beheer'&&isBeheer()&&BEHEER_TABS.includes(mh[2])){currentMode='beheer';currentBeheerTab=mh[2]}
-    else if(mh[1]==='medewerker'&&['invoer','mijnuren'].includes(mh[2])){currentMode='medewerker';currentView=mh[2]}
+    else if(mh[1]==='medewerker'&&['invoer','mijnuren','containers'].includes(mh[2])){currentMode='medewerker';currentView=mh[2]}
   }
   const mt=$('modeToggle');if(mt)mt.value=currentMode;
   renderBottomNav();
