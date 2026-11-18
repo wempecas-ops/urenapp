@@ -474,6 +474,7 @@ function initDarkMode(){
 // === NAVIGATIE-HULPJES + WIJZIGEN VAN EEN EERDER INGEVULDE DAG ===
 function zetNav(view){document.querySelectorAll('[data-view]').forEach(x=>{x.classList.toggle('text-emerald-700',x.dataset.view===view);x.classList.toggle('text-gray-500',x.dataset.view!==view)})}
 function gaNaarInvoer(){currentView='invoer';zetNav('invoer');navPush();renderCurrentView()}
+function naarContainers(){currentView='containers';zetNav('containers');navPush();renderCurrentView();try{window.scrollTo(0,0)}catch(e){}}
 function gaNaarMijnUren(){currentView='mijnuren';zetNav('mijnuren');navPush();renderCurrentView()}
 // Laadt een bestaande dagstaat in het invoerformulier. Opslaan doet dan een update
 // in plaats van een nieuwe dagstaat. Verwerkte dagen zijn vergrendeld.
@@ -553,6 +554,10 @@ function renderInvoer(){
   $("main").innerHTML=`
   <div class="max-w-lg mx-auto">
     ${!bewerken&&SESSIE&&!isBeheer()?begroetingBlok(true):''}
+    ${!bewerken?`<button type="button" onclick="naarContainers()" style="width:100%;display:flex;align-items:center;gap:14px;padding:18px 20px;margin-bottom:18px;border:0;border-radius:16px;background:#2f6b45;color:#fff;font:inherit;text-align:left;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12)">
+      <span aria-hidden="true" style="font-size:30px;line-height:1">🚛</span>
+      <span style="flex:1"><span style="display:block;font-size:20px;font-weight:700">Container doorgeven</span><span style="display:block;font-size:13px;opacity:.85">Containerauto: klant kiezen en opslaan</span></span>
+      <span aria-hidden="true" style="font-size:24px">›</span></button>`:''}
     <h2 class="text-xl font-bold mb-4 text-emerald-700 dark:text-emerald-400">${bewerken?'Werkdag wijzigen':'Werkdag invullen'}</h2>
     ${bewerken?'<div class="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-sm text-amber-900 dark:text-amber-100">Je wijzigt een eerder ingevulde werkdag. Na het opslaan moet de beheerder hem opnieuw goedkeuren. <button type="button" id="btnAnnuleerWijzig" class="underline font-medium ml-1">Annuleren</button></div>':''}
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow p-5 space-y-4 mb-4">
@@ -2187,6 +2192,7 @@ function renderContainers(){
       <div style="font-size:12px;color:#5a655e">${esc(datumNL(c.datum))}${metNaam&&c.chauffeur?' · '+esc(c.chauffeur):''}${c.opmerking?' · '+esc(c.opmerking):''}</div></div>
       <button type="button" data-ctweg="${esc(c.id)}" class="zk-knop" style="min-height:40px;color:#b42318" aria-label="Verwijderen">Verwijder</button></div>`;
   $('main').innerHTML=`<div style="max-width:${baas?'1100px':'560px'};margin:0 auto;padding:4px 4px 40px">
+   ${isMedewerker()?`<button type="button" onclick="currentView='invoer';zetNav('invoer');navPush();renderCurrentView()" class="zk-knop" style="min-height:44px;margin-bottom:12px">‹ Terug naar uren</button>`:''}
    <div class="zk-label">Containerauto</div><h1 style="margin:6px 0 14px;font-size:26px;font-weight:600">Containers</h1>
    <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
    <div class="zk-kaart" style="padding:18px;flex:1 1 320px;max-width:560px">
