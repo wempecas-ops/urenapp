@@ -2266,7 +2266,7 @@ function renderContainers(){
     $('ctPdf').onclick=async()=>{
       try{await pdfKlaarmaken();
         const [j,m]=CT.maand.split('-');const titel='Containers '+['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'][Number(m)-1]+' '+j;
-        const def={pageSize:'A4',pageMargins:[40,40,40,40],defaultStyle:{fontSize:10},content:[
+        const def={pageSize:'A4',pageMargins:[40,40,40,40],defaultStyle:{font:'Inter',fontSize:10},content:[
           {text:titel,fontSize:16,bold:true,margin:[0,0,0,4]},{text:'Containerauto · Cas Wempe en Wempe B.V.',color:'#5a655e',margin:[0,0,0,14]},
           {text:'Per klant',bold:true,margin:[0,0,0,4]},
           {table:{headerRows:1,widths:['*',80],body:[[{text:'Klant',bold:true},{text:'Containers',bold:true,alignment:'right'}],...tot.map(o=>[o.klant,{text:String(o.aantal),alignment:'right'}]),[{text:'Totaal',bold:true},{text:String(som),bold:true,alignment:'right'}]]},layout:'lightHorizontalLines',margin:[0,0,0,16]},
