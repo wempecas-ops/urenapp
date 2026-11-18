@@ -2168,7 +2168,9 @@ async function factuurPdf(id,actie){
 // === CONTAINERS (containerauto, samen met Wempe B.V.) ======================
 // Chauffeurs geven per opgehaalde container door: klant + aantal. Geen uren.
 const CT={maand:null,aantal:1,datum:null,openLijst:false};
-let CT_NAMEN=[];   // namen die andere chauffeurs al eens gebruikten (alleen de naam)
+let CT_NAMEN=[];
+let CT_VAST=[];    // vaste klanten voor de containerauto (grote knoppen)
+function ctVast(){const r=DB.get('instellingen','containers');const l=r&&r.waarde&&Array.isArray(r.waarde.klanten)?r.waarde.klanten:null;return (l||CT_VAST).filter(Boolean)}   // namen die andere chauffeurs al eens gebruikten (alleen de naam)
 function ctNamen(){
   // eerst klanten die al eens een container hadden (meest recent eerst), daarna de klantenlijst
   const gezien=new Map();
@@ -2183,7 +2185,9 @@ function renderContainers(){
   if(!CT.maand)CT.maand=vandaagIso().slice(0,7);
   if(!CT.datum)CT.datum=vandaagIso();
   const alle=DB.list('containers').slice().sort((a,b)=>String(b.datum).localeCompare(String(a.datum))||String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
-  const namen=ctNamen();const snel=namen.slice(0,6);
+  const vast=ctVast();const namen=[...vast,...ctNamen().filter(n=>!vast.some(v=>v.toLowerCase()===n.toLowerCase()))];
+  const snel=vast.length?[]:ctNamen().slice(0,6);   // zonder vaste lijst: laatst gebruikte als knoppen
+  if(CT.klant===undefined)CT.klant='';
   const mijn=alle.filter(c=>!baas||c.userId===(SESSIE&&SESSIE.id)).slice(0,10);
   const inMaand=alle.filter(c=>String(c.datum||'').slice(0,7)===CT.maand);
   const tot=ctTotalen(inMaand);const som=tot.reduce((x,o)=>x+o.aantal,0);
@@ -2197,8 +2201,10 @@ function renderContainers(){
    <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
    <div class="zk-kaart" style="padding:18px;flex:1 1 320px;max-width:560px">
     <div style="font-size:15px;font-weight:600;margin-bottom:10px">Container doorgeven</div>
-    <label for="ctKlant" style="font-size:13px;color:#5a655e">Klant</label>
-    <input id="ctKlant" list="ctLijst" autocomplete="off" placeholder="Bijv. ACM Smit" class="zk-invoer" style="width:100%;min-height:52px;font-size:17px;margin:4px 0 8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:13px;color:#5a655e">Kies de klant</span>${baas?'<button type="button" id="ctLijstBew" class="zk-knop" style="min-height:32px;font-size:12px;padding:0 10px">Lijst aanpassen</button>':''}</div>
+    ${vast.length?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">${vast.map(n=>{const aan=CT.klant&&CT.klant.toLowerCase()===n.toLowerCase();return `<button type="button" data-ctvast="${esc(n)}" aria-pressed="${aan}" style="min-height:64px;padding:8px 10px;border-radius:12px;font:inherit;font-size:15px;font-weight:600;line-height:1.2;cursor:pointer;border:2px solid ${aan?'#2f6b45':'#cfd5cc'};background:${aan?'#2f6b45':'#fff'};color:${aan?'#fff':'#1d2420'}">${aan?'✓ ':''}${esc(n)}</button>`}).join('')}</div>`:''}
+    <label for="ctKlant" style="font-size:13px;color:#5a655e">${vast.length?'Andere klant':'Klant'}</label>
+    <input id="ctKlant" list="ctLijst" autocomplete="off" value="${esc(CT.klant&&!vast.some(v=>v.toLowerCase()===CT.klant.toLowerCase())?CT.klant:'')}" placeholder="${vast.length?'Typ een andere naam…':'Bijv. ACM Smit'}" class="zk-invoer" style="width:100%;min-height:52px;font-size:17px;margin:4px 0 8px">
     <datalist id="ctLijst">${namen.map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>
     ${snel.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${snel.map(n=>`<button type="button" data-ctsnel="${esc(n)}" class="zk-knop" style="min-height:38px;font-size:13px">${esc(n)}</button>`).join('')}</div>`:''}
     <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
@@ -2230,16 +2236,27 @@ function renderContainers(){
   const zetAantal=n=>{CT.aantal=Math.max(1,Math.min(50,n));$('ctAantal').textContent=CT.aantal};
   $('ctMin').onclick=()=>zetAantal(CT.aantal-1);$('ctPlus').onclick=()=>zetAantal(CT.aantal+1);
   $('ctDatum').onchange=e=>{CT.datum=e.target.value||vandaagIso()};
-  document.querySelectorAll('[data-ctsnel]').forEach(b=>b.onclick=()=>{$('ctKlant').value=b.dataset.ctsnel;$('ctOpslaan').focus()});
+  document.querySelectorAll('[data-ctsnel]').forEach(b=>b.onclick=()=>{CT.klant='';$('ctKlant').value=b.dataset.ctsnel;$('ctOpslaan').focus()});
+  document.querySelectorAll('[data-ctvast]').forEach(b=>b.onclick=()=>{const n=b.dataset.ctvast;CT.klant=CT.klant===n?'':n;CT.datum=$('ctDatum').value||CT.datum;const o=$('ctOpm').value;renderContainers();$('ctOpm').value=o;if(CT.klant)$('ctOpslaan').scrollIntoView({block:'nearest',behavior:'smooth'})});
+  $('ctKlant').oninput=()=>{if(CT.klant){CT.klant='';document.querySelectorAll('[data-ctvast]').forEach(x=>{x.style.background='#fff';x.style.color='#1d2420';x.style.borderColor='#cfd5cc';x.textContent=x.dataset.ctvast})}};
+  if($('ctLijstBew'))$('ctLijstBew').onclick=()=>{
+    const m=document.createElement('div');m.className='fixed inset-0 z-50';m.style.cssText='position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px';
+    m.innerHTML=`<div class="zk-kaart" style="background:#fff;padding:18px;width:min(420px,100%)"><div style="font-weight:600;margin-bottom:6px">Vaste klanten containerauto</div><p style="font-size:13px;color:#5a655e;margin:0 0 8px">Eén klant per regel, in de volgorde van de knoppen.</p><textarea id="ctLijstTxt" rows="9" class="zk-invoer" style="width:100%;font:inherit">${esc(vast.join('\n'))}</textarea><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button type="button" id="ctLijstAnn" class="zk-knop">Annuleren</button><button type="button" id="ctLijstOk" class="zk-hoofd">Opslaan</button></div></div>`;
+    document.body.appendChild(m);
+    m.querySelector('#ctLijstAnn').onclick=()=>m.remove();
+    m.querySelector('#ctLijstOk').onclick=()=>{const l=m.querySelector('#ctLijstTxt').value.split('\n').map(x=>x.trim()).filter(Boolean);const w={klanten:l};
+      if(DB.get('instellingen','containers'))DB.update('instellingen','containers',{id:'containers',waarde:w});else DB.insert('instellingen',{id:'containers',waarde:w});
+      CT_VAST=l;m.remove();toast('Lijst opgeslagen','success');renderContainers()};
+  };
   $('ctKlant').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$('ctOpslaan').click()}};
   $('ctOpslaan').onclick=()=>{
-    const ruw=$('ctKlant').value.trim();if(!ruw){toast('Vul de klant in','error');$('ctKlant').focus();return}
+    const ruw=($('ctKlant').value.trim()||CT.klant||'').trim();if(!ruw){toast('Kies of typ de klant','error');return}
     // zelfde schrijfwijze als eerder gebruikt (acm smit -> ACM Smit)
     const klant=namen.find(n=>n.toLowerCase()===ruw.toLowerCase())||ruw;
     const datum=$('ctDatum').value||vandaagIso();
     DB.insert('containers',{datum,klant,aantal:CT.aantal,opmerking:$('ctOpm').value.trim()||null,chauffeur:SESSIE?SESSIE.naam:'Beheer',userId:SESSIE?SESSIE.id:null,createdAt:new Date().toISOString()});
     toast(CT.aantal+'× container voor '+klant+' opgeslagen','success');
-    CT.aantal=1;CT.maand=datum.slice(0,7);renderContainers();
+    CT.aantal=1;CT.klant='';CT.maand=datum.slice(0,7);renderContainers();
   };
   document.querySelectorAll('[data-ctweg]').forEach(b=>b.onclick=()=>{const c=DB.get('containers',b.dataset.ctweg);if(!c)return;
     if(confirm('Verwijderen: '+(Number(c.aantal)||1)+'× '+c.klant+' op '+datumNL(c.datum)+'?')){DB.remove('containers',c.id);toast('Verwijderd','success');renderContainers()}});
@@ -5126,6 +5143,7 @@ async function laadAlles(){
   } catch (e) { CACHE.materieel = CACHE.materieel || [] }
   // Containers (tellen voor de containerauto): iedereen; de database bepaalt wat je ziet
   try { const o = await sbREST('/rest/v1/containers?select=*&order=created_at.desc&limit=5000'); CACHE.containers = Array.isArray(o) ? o : [] } catch (e) { CACHE.containers = CACHE.containers || [] }
+  try { const o = await sbREST('/rest/v1/rpc/container_vast', { method: 'POST', body: {} }); CT_VAST = Array.isArray(o) ? o.filter(Boolean) : [] } catch (e) { }
   try { const o = await sbREST('/rest/v1/rpc/container_klanten', { method: 'POST', body: {} }); CT_NAMEN = Array.isArray(o) ? o.map(x => x.klant).filter(Boolean) : [] } catch (e) { }
   // Account voor Wempe B.V. (voorheen Mts. Wempe): alleen de eigen facturen en gegevens
   if (isMts()) {
