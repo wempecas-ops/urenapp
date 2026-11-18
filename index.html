@@ -2250,6 +2250,40 @@ function ctNamen(){
   return [...gezien.values()];
 }
 function ctTotalen(lijst){const t=new Map();lijst.forEach(c=>{const k=String(c.klant||'').trim();const key=k.toLowerCase();const o=t.get(key)||{klant:k,aantal:0,keer:0};o.aantal+=Number(c.aantal)||0;o.keer++;t.set(key,o)});return [...t.values()].sort((a,b)=>b.aantal-a.aantal||a.klant.localeCompare(b.klant))}
+// Containers van één klant (in de gekozen maand) als regel op een conceptfactuur zetten
+// staat deze melding nog op een bestaande factuur? (verwijderde factuur = weer open)
+const ctOpFactuur=c=>{const m=/^(bv|cas):(.+)$/.exec(c.factuur||'');if(!m)return false;return !!DB.get(m[1]==='bv'?'facturen_mts':'facturen',m[2])};
+function ctFactuur(label,rijen,bedrijfKeuze){
+  if(!rijen.length){toast('Alles van deze klant staat al op een factuur','error');return}
+  const basis=label.replace(/\s*\(.*\)\s*$/,'').trim();const contact=(label.match(/\(([^)]*)\)/)||[])[1]||'';
+  const aantal=rijen.reduce((x,c)=>x+(Number(c.aantal)||1),0);
+  const [j,mnd]=CT.maand.split('-');const maandNaam=['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'][Number(mnd)-1]+' '+j;
+  const data=[...new Set(rijen.map(c=>String(c.datum||'').slice(8,10)+'-'+String(c.datum||'').slice(5,7)))].sort().join(', ');
+  const detail=[maandNaam,data,contact?'t.a.v. '+contact:''].filter(Boolean).join(' · ');
+  // klant zoeken: precies, begint met, of bevat (punten/spaties/rechtsvorm tellen niet)
+  const zoek=lijst=>{const t=vNorm(basis);return lijst.find(k=>vNorm(k.naam)===t)||lijst.find(k=>vNorm(k.naam).startsWith(t))||lijst.find(k=>t.length>=4&&vNorm(k.naam).includes(t))||null};
+  const laatstePrijs=regelsLijst=>{for(const r of regelsLijst)if(/container/i.test(r.omschrijving||'')&&getal(r.prijs))return getal(r.prijs);return ''};
+  const ids=rijen.map(c=>c.id);
+  if(bedrijfKeuze==='bv'){
+    const kl=zoek(DB.list('klanten'))||(DB.list('facturen_mts').map(x=>x.klant||{}).find(k=>vNorm(k.naam)===vNorm(basis)))||null;
+    const klant=kl?{naam:kl.naam,adres:kl.adres||'',postcode:kl.postcode||'',plaats:kl.plaats||'',btwnummer:kl.btwnummer||''}:{naam:basis,adres:'',postcode:'',plaats:''};
+    const eerder=DB.list('facturen_mts').filter(x=>vNorm((x.klant||{}).naam)===vNorm(klant.naam)).sort((a,b)=>String(b.factuurdatum).localeCompare(String(a.factuurdatum))).flatMap(x=>x.regels||[]);
+    const prijs=laatstePrijs(eerder);
+    const fa=DB.insert('facturen_mts',{nummer:mtsVolgendNummer(),factuurdatum:vandaagIso(),klant,regels:[{id:uid(),omschrijving:'Container',detail,aantal,eenheid:'stuk',prijs}],btw:'21',opmerking:'',totaalExcl:prijs?r2(prijs*aantal):0,totaalBtw:prijs?r2(prijs*aantal*0.21):0,totaalIncl:prijs?r2(prijs*aantal*1.21):0,betaaldOp:null});
+    ids.forEach(id=>{const c=DB.get('containers',id);if(c)DB.update('containers',id,{...c,factuur:'bv:'+fa.id})});
+    toast(aantal+' container'+(aantal===1?'':'s')+' op een factuur van Wempe B.V. gezet'+(prijs?'':' · vul de prijs nog in'),'success');
+    MTS_OPEN=fa.id;currentMode='beheer';switchTab('mts');return;
+  }
+  const kl=zoek(DB.list('klanten'));
+  if(!kl){toast('Klant "'+basis+'" niet gevonden in Klanten; maak de factuur via Facturen','error');return}
+  const eerder=DB.list('facturen').filter(x=>x.klantId===kl.id).sort((a,b)=>String(b.factuurdatum).localeCompare(String(a.factuurdatum))).flatMap(x=>x.regels||[]);
+  const prijs=laatstePrijs(eerder);const b=bedrijf(),datum=vandaagIso();
+  const regels=[{id:uid(),omschrijving:'Container',detail,aantal,eenheid:'stuk',prijs,btw:'21'}];const tt=factuurTotalen(regels);
+  const fa=DB.insert('facturen',{nummer:null,soort:'factuur',status:'concept',klantId:kl.id,klant:klantSnapshot(kl),factuurdatum:datum,vervaldatum:plusDagen(datum,b.termijn),regels,opmerking:'',klusIds:[],bijlagen:[],totaalExcl:tt.excl,totaalBtw:tt.btw,totaalIncl:tt.incl});
+  ids.forEach(id=>{const c=DB.get('containers',id);if(c)DB.update('containers',id,{...c,factuur:'cas:'+fa.id})});
+  toast(aantal+' container'+(aantal===1?'':'s')+' op een conceptfactuur gezet'+(prijs?'':' · vul de prijs nog in'),'success');
+  switchTab('facturen');openFactuurEditor(fa.id);
+}
 function renderContainers(){
   const baas=isBeheer()||isMts();
   if(!CT.maand)CT.maand=vandaagIso().slice(0,7);
@@ -2292,8 +2326,10 @@ function renderContainers(){
       <div style="font-size:15px;font-weight:600">Telling per klant</div>
       <div style="display:flex;gap:8px;align-items:center"><input id="ctMaand" type="month" value="${esc(CT.maand)}" class="zk-invoer" style="min-height:40px"><button type="button" id="ctPdf" class="zk-knop" style="min-height:40px" ${inMaand.length?'':'disabled'}>Pdf</button></div></div>
      ${tot.length?`<table style="width:100%;font-size:14px;border-collapse:collapse"><thead><tr style="text-align:left;color:#5a655e;font-size:12px"><th style="padding:6px 0">Klant</th><th style="padding:6px 0;text-align:right">Containers</th></tr></thead><tbody>
-      ${tot.map(o=>`<tr style="border-top:1px solid #eef0ec"><td style="padding:8px 0">${esc(o.klant)}</td><td style="padding:8px 0;text-align:right;font-weight:600">${o.aantal}</td></tr>`).join('')}
-      <tr style="border-top:2px solid #cfd5cc"><td style="padding:8px 0;font-weight:600">Totaal</td><td style="padding:8px 0;text-align:right;font-weight:700">${som}</td></tr></tbody></table>`
+      ${tot.map(o=>{const open=inMaand.filter(c=>String(c.klant||'').trim().toLowerCase()===o.klant.toLowerCase()&&!ctOpFactuur(c));const nOpen=open.reduce((x,c)=>x+(Number(c.aantal)||1),0);
+        return `<tr style="border-top:1px solid #eef0ec"><td style="padding:8px 0">${esc(o.klant)}</td><td style="padding:8px 0;text-align:right;font-weight:600">${o.aantal}</td>
+        <td style="padding:6px 0 6px 10px;text-align:right;white-space:nowrap">${nOpen?`<button type="button" data-ctfact="${esc(o.klant)}" class="zk-knop" style="min-height:34px;font-size:12px;padding:0 10px">Factuur${nOpen!==o.aantal?' ('+nOpen+')':''}</button>`:'<span style="font-size:12px;color:#245a39">✓ op factuur</span>'}</td></tr>`}).join('')}
+      <tr style="border-top:2px solid #cfd5cc"><td style="padding:8px 0;font-weight:600">Totaal</td><td style="padding:8px 0;text-align:right;font-weight:700">${som}</td><td></td></tr></tbody></table>`
       :'<p style="color:#5a655e;font-size:14px;margin:6px 0">Nog geen containers in deze maand.</p>'}
      ${inMaand.length?`<button type="button" id="ctToon" class="zk-knop" style="margin-top:12px;min-height:38px;font-size:13px">${CT.openLijst?'Verberg':'Toon'} alle ${inMaand.length} meldingen</button>
       ${CT.openLijst?`<div style="margin-top:6px">${inMaand.map(c=>rij(c,true)).join('')}</div>`:''}`:''}
@@ -2333,6 +2369,15 @@ function renderContainers(){
   if(baas){
     $('ctMaand').onchange=e=>{CT.maand=e.target.value||vandaagIso().slice(0,7);renderContainers()};
     if($('ctToon'))$('ctToon').onclick=()=>{CT.openLijst=!CT.openLijst;renderContainers()};
+    document.querySelectorAll('[data-ctfact]').forEach(b=>b.onclick=()=>{
+      const label=b.dataset.ctfact;const rijen=inMaand.filter(c=>String(c.klant||'').trim().toLowerCase()===label.toLowerCase()&&!ctOpFactuur(c));
+      if(isMts())return ctFactuur(label,rijen,'bv');
+      // beheer: kiezen voor welk bedrijf
+      const m=document.createElement('div');m.style.cssText='position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px';
+      m.innerHTML=`<div class="zk-kaart" style="background:#fff;padding:20px;width:min(380px,100%)"><div style="font-weight:600;margin-bottom:12px">Factuur voor ${esc(label)} maken vanuit</div>
+        <button type="button" data-bed="cas" class="zk-hoofd" style="width:100%;min-height:48px;margin-bottom:8px">Cas Wempe</button><button type="button" data-bed="bv" class="zk-knop" style="width:100%;min-height:48px;margin-bottom:8px">Wempe B.V.</button><button type="button" data-bed="" class="zk-knop" style="width:100%;min-height:40px">Annuleren</button></div>`;
+      document.body.appendChild(m);m.querySelectorAll('[data-bed]').forEach(x=>x.onclick=()=>{m.remove();if(x.dataset.bed)ctFactuur(label,rijen,x.dataset.bed)});
+    });
     $('ctPdf').onclick=async()=>{
       try{await pdfKlaarmaken();
         const [j,m]=CT.maand.split('-');const titel='Containers '+['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'][Number(m)-1]+' '+j;
@@ -5274,7 +5319,7 @@ async function laadAlles(){
     let alles = [], van = 0;
     for (;;) {
       // Medewerkers krijgen van klanten alleen naam en plaats (geen e-mail, telefoon of btw-nummer)
-      const rijen = (t === 'klanten' && !isBeheer())
+      const rijen = (t === 'klanten' && !isBeheer() && !isMts())
         ? (van ? [] : await sbREST('/rest/v1/rpc/klanten_basis', { method: 'POST', body: {} }))
         : await sbREST('/rest/v1/' + t + '?select=*&order=id.asc&limit=1000&offset=' + van);
       if (!Array.isArray(rijen)) break;
