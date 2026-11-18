@@ -240,7 +240,15 @@ function klantenZoeken(lijst,q){
       if(!best)return;
       if(best<65)tikfout=true;
     }
-    uit.push([tikfout?1:0,k]);
+    // volgorde: naam BEGINT met wat je typt (alfabetisch) > een woord in de naam begint ermee
+    // > het staat ergens in de naam > alleen via plaats/contact/adres > tikfout
+    const nm=zoekNorm(k.naam),nmPlat=nm.replace(/ /g,''),qv=t.join(' '),qPlat=t.join('');
+    let rang=3;
+    if(nm.startsWith(qv)||nmPlat.startsWith(qPlat))rang=0;
+    else if(t.every(w=>nm.split(' ').some(x=>x.startsWith(w))))rang=1;
+    else if(t.every(w=>nmPlat.includes(w)))rang=2;
+    if(tikfout)rang=4;
+    uit.push([rang,k]);
   });
   return uit.sort((a,b)=>a[0]-b[0]||abc(a[1],b[1])).map(x=>x[1]);
 }
