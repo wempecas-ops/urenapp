@@ -243,11 +243,21 @@ function klantenZoeken(lijst,q){
     // volgorde: naam BEGINT met wat je typt (alfabetisch) > een woord in de naam begint ermee
     // > het staat ergens in de naam > alleen via plaats/contact/adres > tikfout
     const nm=zoekNorm(k.naam),nmPlat=nm.replace(/ /g,''),qv=t.join(' '),qPlat=t.join('');
-    let rang=3;
+    let rang=9;
     if(nm.startsWith(qv)||nmPlat.startsWith(qPlat))rang=0;
     else if(t.every(w=>nm.split(' ').some(x=>x.startsWith(w))))rang=1;
     else if(t.every(w=>nmPlat.includes(w)))rang=2;
-    if(tikfout)rang=4;
+    else{
+      // gevonden via adres, plaats, postcode of contact: wat het best past eerst
+      for(const v of [k.adres,[k.adres,k.plaats].filter(Boolean).join(' '),k.postcode,k.plaats,k.contact]){
+        const n=zoekNorm(v);if(!n)continue;const pl=n.replace(/ /g,'');
+        if(n===qv||pl===qPlat)rang=Math.min(rang,3);
+        else if(n.startsWith(qv)||pl.startsWith(qPlat))rang=Math.min(rang,4);
+        else if(t.every(w=>n.split(' ').some(x=>x.startsWith(w))))rang=Math.min(rang,5);
+      }
+      if(rang===9)rang=6;
+    }
+    if(tikfout)rang=7;
     uit.push([rang,k]);
   });
   return uit.sort((a,b)=>a[0]-b[0]||abc(a[1],b[1])).map(x=>x[1]);
@@ -1277,7 +1287,10 @@ function renderKlussenBeheer(){
   <div class="flex flex-wrap gap-2 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">${[['open','Te factureren',basisOpen.length],['klaar','Gefactureerd',basisKlaar.length],['','Alles',basis.length]].map(([v,l,n])=>`<button class="klus-fac px-4 py-2 rounded-lg text-sm font-semibold min-h-[44px] ${klusFilter.factuur===v?'bg-emerald-600 text-white dark:text-black':'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}" data-fac="${v}">${l} (${n})</button>`).join('')}</div>
   <div class="flex flex-wrap gap-2 mb-2">${periodeKiezer('klus-filter',klusFilter)}</div>
   <div class="flex flex-wrap gap-2 mb-3">
-    <select id="klFKlant" class="${SEL_S} bg-white dark:bg-gray-700">${opt(klanten,klusFilter.klant,'Alle klanten')}</select>
+    <div style="position:relative;min-width:240px">
+      <input id="klFKlantZoek" type="search" autocomplete="off" value="${esc((klanten.find(x=>x.id===klusFilter.klant)||{}).naam||'')}" placeholder="Alle klanten · typ om te zoeken" aria-label="Klant zoeken" class="${SEL_S} bg-white dark:bg-gray-700 w-full">
+      <div id="klFKlantRes" class="hidden" style="position:absolute;left:0;right:0;top:100%;margin-top:4px;max-height:320px;overflow:auto;z-index:30;background:#fff;border:1px solid #d9ded6;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.15)"></div>
+    </div>
     <select id="klFDienst" class="${SEL_S} bg-white dark:bg-gray-700">${opt(diensten,klusFilter.dienst,'Alle diensten')}</select>
     <select id="klFWerknemer" class="${SEL_S} bg-white dark:bg-gray-700">${opt(werknemers,klusFilter.werknemer,'Alle medewerkers')}</select>
 
@@ -1351,7 +1364,21 @@ function renderKlussenBeheer(){
   document.querySelectorAll('.klus-filter').forEach(b=>b.onclick=()=>{klusFilter.periode=b.dataset.filter;renderKlussenBeheer()});
   if($('klus-filterVan'))$('klus-filterVan').onchange=e=>{klusFilter.van=e.target.value;renderKlussenBeheer()};
   if($('klus-filterTot'))$('klus-filterTot').onchange=e=>{klusFilter.tot=e.target.value;renderKlussenBeheer()};
-  $('klFKlant').onchange=e=>{klusFilter.klant=e.target.value;renderKlussenBeheer()};
+  {// klant zoeken met dezelfde slimme volgorde als bij Klanten; klanten met klussen eerst
+    const inp=$('klFKlantZoek'),res=$('klFKlantRes');
+    const metKlus=new Set(alle.map(k=>k.klantId));
+    const toon=()=>{const q=inp.value.trim();
+      const kand=klanten.filter(k=>metKlus.has(k.id)||k.id===klusFilter.klant);
+      const l=klantenZoeken(kand,q).slice(0,60);
+      res.innerHTML=`<button type="button" data-klfk="" style="display:block;width:100%;text-align:left;padding:10px 12px;border:0;border-bottom:1px solid #eef0ec;background:none;font:inherit;font-weight:600;cursor:pointer">Alle klanten</button>`+
+        (l.map(k=>`<button type="button" data-klfk="${esc(k.id)}" style="display:block;width:100%;text-align:left;padding:8px 12px;border:0;border-bottom:1px solid #eef0ec;background:${k.id===klusFilter.klant?'#eef4e8':'none'};font:inherit;cursor:pointer"><div style="font-weight:500">${esc(k.naam)}</div><div style="font-size:11px;color:#5a655e">${esc([k.plaats,k.klantcode].filter(Boolean).join(' · '))}</div></button>`).join('')||'<div style="padding:10px 12px;color:#5a655e;font-size:13px">Geen klant met klussen gevonden</div>');
+      res.classList.remove('hidden');
+      res.querySelectorAll('[data-klfk]').forEach(b=>b.onmousedown=e=>{e.preventDefault();klusFilter.klant=b.dataset.klfk;renderKlussenBeheer()});};
+    inp.onfocus=()=>{inp.select();toon()};inp.oninput=toon;
+    inp.onblur=()=>setTimeout(()=>res.classList.add('hidden'),150);
+    inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();const b=res.querySelectorAll('[data-klfk]')[inp.value.trim()?1:0];if(b){klusFilter.klant=b.dataset.klfk;renderKlussenBeheer()}}if(e.key==='Escape')inp.blur()};
+    inp.addEventListener('search',()=>{if(!inp.value&&klusFilter.klant){klusFilter.klant='';renderKlussenBeheer()}});
+  }
   $('klFDienst').onchange=e=>{klusFilter.dienst=e.target.value;renderKlussenBeheer()};
   $('klFWerknemer').onchange=e=>{klusFilter.werknemer=e.target.value;renderKlussenBeheer()};
   document.querySelectorAll('.klus-fac').forEach(b=>b.onclick=()=>{klusFilter.factuur=b.dataset.fac;renderKlussenBeheer()});
