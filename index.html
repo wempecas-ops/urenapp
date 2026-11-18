@@ -1914,7 +1914,7 @@ function renderFactuurPagina(id){
     $('fe_datum').onchange=e=>{const oud=f.factuurdatum;f.factuurdatum=e.target.value;if(!credit&&(!f.vervaldatum||f.vervaldatum===plusDagen(oud,b.termijn))){f.vervaldatum=plusDagen(f.factuurdatum,b.termijn);$('fe_verval').value=f.vervaldatum}};
     $('fe_verval').onchange=e=>{f.vervaldatum=e.target.value};
     $('fe_opm').oninput=e=>{f.opmerking=e.target.value};
-    $('fe_regels').oninput=e=>{const tr=e.target.closest('[data-ri]');if(!tr)return;const r=f.regels[+tr.dataset.ri];const k=e.target.dataset.rf;if(!k)return;r[k]=e.target.value;if(k==='aantal'||k==='prijs')tr.querySelector('[data-rtot]').textContent=eurF(r2(getal(r.aantal)*getal(r.prijs)));tekenTotaal()};
+    $('fe_regels').oninput=e=>{const tr=e.target.closest('[data-ri]');if(!tr)return;const r=f.regels[+tr.dataset.ri];const k=e.target.dataset.rf;if(!k)return;r[k]=e.target.value;if(k==='aantal'||k==='prijs')tr.querySelector('[data-rtot]').textContent=eurF(r2(rekenGetal(r.aantal)*rekenGetal(r.prijs)));tekenTotaal()};
     $('fe_regels').onchange=e=>{const tr=e.target.closest('[data-ri]');if(!tr)return;const k=e.target.dataset.rf;if(k==='btw'||k==='eenheid'){f.regels[+tr.dataset.ri][k]=e.target.value;tekenTotaal()}};
     $('fe_regels').onclick=e=>{const t=e.target.closest('button');if(!t)return;
       if(t.dataset.rdel!==undefined){const r=f.regels[+t.dataset.rdel];f.regels.splice(+t.dataset.rdel,1);if(r&&r.klusId){const weg=(r.samengevoegd&&r.samengevoegd.length)?r.samengevoegd:[r.klusId];f.klusIds=f.klusIds.filter(x=>!weg.includes(x.klusId))}sel.delete(r&&r.id);tekenRegels();return}
@@ -4248,6 +4248,22 @@ const ORDER_KLEUR={Nieuw:'bg-gray-200 text-gray-800',Gepland:'bg-blue-100 text-b
 const orderFilter={status:'open',q:''};
 const eurO=n=>'€ '+(Number(n)||0).toFixed(2).replace('.',',');
 const getal=v=>{const n=parseFloat(String(v==null?'':v).replace(',','.'));return isNaN(n)?0:n};
+// Rekenen in een aantal- of prijsveld: "6+8" wordt 14, "2x8,5" wordt 17, "45/2" wordt 22,5
+function rekenUit(v){
+  let t=String(v==null?'':v).trim();
+  if(!/[+\-*/x×:()]/.test(t.replace(/^-/,'')))return null;            // geen som
+  if(!/^[0-9+\-*/x×:().,\s]+$/.test(t))return null;                   // alleen cijfers en rekentekens
+  t=t.replace(/\s+/g,'').replace(/[x×]/g,'*').replace(/:/g,'/').replace(/(\d)\.(\d{3})(?!\d)/g,'$1$2').replace(/,/g,'.');
+  try{const n=Function('"use strict";return ('+t+')')();return (typeof n==='number'&&isFinite(n))?Math.round(n*10000)/10000:null}catch(e){return null}
+}
+const rekenGetal=v=>{const r=rekenUit(v);return r==null?getal(v):r};
+// Uitrekenen zodra je het veld verlaat of op Enter drukt
+(function(){
+  const SEL='[data-rf="aantal"],[data-rf="prijs"],[data-k="aantal"],[data-k="prijs"]';
+  const reken=el=>{const r=rekenUit(el.value);if(r==null)return;el.value=String(r).replace('.',',');el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));if(typeof toast==='function')toast('Uitgerekend: '+String(r).replace('.',','),'success')};
+  document.addEventListener('blur',e=>{if(e.target&&e.target.matches&&e.target.matches(SEL))reken(e.target)},true);
+  document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target&&e.target.matches&&e.target.matches(SEL)&&rekenUit(e.target.value)!=null){e.preventDefault();reken(e.target)}},true);
+})();
 const orderTotaal=o=>(o.regels||[]).reduce((s,r)=>s+getal(r.aantal)*getal(r.prijs),0);
 const nieuwOrdernr=()=>{let m=0;DB.list('orders').forEach(o=>{const r=/^O(\d+)$/.exec(o.ordernr||'');if(r)m=Math.max(m,parseInt(r[1],10))});return 'O'+String(m+1).padStart(4,'0')};
 const datumNL=d=>d?String(d).split('-').reverse().join('-'):'';
