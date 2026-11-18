@@ -2586,7 +2586,7 @@ function renderVrachten(){
    </div>
    <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
     <div style="font-size:14px"><strong>${basis.length}</strong> vracht${basis.length===1?'':'en'}${gekozen.length?' geselecteerd':''} · <strong>${kgF(tot)}</strong> (${tonF(tot)})</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">${gekozen.length?'<button type="button" id="vrLeeg" class="zk-knop">Selectie wissen</button>':''}<button type="button" id="vrPdf" class="zk-hoofd" ${basis.length?'':'disabled'}>Overzicht als pdf${gekozen.length?' (selectie)':''}</button></div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${gekozen.length?'<button type="button" id="vrLeeg" class="zk-knop">Selectie wissen</button>':''}<button type="button" id="vrFact" class="zk-knop" ${basis.length?'':'disabled'} title="Zet deze vrachten op een factuur">Factuur maken</button><button type="button" id="vrPdf" class="zk-hoofd" ${basis.length?'':'disabled'}>Overzicht als pdf${gekozen.length?' (selectie)':''}</button></div></div>
    <div class="zk-kaart" style="overflow:hidden"><div class="scroll-x"><table style="width:100%;border-collapse:collapse;font-size:14px;min-width:1100px">
     <thead><tr><th class="zk-th" style="padding:10px 12px;width:36px"><input type="checkbox" id="vrAlles" aria-label="Alles selecteren" style="min-height:auto" ${lijst.length&&gekozen.length===lijst.length?'checked':''}></th><th class="zk-th" style="text-align:left;padding:10px 12px">VDM-nummer</th><th class="zk-th" style="text-align:left;padding:10px 12px">Laden</th><th class="zk-th" style="text-align:left;padding:10px 12px">Lossen</th><th class="zk-th" style="text-align:left;padding:10px 12px">Kenteken</th><th class="zk-th" style="text-align:left;padding:10px 12px">Oplegger</th><th class="zk-th" style="text-align:left;padding:10px 12px">Mestcode</th><th class="zk-th" style="text-align:left;padding:10px 12px">Opm.code</th><th class="zk-th" style="text-align:left;padding:10px 12px">Leverancier</th><th class="zk-th" style="text-align:left;padding:10px 12px">Afnemer</th><th class="zk-th" style="text-align:right;padding:10px 12px">Gewicht</th></tr></thead>
     <tbody>${lijst.length?lijst.map(v=>`<tr style="border-top:1px solid #eceee9"><td style="padding:9px 12px"><input type="checkbox" data-vsel="${esc(v.id)}" ${VRACHT.sel[v.id]?'checked':''} style="min-height:auto" aria-label="Selecteer vracht ${esc(v.vdmNummer||v.id)}"></td><td style="padding:9px 12px;font-weight:600">${esc(v.vdmNummer||'')}</td><td style="padding:9px 12px;white-space:nowrap">${esc(vTijd(v.laadOp||v.laaddatum))}</td><td style="padding:9px 12px;white-space:nowrap;color:#5a655e">${esc(vTijd(v.losOp||v.losdatum))}</td><td style="padding:9px 12px;white-space:nowrap">${esc(v.kenteken||'')}</td><td style="padding:9px 12px;white-space:nowrap">${esc(v.oplegger||'')}</td><td style="padding:9px 12px" title="${esc(v.mestcode||'')}">${esc(mestKort(v.mestcode))}</td><td style="padding:9px 12px">${esc(v.opmerkingcode||'')}</td><td style="padding:9px 12px">${esc(v.leverancier||'')}</td><td style="padding:9px 12px">${esc(v.afnemer||'')}</td><td style="padding:9px 12px;text-align:right;white-space:nowrap">${kgF(v.gewichtKg)}</td></tr>`).join('')
@@ -2600,7 +2600,69 @@ function renderVrachten(){
   $('vrAlles').onchange=e=>{VRACHT.sel={};if(e.target.checked)lijst.forEach(v=>VRACHT.sel[v.id]=true);her()};
   document.querySelectorAll('[data-vsel]').forEach(c=>c.onchange=()=>{if(c.checked)VRACHT.sel[c.dataset.vsel]=true;else delete VRACHT.sel[c.dataset.vsel];her()});
   if($('vrLeeg'))$('vrLeeg').onclick=()=>{VRACHT.sel={};her()};
+  $('vrFact').onclick=()=>openVrachtFactuur(basis.slice(),vrachtTitel(VRACHT.zoek,basis));
   $('vrPdf').onclick=async()=>{try{const titel=vrachtTitel(VRACHT.zoek,basis);const bl=await vrachtenPdfBlob(basis.slice().reverse(),titel,VRACHT.van,VRACHT.tot);const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download=vrachtPdfNaam(titel,VRACHT.van,VRACHT.tot);a.click();setTimeout(()=>URL.revokeObjectURL(a.href),4000)}catch(e){toast('PDF maken mislukt: '+e.message,'error')}};
+}
+// Van eVDM-vrachten in één keer een factuurregel (of regel per vracht) maken en doorgaan in Facturen
+function openVrachtFactuur(lijst,titel){
+  if(!lijst.length){toast('Geen vrachten in deze selectie','error');return}
+  lijst=lijst.slice().sort((a,b)=>String(a.laadOp||a.laaddatum||'').localeCompare(String(b.laadOp||b.laaddatum||'')));
+  const klanten=DB.list('klanten').filter(k=>k.actief!==false);
+  const t=vNorm(titel);
+  let klant=klanten.find(k=>vNorm(k.naam)===t)||(t?klanten.find(k=>{const n=vNorm(k.naam);return n&&(n.includes(t)||t.includes(n))}):null)||null;
+  const kg=lijst.reduce((s,v)=>s+(Number(v.gewichtKg)||0),0);const ton=Math.round(kg/10)/100;
+  const dat=v=>String(v.laadOp||v.laaddatum||'').slice(0,10);
+  const van=dat(lijst[0]),tot=dat(lijst[lijst.length-1]);
+  const m=document.createElement('div');m.id='vrFactM';m.style.cssText='position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow:auto';
+  m.innerHTML=`<div class="zk-kaart" style="background:#fff;padding:20px;width:min(560px,100%)">
+   <div style="font-size:18px;font-weight:600;margin-bottom:4px">Factuur maken van ${lijst.length} vracht${lijst.length===1?'':'en'}</div>
+   <p style="font-size:13px;color:#5a655e;margin:0 0 14px">${esc(datumNL(van))} t/m ${esc(datumNL(tot))} · ${tonF(kg)}</p>
+   <label class="zk-label" for="vfKlant" style="display:block;margin-bottom:6px">Klant</label>
+   <div style="position:relative;margin-bottom:12px"><input id="vfKlant" autocomplete="off" class="zk-invoer" style="width:100%" value="${esc(klant?klant.naam:'')}" placeholder="Zoek de klant…">
+    <div id="vfRes" class="hidden" style="position:absolute;left:0;right:0;top:100%;margin-top:4px;max-height:260px;overflow:auto;z-index:5;background:#fff;border:1px solid #d9ded6;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.15)"></div></div>
+   <label class="zk-label" for="vfDoel" style="display:block;margin-bottom:6px">Op welke factuur</label>
+   <select id="vfDoel" class="zk-invoer" style="width:100%;margin-bottom:12px"></select>
+   <div class="zk-label" style="margin-bottom:6px">Regels</div>
+   <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:4px;cursor:pointer"><input type="radio" name="vfVorm" value="totaal" checked style="min-height:auto"> Eén regel met het totaal (${tonF(kg)})</label>
+   <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:12px;cursor:pointer"><input type="radio" name="vfVorm" value="per" style="min-height:auto"> Eén regel per vracht (${lijst.length} regels)</label>
+   <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px;margin-bottom:12px">
+    <div><label class="zk-label" for="vfOms" style="display:block;margin-bottom:6px">Omschrijving</label><input id="vfOms" class="zk-invoer" style="width:100%" value="Transport mest"></div>
+    <div><label class="zk-label" for="vfEenh" style="display:block;margin-bottom:6px">Per</label><select id="vfEenh" class="zk-invoer" style="width:100%"><option value="ton">ton</option><option value="vracht">vracht</option></select></div>
+    <div><label class="zk-label" for="vfPrijs" style="display:block;margin-bottom:6px">Prijs (€)</label><input id="vfPrijs" inputmode="decimal" class="zk-invoer" style="width:100%" placeholder="later"></div>
+   </div>
+   <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:16px;cursor:pointer"><input type="checkbox" id="vfPdf" checked style="min-height:auto"> Vrachtenoverzicht (pdf) als bijlage meesturen</label>
+   <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" id="vfX" class="zk-knop">Annuleren</button><button type="button" id="vfOk" class="zk-hoofd">Maak factuur en open</button></div></div>`;
+  document.body.appendChild(m);
+  const inp=m.querySelector('#vfKlant'),res=m.querySelector('#vfRes'),doel=m.querySelector('#vfDoel');
+  const vulDoel=()=>{const c=klant?DB.list('facturen').filter(f=>f.klantId===klant.id&&f.status==='concept'&&f.soort!=='credit'):[];
+    doel.innerHTML='<option value="">Nieuwe factuur</option>'+c.map(f=>`<option value="${esc(f.id)}">Toevoegen aan concept van ${esc(datumNL(f.factuurdatum))} (${(f.regels||[]).length} regels)</option>`).join('')};
+  vulDoel();
+  const toon=()=>{const l=klantenZoeken(klanten,inp.value).slice(0,40);
+    res.innerHTML=l.map(k=>`<button type="button" data-vfk="${esc(k.id)}" style="display:block;width:100%;text-align:left;padding:8px 12px;border:0;border-bottom:1px solid #eef0ec;background:none;font:inherit;cursor:pointer"><div style="font-weight:500">${esc(k.naam)}</div><div style="font-size:11px;color:#5a655e">${esc([k.plaats,k.klantcode].filter(Boolean).join(' · '))}</div></button>`).join('')||'<div style="padding:10px 12px;color:#5a655e;font-size:13px">Geen klant gevonden</div>';
+    res.classList.remove('hidden');
+    res.querySelectorAll('[data-vfk]').forEach(b=>b.onmousedown=e=>{e.preventDefault();klant=DB.get('klanten',b.dataset.vfk);inp.value=klant.naam;res.classList.add('hidden');vulDoel()})};
+  inp.onfocus=()=>{inp.select();toon()};inp.oninput=()=>{klant=null;vulDoel();toon()};inp.onblur=()=>setTimeout(()=>res.classList.add('hidden'),150);
+  m.querySelector('#vfX').onclick=()=>m.remove();
+  m.querySelector('#vfOk').onclick=async()=>{
+    if(!klant){toast('Kies de klant uit de lijst','error');inp.focus();return}
+    const vorm=m.querySelector('[name="vfVorm"]:checked').value,eenh=m.querySelector('#vfEenh').value,oms=m.querySelector('#vfOms').value.trim()||'Transport',prijsRuw=m.querySelector('#vfPrijs').value.trim();
+    const prijs=prijsRuw?rekenGetal(prijsRuw):'';const metPdf=m.querySelector('#vfPdf').checked;
+    const nieuw=vorm==='totaal'
+      ?[{id:uid(),omschrijving:oms,detail:`${datumNL(van)} t/m ${datumNL(tot)} · ${lijst.length} vracht${lijst.length===1?'':'en'} · ${tonF(kg)}`,aantal:eenh==='ton'?ton:lijst.length,eenheid:eenh,prijs,btw:'21'}]
+      :lijst.map(v=>({id:uid(),omschrijving:oms,detail:[datumNL(dat(v)),v.vdmNummer?'VDM '+v.vdmNummer:'',v.kenteken||'',mestKort(v.mestcode)].filter(Boolean).join(' · '),aantal:eenh==='ton'?Math.round((Number(v.gewichtKg)||0)/10)/100:1,eenheid:eenh,prijs,btw:'21'}));
+    const knop=m.querySelector('#vfOk');knop.disabled=true;knop.textContent='Bezig…';
+    let f;const b=bedrijf(),datum=vandaagIso();
+    if(doel.value){const o=DB.get('facturen',doel.value);const regels=[...(o.regels||[]),...nieuw];const tt=factuurTotalen(regels);f=DB.update('facturen',o.id,{...o,regels,totaalExcl:tt.excl,totaalBtw:tt.btw,totaalIncl:tt.incl})||{...o,regels};f.id=o.id}
+    else{const tt=factuurTotalen(nieuw);f=DB.insert('facturen',{nummer:null,soort:'factuur',status:'concept',klantId:klant.id,klant:klantSnapshot(klant),factuurdatum:datum,vervaldatum:plusDagen(datum,b.termijn),regels:nieuw,opmerking:'',klusIds:[],bijlagen:[],totaalExcl:tt.excl,totaalBtw:tt.btw,totaalIncl:tt.incl})}
+    if(metPdf&&CONFIG.MODE==='supabase'){
+      try{const bl=await vrachtenPdfBlob(lijst,titel||klant.naam,van,tot);const naam=vrachtPdfNaam(titel||klant.naam,van,tot);
+        const pad=await opslagUpload('facturen/'+f.id+'/b-'+Date.now().toString(36)+'-'+veiligBestand(naam),bl,'application/pdf');
+        const nu=DB.get('facturen',f.id);DB.update('facturen',f.id,{...nu,bijlagen:[...((nu&&nu.bijlagen)||[]),{pad,naam,grootte:bl.size,bron:'upload',mee:true}]});
+      }catch(e){toast('Vrachtenoverzicht toevoegen mislukt: '+e.message,'error')}
+    }
+    m.remove();toast(nieuw.length+' regel'+(nieuw.length===1?'':'s')+' op de factuur gezet','success');
+    switchTab('facturen');openFactuurEditor(f.id);
+  };
 }
 // De echte naam zoals die in eVDM staat (in plaats van wat er getypt is)
 function vrachtTitel(zoek,lijst){const z=vNorm(zoek);if(!z)return 'Alle vrachten';for(const v of lijst){for(const n of [v.afnemer,v.leverancier])if(n&&vNorm(n).includes(z))return n}return zoek}
