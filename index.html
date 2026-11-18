@@ -1769,7 +1769,7 @@ function renderFactuurPagina(id){
        <thead><tr style="background:#fafbf9">${concept?'<th style="width:36px;padding:10px 0 10px 16px"><span class="sr-only">Selecteer</span></th>':''}<th class="zk-th" style="text-align:left;padding:10px 8px 10px ${concept?8:24}px;width:40%">Omschrijving</th><th class="zk-th" style="text-align:left;padding:10px 8px">Aantal</th><th class="zk-th" style="text-align:left;padding:10px 8px">Eenheid</th><th class="zk-th" style="text-align:left;padding:10px 8px">Prijs</th><th class="zk-th" style="text-align:left;padding:10px 8px">Btw</th><th class="zk-th" style="text-align:right;padding:10px 8px">Totaal</th><th style="padding:10px 16px 10px 0"></th></tr></thead>
        <tbody id="fe_regels"></tbody></table></div>
       ${concept?`<div style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 24px 18px;border-top:1px solid #eceee9;background:#fcfcfb">
-        <button type="button" id="feRegel" class="zk-stippel">+ Lege regel</button>
+        <button type="button" id="feRegel" class="zk-stippel">+ Lege regel</button><button type="button" id="feWit" class="zk-stippel" title="Lege regel op de factuur, om regels in groepjes te zetten">+ Witregel</button>
         <button type="button" id="feMerge" class="zk-stippel" title="Vink twee of meer regels aan, bijvoorbeeld een klus die over twee dagen ging">Regels samenvoegen</button>
         <label for="feProduct" class="sr-only">Product toevoegen</label><select id="feProduct" class="zk-stippel" style="padding-right:30px"><option value="">+ Product uit de lijst…</option>${producten.map(p=>`<option value="${p.id}">${esc(p.naam)} – ${eurF(p.prijs)} / ${esc(eenhLabel(p.eenheid))}</option>`).join('')}</select>
         <button type="button" id="feKlussen" class="zk-stippel" style="border-color:#9cc2a8;background:#f2f8f4;color:#245a39"></button>
@@ -1811,8 +1811,12 @@ function renderFactuurPagina(id){
     $('fe_kladres').innerHTML=k?[esc(k.adres||''),esc([k.postcode,k.plaats].filter(Boolean).join(' ')),k.btwnummer?'btw-nr '+esc(k.btwnummer):'',mail?'<span style="color:#2f6b45;font-weight:500">'+esc(mail)+'</span>':'<span style="color:#8a5a12">nog geen e-mailadres</span>',kl?'<button type="button" id="feKlantOv" style="font:inherit;font-size:13px;font-weight:500;color:#2f6b45;background:none;border:0;padding:0;margin-top:4px;cursor:pointer">Klantoverzicht →</button>':''].filter(Boolean).join('<br>'):'Nog geen klant gekozen';if($('feKlantOv'))$('feKlantOv').onclick=()=>{if(concept&&!confirm('Naar het klantoverzicht? Niet-opgeslagen wijzigingen in dit concept gaan verloren.'))return;openKlantOverzicht(kl.id)}};
   const sel=new Set();   // geselecteerde regels om samen te voegen
   const openKlussenVanKlant=()=>{if(!f.klantId)return [];const al=new Set(f.klusIds.map(x=>x.klusId));return alleKlussen().filter(k=>k.klantId===f.klantId&&!k.gefactureerd&&!al.has(k.id))};
+  // witregel: lege regel op de factuur om groepen regels van elkaar te scheiden
+  const witRij=i=>`<tr data-ri="${i}" data-wit="1" style="border-top:1px solid #eceee9">
+      ${concept?'<td></td>':''}<td colspan="6" style="padding:6px 8px 6px ${concept?8:24}px"><div style="border-top:2px dashed #cfd5cc;position:relative;height:14px;margin-top:8px"><span style="position:absolute;top:-10px;left:0;background:#fff;padding:0 8px 0 0;font-size:11px;color:#8a938c;letter-spacing:.06em">WITREGEL</span></div></td>
+      <td style="padding:6px 16px 6px 0;white-space:nowrap">${concept?`<span data-rgrip title="Slepen om te verplaatsen" aria-hidden="true" style="cursor:grab;color:#8a938c;padding:0 6px;font-size:16px;user-select:none">⠿</span><button type="button" data-rup="${i}" aria-label="Witregel omhoog" style="background:none;border:0;color:#5a655e;min-height:32px;cursor:pointer">↑</button><button type="button" data-rdown="${i}" aria-label="Witregel omlaag" style="background:none;border:0;color:#5a655e;min-height:32px;cursor:pointer">↓</button><button type="button" data-rdel="${i}" aria-label="Witregel verwijderen" style="background:none;border:0;color:#b42318;min-height:32px;padding:0 6px;cursor:pointer">✕</button>`:''}</td></tr>`;
   const tekenRegels=()=>{
-    $('fe_regels').innerHTML=f.regels.length?f.regels.map((r,i)=>`<tr data-ri="${i}" style="border-top:1px solid #eceee9;vertical-align:top">
+    $('fe_regels').innerHTML=f.regels.length?f.regels.map((r,i)=>r.wit?witRij(i):`<tr data-ri="${i}" style="border-top:1px solid #eceee9;vertical-align:top">
       ${concept?`<td style="padding:22px 0 10px 16px;vertical-align:top"><input type="checkbox" data-rsel="${i}" ${sel.has(r.id)?'checked':''} aria-label="Regel ${i+1} selecteren om samen te voegen" style="width:18px;height:18px;min-height:auto;accent-color:#2f6b45"></td>`:''}
       <td style="padding:10px 8px 10px ${concept?8:24}px"><label class="sr-only" for="ro_${i}">Omschrijving</label><input id="ro_${i}" data-rf="omschrijving" value="${esc(r.omschrijving||'')}" class="${inv}" style="font-weight:500" ${dis}>
        <label class="sr-only" for="rd_${i}">Detail</label><input id="rd_${i}" data-rf="detail" value="${esc(r.detail||'')}" placeholder="Detail (datum, kenteken…)" class="${inv}" style="margin-top:6px;min-height:36px;height:36px;font-size:12px;color:#5a655e" ${dis}>
@@ -1822,7 +1826,7 @@ function renderFactuurPagina(id){
       <td style="padding:10px 8px;width:110px"><label class="sr-only" for="rp_${i}">Prijs</label><input id="rp_${i}" data-rf="prijs" inputmode="decimal" value="${esc(String(r.prijs??'').replace('.',','))}" class="${inv}" style="text-align:right" ${dis}></td>
       <td style="padding:10px 8px;width:104px"><label class="sr-only" for="rb_${i}">Btw</label><select id="rb_${i}" data-rf="btw" class="${inv}" style="padding:0 6px" ${dis}>${BTW_OPTIES.map(([v,l])=>`<option value="${v}" ${(r.btw||'21')===v?'selected':''}>${l}</option>`).join('')}</select></td>
       <td style="padding:20px 8px 10px;text-align:right;font-weight:600;white-space:nowrap" data-rtot>${eurF(r2(getal(r.aantal)*getal(r.prijs)))}</td>
-      <td style="padding:12px 16px 10px 0;white-space:nowrap">${concept?`<button type="button" data-rup="${i}" aria-label="Regel omhoog" style="background:none;border:0;color:#5a655e;min-height:36px;cursor:pointer">↑</button><button type="button" data-rdown="${i}" aria-label="Regel omlaag" style="background:none;border:0;color:#5a655e;min-height:36px;cursor:pointer">↓</button><button type="button" data-rdel="${i}" aria-label="Regel verwijderen" style="background:none;border:0;color:#b42318;min-height:36px;padding:0 6px;cursor:pointer">✕</button>`:''}</td></tr>`).join('')
+      <td style="padding:12px 16px 10px 0;white-space:nowrap">${concept?`<span data-rgrip title="Slepen om te verplaatsen" aria-hidden="true" style="cursor:grab;color:#8a938c;padding:0 6px;font-size:16px;user-select:none">⠿</span><button type="button" data-rup="${i}" aria-label="Regel omhoog" style="background:none;border:0;color:#5a655e;min-height:36px;cursor:pointer">↑</button><button type="button" data-rdown="${i}" aria-label="Regel omlaag" style="background:none;border:0;color:#5a655e;min-height:36px;cursor:pointer">↓</button><button type="button" data-rdel="${i}" aria-label="Regel verwijderen" style="background:none;border:0;color:#b42318;min-height:36px;padding:0 6px;cursor:pointer">✕</button>`:''}</td></tr>`).join('')
       :'<tr><td colspan="8" style="padding:32px 24px;text-align:center;color:#5a655e">Nog geen regels. Voeg een lege regel, een product of open klussen toe.</td></tr>';
     if($('feMerge')){const n=f.regels.filter(r=>sel.has(r.id)).length;$('feMerge').textContent=n>=2?'Samenvoegen ('+n+' regels)':'Regels samenvoegen';$('feMerge').disabled=n<2;$('feMerge').style.opacity=n>=2?'1':'.5'}
     const uitKlus=f.regels.filter(r=>r.klusId).length;
@@ -1845,8 +1849,8 @@ function renderFactuurPagina(id){
     c.push([!!f.klant,f.klant?'Klant gekozen':'Kies een klant']);
     c.push([!!mail,mail?'Klant heeft een e-mailadres':'Bij de klant staat nog geen e-mailadres (Klanten → Wijzig)']);
     c.push([f.regels.length>0,f.regels.length?f.regels.length+' regel'+(f.regels.length===1?'':'s')+' op de factuur':'Nog geen regels']);
-    const zonderOms=f.regels.filter(r=>!(r.omschrijving||'').trim()).length;if(zonderOms)c.push([false,zonderOms+' regel'+(zonderOms===1?'':'s')+' zonder omschrijving']);
-    const zonderPrijs=f.regels.filter(r=>!getal(r.prijs)).length;if(zonderPrijs)c.push([false,zonderPrijs+' regel'+(zonderPrijs===1?'':'s')+' zonder prijs – vul die in of verwijder ze']);
+    const zonderOms=f.regels.filter(r=>!r.wit&&!(r.omschrijving||'').trim()).length;if(zonderOms)c.push([false,zonderOms+' regel'+(zonderOms===1?'':'s')+' zonder omschrijving']);
+    const zonderPrijs=f.regels.filter(r=>!r.wit&&!getal(r.prijs)).length;if(zonderPrijs)c.push([false,zonderPrijs+' regel'+(zonderPrijs===1?'':'s')+' zonder prijs – vul die in of verwijder ze']);
     if(f.regels.some(r=>r.btw==='verlegd'))c.push([!!(f.klant&&f.klant.btwnummer),f.klant&&f.klant.btwnummer?'Btw verlegd: btw-nummer klant aanwezig':'Btw verlegd: vul bij de klant een btw-nummer in']);
     c.push([!!b.yukiEmail,b.yukiEmail?'Kopie gaat bij versturen naar Yuki':'Yuki-adres nog niet ingesteld (Bedrijfsgegevens)']);
     const ok='display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#e6f2ea;color:#245a39;font-size:12px;font-weight:700;flex:none';
@@ -1914,6 +1918,36 @@ function renderFactuurPagina(id){
     $('fe_datum').onchange=e=>{const oud=f.factuurdatum;f.factuurdatum=e.target.value;if(!credit&&(!f.vervaldatum||f.vervaldatum===plusDagen(oud,b.termijn))){f.vervaldatum=plusDagen(f.factuurdatum,b.termijn);$('fe_verval').value=f.vervaldatum}};
     $('fe_verval').onchange=e=>{f.vervaldatum=e.target.value};
     $('fe_opm').oninput=e=>{f.opmerking=e.target.value};
+    // --- regels verslepen (greep ⠿) ---
+    {const tb=$('fe_regels');let van=null;
+     tb.addEventListener('mousedown',e=>{const g=e.target.closest('[data-rgrip]');const tr=e.target.closest('[data-ri]');if(g&&tr)tr.draggable=true});
+     tb.addEventListener('dragstart',e=>{const tr=e.target.closest('[data-ri]');if(!tr)return;van=+tr.dataset.ri;e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain','r'+van)}catch(x){}tr.style.opacity='.4'});
+     const merk=tr=>{tb.querySelectorAll('[data-ri]').forEach(x=>x.style.boxShadow='');if(tr)tr.style.boxShadow='inset 0 3px 0 #2f6b45'};
+     tb.addEventListener('dragover',e=>{if(van==null)return;const tr=e.target.closest('[data-ri]');if(!tr)return;e.preventDefault();merk(tr)});
+     tb.addEventListener('drop',e=>{if(van==null)return;e.preventDefault();const tr=e.target.closest('[data-ri]');merk(null);if(!tr)return;let naar=+tr.dataset.ri;const [r]=f.regels.splice(van,1);if(naar>van)naar--;f.regels.splice(naar,0,r);van=null;tekenRegels()});
+     tb.addEventListener('dragend',()=>{van=null;merk(null);tb.querySelectorAll('[data-ri]').forEach(x=>{x.draggable=false;x.style.opacity=''})});
+    }
+    // --- artikelen zoeken in de omschrijving: producten + eerder gefactureerde regels ---
+    {const tb=$('fe_regels');let lijst=null,actief=null;
+     const artikelen=()=>{const m=new Map();
+       producten.forEach(p=>m.set(zoekNorm(p.naam),{naam:p.naam,detail:p.omschrijving||'',eenheid:p.eenheid||'stuk',prijs:Number(p.prijs)||0,btw:p.btw||'21',bron:'product'}));
+       DB.list('facturen').slice().sort((a,b)=>String(b.factuurdatum||'').localeCompare(String(a.factuurdatum||''))).forEach(fa=>(fa.regels||[]).forEach(r=>{const n=String(r.omschrijving||'').trim();const k=zoekNorm(n);if(!n||r.wit||r.diesel||m.has(k))return;m.set(k,{naam:n,detail:'',eenheid:r.eenheid||'uur',prijs:Number(r.prijs)||0,btw:r.btw||'21',bron:'eerder'})}));
+       return [...m.values()]};
+     const sluitL=()=>{if(lijst){lijst.remove();lijst=null;actief=null}};
+     const toonL=inp=>{const tr=inp.closest('[data-ri]');if(!tr)return;const q=zoekNorm(inp.value);
+       const alle=artikelen();const l=(q?alle.filter(a=>zoekNorm(a.naam).includes(q)).sort((a,b)=>(zoekNorm(a.naam).startsWith(q)?0:1)-(zoekNorm(b.naam).startsWith(q)?0:1)||(a.bron==='product'?0:1)-(b.bron==='product'?0:1)||a.naam.localeCompare(b.naam)):alle.sort((a,b)=>(a.bron==='product'?0:1)-(b.bron==='product'?0:1)||a.naam.localeCompare(b.naam))).slice(0,30);
+       if(!l.length||(l.length===1&&zoekNorm(l[0].naam)===q)){sluitL();return}
+       if(!lijst){lijst=document.createElement('div');lijst.style.cssText='position:fixed;z-index:60;background:#fff;border:1px solid #d9ded6;border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.18);max-height:300px;overflow:auto';document.body.appendChild(lijst)}
+       const rc=inp.getBoundingClientRect();lijst.style.left=rc.left+'px';lijst.style.top=(rc.bottom+4)+'px';lijst.style.width=Math.max(rc.width,320)+'px';actief=inp;
+       lijst.innerHTML=l.map((a,j)=>`<button type="button" data-art="${j}" style="display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;padding:8px 12px;border:0;border-bottom:1px solid #eef0ec;background:none;font:inherit;font-size:14px;cursor:pointer"><span><span style="font-weight:500">${esc(a.naam)}</span>${a.bron==='eerder'?' <span style="font-size:11px;color:#8a938c">eerder gebruikt</span>':''}</span><span style="color:#5a655e;white-space:nowrap;font-size:13px">${a.prijs?eurF(a.prijs)+' / '+esc(eenhLabel(a.eenheid)):''}</span></button>`).join('');
+       lijst.querySelectorAll('[data-art]').forEach(b=>b.onmousedown=e=>{e.preventDefault();const a=l[+b.dataset.art];const i=+tr.dataset.ri;const r=f.regels[i];if(!r)return;
+         r.omschrijving=a.naam;if(a.detail&&!r.detail)r.detail=a.detail;r.eenheid=a.eenheid;if(a.prijs)r.prijs=a.prijs;r.btw=a.btw;sluitL();tekenRegels();const nx=$('ra_'+i);if(nx){nx.focus();nx.select()}})};
+     tb.addEventListener('focusin',e=>{if(e.target.matches&&e.target.matches('[data-rf="omschrijving"]')&&concept)toonL(e.target)});
+     tb.addEventListener('input',e=>{if(e.target.matches&&e.target.matches('[data-rf="omschrijving"]')&&concept)toonL(e.target)});
+     tb.addEventListener('focusout',e=>{if(e.target===actief)setTimeout(sluitL,150)});
+     tb.addEventListener('keydown',e=>{if(e.key==='Escape')sluitL()});
+     window.addEventListener('scroll',()=>{if(lijst&&actief){const rc=actief.getBoundingClientRect();lijst.style.top=(rc.bottom+4)+'px';lijst.style.left=rc.left+'px'}},true);
+    }
     $('fe_regels').oninput=e=>{const tr=e.target.closest('[data-ri]');if(!tr)return;const r=f.regels[+tr.dataset.ri];const k=e.target.dataset.rf;if(!k)return;r[k]=e.target.value;if(k==='aantal'||k==='prijs')tr.querySelector('[data-rtot]').textContent=eurF(r2(rekenGetal(r.aantal)*rekenGetal(r.prijs)));tekenTotaal()};
     $('fe_regels').onchange=e=>{const tr=e.target.closest('[data-ri]');if(!tr)return;const k=e.target.dataset.rf;if(k==='btw'||k==='eenheid'){f.regels[+tr.dataset.ri][k]=e.target.value;tekenTotaal()}};
     $('fe_regels').onclick=e=>{const t=e.target.closest('button');if(!t)return;
@@ -1937,6 +1971,7 @@ function renderFactuurPagina(id){
       sel.clear();tekenRegels();
       toast(gekozen.length+' regels samengevoegd tot één regel van '+num2(aantal)+' '+eenhLabel(eerste.eenheid),'success');
     };
+    $('feWit').onclick=()=>{f.regels.push({id:uid(),wit:true,omschrijving:'',detail:'',aantal:'',eenheid:'',prijs:'',btw:'21'});tekenRegels()};
     $('feRegel').onclick=()=>{f.regels.push({id:uid(),omschrijving:'',detail:'',aantal:1,eenheid:'stuk',prijs:0,btw:'21'});tekenRegels()};
     $('feProduct').onchange=e=>{const p=producten.find(x=>x.id===e.target.value);e.target.value='';if(!p)return;f.regels.push({id:uid(),omschrijving:p.naam,detail:p.omschrijving||'',aantal:1,eenheid:p.eenheid||'stuk',prijs:Number(p.prijs)||0,btw:p.btw||'21'});tekenRegels()};
     $('feDiesel').onclick=()=>{
@@ -2126,7 +2161,7 @@ function factuurPdfDef(f,b,img){
   const lab=tx=>({text:tx.toUpperCase(),fontSize:6.6,bold:true,color:KLEUR,characterSpacing:1.2,margin:[0,0,0,5]});
   const th=(tx,al)=>({text:tx.toUpperCase(),fontSize:6.4,bold:true,color:grijs,characterSpacing:1.1,alignment:al||'left',margin:[0,0,0,2]});
   const verlegd=(t.groepen.verlegd||0)!==0||(f.regels||[]).some(r=>r.btw==='verlegd');
-  const rijen=(f.regels||[]).map(r=>[
+  const rijen=(f.regels||[]).map(r=>r.wit?[{text:' ',colSpan:5,fontSize:6},{},{},{},{}]:[
     {stack:[{text:r.omschrijving||''},r.detail?{text:r.detail,fontSize:7.6,color:grijs,margin:[0,1.5,0,0]}:{text:''}]},
     {text:num2(r.aantal)+' '+eenhLabel(r.eenheid),alignment:'right',noWrap:true},
     {text:eurF(r.prijs),alignment:'right',noWrap:true},
@@ -3043,7 +3078,7 @@ function openPerceelEditor(p,nieuw){
 // Dieselprijzen (van de factuur van de dieselboer) gelden vanaf een datum;
 // per klus telt de prijs die op die dag gold.
 // ============================================================================
-function dieselInst(){const r=DB.get('instellingen','diesel');const w=(r&&r.waarde)||{};return {basis:w.basis!=null?Number(w.basis):1.30,verbruik:w.verbruik!=null?Number(w.verbruik):25,prijzen:Array.isArray(w.prijzen)?w.prijzen:[]}}
+function dieselInst(){const r=DB.get('instellingen','diesel');const w=(r&&r.waarde)||{};return {basis:w.basis!=null?Number(w.basis):1.40,verbruik:w.verbruik!=null?Number(w.verbruik):25,prijzen:Array.isArray(w.prijzen)?w.prijzen:[]}}
 function bewaarDiesel(w){if(DB.get('instellingen','diesel'))DB.update('instellingen','diesel',{waarde:w});else DB.insert('instellingen',{id:'diesel',waarde:w})}
 function dieselPrijsOp(datum){const l=dieselInst().prijzen.filter(p=>p.vanaf&&p.prijs!=null&&p.vanaf<=(datum||'9999')).sort((a,b)=>b.vanaf.localeCompare(a.vanaf));return l[0]||null}
 // datum van een factuurregel (uit de klus, of de datum vooraan in het detail)
