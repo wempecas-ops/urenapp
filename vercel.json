@@ -18,6 +18,10 @@
     {
       "path": "/api/scans",
       "schedule": "30 4 * * *"
+    },
+    {
+      "path": "/api/scans?soort=inkoop",
+      "schedule": "45 4 * * *"
     }
   ],
   "functions": {

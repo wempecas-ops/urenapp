@@ -176,6 +176,7 @@ textarea.zk-invoer{padding:10px 12px}
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="containers">Containers</button>
 <div class="nav-groep" aria-hidden="true">Financieel</div>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="facturen">Facturen</button>
+<button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="inkoop">Inkoop</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="producten">Producten</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="tol">Tol</button>
 <button class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent hover:text-emerald-600 dark:hover:text-emerald-400" data-tab="mts">Facturen Wempe B.V.</button>
@@ -2235,6 +2236,216 @@ async function factuurPdf(id,actie){
 }
 
 // ============================================================================
+// === INKOOP (inkomende facturen) ==========================================
+// Doorsturen naar facturencaswempe+inkoop@gmail.com → /api/scans?soort=inkoop zet ze in "inkoopfacturen".
+// De app leest de pdf, vult leverancier/datum/bedragen in (te controleren) en leert per leverancier.
+const INK={tab:'controle',bezig:false,lezen:false,zoek:'',jaar:null,kw:null,open:null,fout:''};
+const INK_CAT=['Brandstof','Onderhoud & reparatie','Onderdelen','Banden','Tol','Verzekering','Lease & financiering','Huur','Inhuur & charters','Kantoor & telefoon','Overig'];
+const inkGetal=s=>{s=String(s).replace(/[€\s]/g,'');if(/,\d{2}$/.test(s))s=s.replace(/\./g,'').replace(',','.');else s=s.replace(/,/g,'');const n=parseFloat(s);return isNaN(n)?null:n};
+const INK_BEDRAG=/-?€?\s?-?\d{1,3}(?:[.\s]\d{3})*,\d{2}(?!\d)|-?€?\s?-?\d+\.\d{2}(?!\d)/g;
+function inkDatumUit(t){
+  const mnd={jan:1,feb:2,mrt:3,maa:3,mar:3,apr:4,mei:5,may:5,jun:6,jul:7,aug:8,sep:9,okt:10,oct:10,nov:11,dec:12};
+  let m=/(\d{1,2})[-/.](\d{1,2})[-/.](\d{4}|\d{2})(?!\d)/.exec(t);
+  if(m){let j=+m[3];if(j<100)j+=2000;const d=+m[1],mm=+m[2];if(mm>=1&&mm<=12&&d>=1&&d<=31&&j>2015&&j<2100)return j+'-'+String(mm).padStart(2,'0')+'-'+String(d).padStart(2,'0')}
+  m=/(\d{4})-(\d{2})-(\d{2})/.exec(t);if(m)return m[0];
+  m=/(\d{1,2})\s+(jan|feb|mrt|maa|mar|apr|mei|may|jun|jul|aug|sep|okt|oct|nov|dec)[a-z]*\.?\s+(\d{4})/i.exec(t);
+  if(m)return m[3]+'-'+String(mnd[m[2].toLowerCase().slice(0,3)]).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0');
+  return null;
+}
+function inkSleutels(r){
+  // kenmerken van de leverancier om van te leren: btw-nummer, KvK, IBAN, e-maildomein
+  const t=(r.tekst||'')+'\n'+(r.mailTekst||'');const s=new Set();
+  (t.match(/\bNL\s?\d{9}\s?B\s?\d{2}\b/gi)||[]).forEach(x=>s.add('btw:'+x.replace(/\s/g,'').toUpperCase()));
+  (t.match(/\bNL\d{2}\s?[A-Z]{4}(?:\s?\d{4}){2}\s?\d{2}\b/g)||[]).forEach(x=>s.add('iban:'+x.replace(/\s/g,'')));
+  (t.match(/(?:kvk|k\.v\.k\.|kamer van koophandel)[^\d]{0,15}(\d{8})/gi)||[]).forEach(x=>s.add('kvk:'+x.replace(/\D/g,'').slice(-8)));
+  const mails=((r.mailTekst||'').match(/(?:van|from)\s*:\s*[^\n]*?<?([\w.+-]+@[\w-]+(?:\.[\w-]+)+)>?/gi)||[]).map(x=>(/@([\w.-]+)/.exec(x)||[])[1]).filter(Boolean);
+  const eigen=/gmail\.com|hotmail\.|outlook\.|live\.|icloud\.|yukiworks/i;
+  mails.filter(d=>!eigen.test(d)).forEach(d=>s.add('mail:'+d.toLowerCase()));
+  return [...s];
+}
+function inkGeleerd(){const r=DB.get('instellingen','inkoop_leveranciers');return (r&&r.waarde)||{}}
+function inkLeer(r){
+  if(!r.leverancier)return;const w={...inkGeleerd()};inkSleutels(r).forEach(k=>w[k]={naam:r.leverancier,categorie:r.categorie||''});
+  if(DB.get('instellingen','inkoop_leveranciers'))DB.update('instellingen','inkoop_leveranciers',{id:'inkoop_leveranciers',waarde:w});else DB.insert('instellingen',{id:'inkoop_leveranciers',waarde:w});
+}
+function inkRaad(r){
+  const t=r.tekst||'';const regels=t.split('\n').map(x=>x.trim()).filter(Boolean);const uit={};
+  // leverancier: eerst wat we geleerd hebben, dan de doorgestuurde afzender, dan de eerste regel van de pdf
+  const g=inkGeleerd();for(const k of inkSleutels(r))if(g[k]){uit.leverancier=g[k].naam;if(g[k].categorie)uit.categorie=g[k].categorie;break}
+  if(!uit.leverancier){const m=/(?:^|\n)\s*(?:van|from)\s*:\s*"?([^<"\n]+?)"?\s*<[^>]+>/i.exec(r.mailTekst||'');if(m&&!/wempe/i.test(m[1]))uit.leverancier=m[1].trim()}
+  if(!uit.leverancier&&!/wempe|facturencas/i.test(r.afzender||'')){const a=/^"?([^<"]+?)"?\s*</.exec(r.afzender||'');if(a)uit.leverancier=a[1].trim()}
+  if(!uit.leverancier){const eerste=regels.slice(0,4).find(x=>/[a-z]{3}/i.test(x)&&!/\d{4}\s?[a-z]{2}\b|:|factuur|invoice|pagina|page|datum|wempe|slikkerdijk|belkmerweg|^aan\b|^t\.?a\.?v/i.test(x)&&x.length<60);if(eerste)uit.leverancier=eerste.split(/\s{2,}/)[0]}
+  const bedragenOp=x=>(x.match(INK_BEDRAG)||[]).map(inkGetal).filter(n=>n!=null);
+  let incl=null,btw=null,excl=null;
+  regels.forEach((x,i)=>{const ctx=x+' '+(regels[i+1]||'');
+    if(/(totaal|total|te betalen|amount due|factuurbedrag|totaalbedrag)/i.test(x)&&!/excl|subtotaal|sub-totaal|subtotal/i.test(x)){const b=bedragenOp(x).length?bedragenOp(x):bedragenOp(regels[i+1]||'');const v=b.length?Math.max(...b):null;if(v!=null&&(incl==null||v>incl))incl=v}
+    if(/(btw|vat|omzetbelasting)/i.test(x)&&!/(nummer|nr\.?|number|id|identificatie)\b/i.test(x)){const b=bedragenOp(x).filter(v=>v>0);if(b.length){const v=b[b.length-1];if(!/%\s*$/.test(String(v)))btw=btw==null?v:btw}}
+    if(/(subtotaal|sub-totaal|subtotal|excl|netto|totaal ex)/i.test(x)){const b=bedragenOp(x);if(b.length)excl=b[b.length-1]}
+  });
+  const alle=bedragenOp(t);
+  if(incl==null&&alle.length)incl=Math.max(...alle);
+  if(incl!=null&&btw!=null&&(btw>incl*0.25||btw<=0))btw=null;
+  if(incl!=null&&excl!=null&&btw==null&&excl<incl)btw=r2(incl-excl);
+  if(incl!=null&&btw==null&&excl==null){const z=r2(incl/1.21*0.21);if(alle.some(v=>Math.abs(v-z)<0.02))btw=z;else if(alle.some(v=>Math.abs(v-r2(incl/1.09*0.09))<0.02))btw=r2(incl/1.09*0.09)}
+  if(incl!=null){uit.bedragIncl=incl;if(btw!=null){uit.btwBedrag=btw;uit.bedragExcl=r2(incl-btw)}else if(excl!=null&&excl<=incl){uit.bedragExcl=excl;uit.btwBedrag=r2(incl-excl)}}
+  // nummer en datums
+  const nr=/(?:factuurnummer|factuurnr\.?|factuur nr\.?|factuur\s*#|invoice\s*(?:no\.?|number|nr\.?)|nota\s*nr\.?|documentnummer)\s*[:#]?\s*([A-Z0-9][\w\-\/.]{2,24})/i.exec(t);if(nr)uit.factuurnummer=nr[1].replace(/[.,]$/,'');
+  const fd=regels.findIndex(x=>/(factuurdatum|datum factuur|invoice date|documentdatum|datum)\b/i.test(x));
+  if(fd>=0)uit.factuurdatum=inkDatumUit(regels[fd])||inkDatumUit(regels[fd+1]||'');
+  if(!uit.factuurdatum)uit.factuurdatum=inkDatumUit(t);
+  const vd=regels.findIndex(x=>/(vervaldatum|vervaldag|uiterlijk|betalen (?:voor|vóór)|due date|te voldoen voor)/i.test(x));
+  if(vd>=0)uit.vervaldatum=inkDatumUit(regels[vd])||inkDatumUit(regels[vd+1]||'');
+  if(!uit.categorie){const c=(uit.leverancier||'')+' '+t.slice(0,3000);
+    uit.categorie=/diesel|brandstof|adblue|tankkaart|dkv|travelcard|shell|esso|texaco|totalenergies/i.test(c)?'Brandstof':/tol\b|toll|e-list of passages|liber-t|maut/i.test(c)?'Tol':/band(en)?\b|tyre|reifen/i.test(c)?'Banden':/verzeker|polis|premie/i.test(c)?'Verzekering':/lease|financier|termijn/i.test(c)?'Lease & financiering':/onderhoud|reparatie|werkplaats|apk|service/i.test(c)?'Onderhoud & reparatie':/onderdel|parts/i.test(c)?'Onderdelen':/kpn|vodafone|odido|t-mobile|ziggo|telefoon|software|abonnement/i.test(c)?'Kantoor & telefoon':''}
+  return uit;
+}
+async function inkTekst(r){
+  if(!r.pad)return r.mailTekst||'';
+  const url=await fotoUrl(r.pad);const blob=await (await fetch(url)).blob();
+  if(/pdf/.test(r.type||'')||/\.pdf$/i.test(r.bestandsnaam||'')){
+    const lib=await pdfjsKlaarmaken();const doc=await lib.getDocument({data:new Uint8Array(await blob.arrayBuffer()),isEvalSupported:false}).promise;
+    let t='';
+    for(let i=1;i<=Math.min(doc.numPages,3);i++){
+      const tc=await (await doc.getPage(i)).getTextContent();const rij=new Map();
+      tc.items.forEach(x=>{if(!x.str.trim())return;const y=Math.round(x.transform[5]/3);const l=rij.get(y)||[];l.push(x);rij.set(y,l)});
+      t+=[...rij.entries()].sort((a,b)=>b[0]-a[0]).map(([,l])=>l.sort((a,b)=>a.transform[4]-b.transform[4]).map(x=>x.str.trim()).join('  ')).join('\n')+'\n';
+    }
+    if(t.replace(/\s/g,'').length>=40)return t.slice(0,20000);
+  }
+  try{const o=await scanTekstLezen({pad:r.pad,type:r.type,bestandsnaam:r.bestandsnaam});return o.tekst||''}catch(e){return ''}
+}
+async function inkLeesAlles(){
+  if(INK.lezen)return;INK.lezen=true;
+  try{for(const r of DB.list('inkoopfacturen').filter(x=>x.status==='nieuw'&&x.tekst==null)){
+    if(currentBeheerTab!=='inkoop')break;
+    let tekst='';try{tekst=await inkTekst(r)}catch(e){tekst=''}
+    const nu=DB.get('inkoopfacturen',r.id);if(!nu)continue;
+    const geraden=inkRaad({...nu,tekst});const upd={...nu,tekst:tekst||''};
+    Object.entries(geraden).forEach(([k,v])=>{if(v!=null&&v!==''&&(upd[k]==null||upd[k]===''))upd[k]=v});
+    DB.update('inkoopfacturen',r.id,upd);if(currentBeheerTab==='inkoop'&&!INK.open)renderInkoop();
+  }}finally{INK.lezen=false}
+}
+async function inkOphalen(stil){
+  if(CONFIG.MODE!=='supabase')return;INK.bezig=true;if(!stil&&currentBeheerTab==='inkoop')renderInkoop();
+  try{await zorgVoorToken();const r=await fetch('/api/scans?soort=inkoop',{method:'POST',headers:{Authorization:'Bearer '+AUTH_TOKEN}});let j={};try{j=await r.json()}catch(e){}
+    if(!r.ok||!j.ok){INK.fout=j.fout||('Fout '+r.status);if(!stil)toast('Ophalen mislukt: '+INK.fout,'error')}else{INK.fout='';if(j.berichten&&!stil)toast(j.berichten+' nieuwe mail'+(j.berichten===1?'':'s')+' met facturen','success');else if(!stil)toast('Geen nieuwe facturen','success')}
+    const o=await sbREST('/rest/v1/inkoopfacturen?select=*&order=ontvangen_op.desc&limit=5000');if(Array.isArray(o)){CACHE.inkoopfacturen=o;cacheBewaar()}
+  }catch(e){if(!stil)toast('Ophalen mislukt: '+e.message,'error')}
+  finally{INK.bezig=false;INK.laatst=Date.now();if(currentBeheerTab==='inkoop')renderInkoop();inkLeesAlles()}
+}
+function inkKwartaal(d){d=String(d||'');return d?{j:+d.slice(0,4),k:Math.floor((+d.slice(5,7)-1)/3)+1}:null}
+function renderInkoop(){
+  const nu=new Date();if(!INK.jaar){INK.jaar=nu.getFullYear();INK.kw=Math.floor(nu.getMonth()/3)+1}
+  const alle=DB.list('inkoopfacturen').filter(r=>r.status!=='weg');
+  const datumVan=r=>r.factuurdatum||String(r.ontvangenOp||'').slice(0,10);
+  const inPeriode=d=>{const q=inkKwartaal(d);return q&&q.j===INK.jaar&&(INK.kw===0||q.k===INK.kw)};
+  // overzicht van de periode
+  const verkoop=DB.list('facturen').filter(f=>f.status!=='concept'&&inPeriode(f.factuurdatum));
+  const vEx=r2(verkoop.reduce((s,f)=>s+(Number(f.totaalExcl)||0),0)),vBtw=r2(verkoop.reduce((s,f)=>s+(Number(f.totaalBtw)||0),0));
+  const inkP=alle.filter(r=>inPeriode(datumVan(r)));
+  const iEx=r2(inkP.reduce((s,r)=>s+(Number(r.bedragExcl)||0),0)),iBtw=r2(inkP.reduce((s,r)=>s+(Number(r.btwBedrag)||0),0));
+  const teBetalen=r2(vBtw-iBtw),resultaat=r2(vEx-iEx);const onvolledig=inkP.filter(r=>r.bedragIncl==null||r.status==='nieuw').length;
+  const perCat={};inkP.forEach(r=>{const c=r.categorie||'Zonder categorie';perCat[c]=r2((perCat[c]||0)+(Number(r.bedragExcl)||0))});
+  const tabs={controle:alle.filter(r=>r.status==='nieuw'),open:alle.filter(r=>r.status!=='nieuw'&&!r.betaaldOp),betaald:alle.filter(r=>r.betaaldOp),alles:alle};
+  const q=zoekNorm(INK.zoek);
+  let lijst=tabs[INK.tab].filter(r=>!q||zoekNorm([r.leverancier,r.factuurnummer,r.onderwerp,r.bestandsnaam,r.categorie].join(' ')).includes(q));
+  lijst.sort((a,b)=>String(datumVan(b)).localeCompare(String(datumVan(a))));
+  const vandaag=vandaagIso();const openTot=r2(tabs.open.reduce((s,r)=>s+(Number(r.bedragIncl)||0),0));
+  const kaart=(t,v,sub,kleur)=>`<div class="zk-kaart" style="padding:14px 16px;flex:1 1 170px"><div style="font-size:12px;color:#5a655e">${t}</div><div style="font-size:22px;font-weight:700;margin-top:4px;color:${kleur||'inherit'}">${v}</div>${sub?`<div style="font-size:12px;color:#5a655e;margin-top:2px">${sub}</div>`:''}</div>`;
+  const rij=r=>{const verl=!r.betaaldOp&&r.vervaldatum&&r.vervaldatum<vandaag;const ctrl=r.status==='nieuw';
+    return `<tr style="border-top:1px solid #eef0ec;vertical-align:top">
+      <td style="padding:10px 8px"><input type="checkbox" data-inkbet="${esc(r.id)}" ${r.betaaldOp?'checked':''} ${ctrl?'disabled title="Eerst controleren"':'title="Betaald"'} style="width:20px;height:20px;min-height:auto" aria-label="Betaald"></td>
+      <td style="padding:10px 8px;min-width:180px"><div style="font-weight:600">${esc(r.leverancier||'(leverancier onbekend)')}</div><div style="font-size:12px;color:#5a655e">${esc([r.factuurnummer,r.categorie].filter(Boolean).join(' · ')||r.bestandsnaam||'')}</div>${ctrl?`<div style="font-size:12px;color:#8a5a12;margin-top:2px">${r.tekst==null?'Wordt gelezen…':'Nakijken'}</div>`:''}</td>
+      <td style="padding:10px 8px;white-space:nowrap">${esc(datumNL(r.factuurdatum)||'—')}${r.vervaldatum?`<div style="font-size:12px;color:${verl?'#b42318':'#5a655e'}">${verl?'verlopen ':'vervalt '}${esc(datumNL(r.vervaldatum))}</div>`:''}${r.betaaldOp?`<div style="font-size:12px;color:#245a39">betaald ${esc(datumNL(r.betaaldOp))}</div>`:''}</td>
+      <td style="padding:10px 8px;text-align:right;white-space:nowrap"><div style="font-weight:600">${r.bedragIncl!=null?eurF(r.bedragIncl):'—'}</div><div style="font-size:12px;color:#5a655e">${r.btwBedrag!=null?'btw '+eurF(r.btwBedrag):''}</div></td>
+      <td style="padding:8px;text-align:right;white-space:nowrap">${ctrl&&r.tekst!=null?`<button type="button" data-inkok="${esc(r.id)}" class="zk-hoofd" style="min-height:36px;padding:0 10px;font-size:13px">Klopt</button> `:''}<button type="button" data-inkopen="${esc(r.id)}" class="zk-knop" style="min-height:36px;padding:0 10px;font-size:13px">${ctrl?'Bekijk & wijzig':'Open'}</button></td></tr>`};
+  $('main').innerHTML=`<div class="max-w-full mx-auto" style="padding:4px 8px 32px">
+   <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:6px">
+    <div><div class="zk-label">Financieel</div><h1 style="margin:6px 0 0;font-size:28px;font-weight:600">Inkoopfacturen</h1></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" id="inkNieuw" class="zk-knop">+ Handmatig</button><button type="button" id="inkOphalen" class="zk-hoofd" ${INK.bezig?'disabled':''}>${INK.bezig?'Ophalen…':'Nu ophalen'}</button></div></div>
+   <p style="font-size:13px;color:#5a655e;margin:0 0 4px">Stuur facturen door naar <strong>facturencaswempe+inkoop@gmail.com</strong>. Ze komen hier vanzelf binnen (elke nacht, of met "Nu ophalen").</p>
+   ${INK.fout?`<p style="font-size:13px;color:#b42318;margin:0 0 6px">${esc(INK.fout)}</p>`:''}
+   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:16px 0 10px">
+    <span style="font-weight:600;font-size:15px">Overzicht</span>
+    <select id="inkJaar" class="zk-invoer" style="min-height:36px">${[nu.getFullYear()-1,nu.getFullYear()].map(j=>`<option ${j===INK.jaar?'selected':''}>${j}</option>`).join('')}</select>
+    <select id="inkKw" class="zk-invoer" style="min-height:36px">${[[1,'1e kwartaal'],[2,'2e kwartaal'],[3,'3e kwartaal'],[4,'4e kwartaal'],[0,'Heel jaar']].map(([k,l])=>`<option value="${k}" ${k===INK.kw?'selected':''}>${l}</option>`).join('')}</select></div>
+   <div style="display:flex;flex-wrap:wrap;gap:10px">
+    ${kaart('Omzet (excl. btw)',eurF(vEx),verkoop.length+' verkoopfacturen')}
+    ${kaart('Kosten (excl. btw)',eurF(iEx),inkP.length+' inkoopfacturen')}
+    ${kaart('Resultaat',eurF(resultaat),'omzet min kosten',resultaat<0?'#b42318':'#245a39')}
+    ${kaart(teBetalen>=0?'Btw te betalen':'Btw terug',eurF(Math.abs(teBetalen)),'btw verkoop '+eurF(vBtw)+' − btw inkoop '+eurF(iBtw),teBetalen>=0?'#8a5a12':'#245a39')}
+   </div>
+   <p style="font-size:12px;color:#5a655e;margin:8px 0 0">Indicatie op basis van wat hier staat${onvolledig?`; <strong style="color:#8a5a12">${onvolledig} inkoopfactu${onvolledig===1?'ur':'ren'} nog nakijken</strong>`:''}. Afschrijvingen, privé-uitgaven en inkomstenbelasting zitten er niet in; je boekhouder doet de echte aangifte.</p>
+   ${Object.keys(perCat).length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">${Object.entries(perCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<span style="font-size:12px;background:#f1f4ef;border-radius:999px;padding:4px 10px">${esc(c)}: <strong>${eurF(v)}</strong></span>`).join('')}</div>`:''}
+   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:22px 0 10px">
+    ${[['controle','Nakijken ('+tabs.controle.length+')'],['open','Openstaand ('+tabs.open.length+(openTot?' · '+eurF(openTot):'')+')'],['betaald','Betaald'],['alles','Alles']].map(([k,l])=>`<button type="button" data-inktab="${k}" class="${INK.tab===k?'zk-hoofd':'zk-knop'}">${l}</button>`).join('')}
+    <input id="inkZoek" type="search" value="${esc(INK.zoek)}" placeholder="Zoek leverancier, nummer…" class="zk-invoer" style="margin-left:auto;min-width:220px"></div>
+   <div class="zk-kaart" style="overflow-x:auto">${lijst.length?`<table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:left;font-size:12px;color:#5a655e"><th style="padding:10px 8px">Betaald</th><th style="padding:10px 8px">Leverancier</th><th style="padding:10px 8px">Datum</th><th style="padding:10px 8px;text-align:right">Bedrag</th><th></th></tr></thead><tbody>${lijst.map(rij).join('')}</tbody></table>`
+    :`<div style="padding:26px;text-align:center;color:#5a655e">${INK.tab==='controle'?'Niets na te kijken.':'Geen facturen.'}</div>`}</div></div>`;
+  $('inkOphalen').onclick=()=>inkOphalen(false);
+  $('inkNieuw').onclick=()=>{const r=DB.insert('inkoopfacturen',{ontvangenOp:new Date().toISOString(),bestandsnaam:'(handmatig)',status:'nieuw',tekst:'',factuurdatum:vandaagIso()});openInkoop(r.id)};
+  $('inkJaar').onchange=e=>{INK.jaar=+e.target.value;renderInkoop()};$('inkKw').onchange=e=>{INK.kw=+e.target.value;renderInkoop()};
+  document.querySelectorAll('[data-inktab]').forEach(b=>b.onclick=()=>{INK.tab=b.dataset.inktab;renderInkoop()});
+  $('inkZoek').oninput=e=>{INK.zoek=e.target.value;const p=e.target.selectionStart;renderInkoop();const z=$('inkZoek');z.focus();try{z.setSelectionRange(p,p)}catch(x){}};
+  document.querySelectorAll('[data-inkbet]').forEach(c=>c.onchange=()=>{const r=DB.get('inkoopfacturen',c.dataset.inkbet);if(!r)return;DB.update('inkoopfacturen',r.id,{...r,betaaldOp:c.checked?vandaagIso():null});toast(c.checked?'Gemarkeerd als betaald':'Weer openstaand','success');renderInkoop()});
+  document.querySelectorAll('[data-inkok]').forEach(b=>b.onclick=()=>{const r=DB.get('inkoopfacturen',b.dataset.inkok);if(!r)return;
+    if(r.bedragIncl==null||!r.leverancier){toast('Vul eerst leverancier en bedrag in','error');return openInkoop(r.id)}
+    const n={...r,status:'ok'};DB.update('inkoopfacturen',r.id,n);inkLeer(n);renderInkoop()});
+  document.querySelectorAll('[data-inkopen]').forEach(b=>b.onclick=()=>openInkoop(b.dataset.inkopen));
+  if(!INK.laatst&&!INK.bezig)inkOphalen(true);else inkLeesAlles();
+}
+async function openInkoop(id){
+  const r=DB.get('inkoopfacturen',id);if(!r)return;INK.open=id;
+  const m=document.createElement('div');m.id='inkM';m.style.cssText='position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.5);display:flex;padding:2vh 2vw;gap:12px';
+  const veld=(k,l,type,w)=>`<label style="display:block;flex:1 1 ${w||'160px'}"><span class="zk-label" style="display:block;margin-bottom:4px">${l}</span><input data-ink="${k}" type="${type||'text'}" ${type==='text'&&/bedrag|btw/i.test(k)?'inputmode="decimal"':''} value="${esc(r[k]==null?'':(/bedrag|btw/i.test(k)?String(r[k]).replace('.',','):r[k]))}" class="zk-invoer" style="width:100%"></label>`;
+  m.innerHTML=`<div style="flex:1 1 55%;background:#fff;border-radius:12px;overflow:hidden;display:flex;align-items:center;justify-content:center;min-width:0" id="inkVoorbeeld">${r.pad?'<span style="color:#5a655e">Laden…</span>':`<pre style="white-space:pre-wrap;padding:16px;font-size:12px;max-height:100%;overflow:auto;margin:0;align-self:stretch;width:100%">${esc(r.mailTekst||'Geen bijlage in deze mail.')}</pre>`}</div>
+   <div style="flex:0 0 min(440px,42vw);background:#fff;border-radius:12px;padding:18px;overflow:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:17px;font-weight:600">Inkoopfactuur</div><button type="button" id="inkX" class="zk-knop" style="min-height:36px">Sluiten</button></div>
+    <div style="font-size:12px;color:#5a655e;margin-bottom:12px">${esc(r.onderwerp||r.bestandsnaam||'')}${r.ontvangenOp?' · binnen '+esc(tijdKort(r.ontvangenOp)):''}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px">
+     ${veld('leverancier','Leverancier','text','100%')}
+     <datalist id="inkLevLijst">${[...new Set(DB.list('inkoopfacturen').map(x=>x.leverancier).filter(Boolean))].sort().map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>
+     ${veld('factuurnummer','Factuurnummer')}
+     <label style="display:block;flex:1 1 160px"><span class="zk-label" style="display:block;margin-bottom:4px">Categorie</span><select data-ink="categorie" class="zk-invoer" style="width:100%"><option value="">—</option>${INK_CAT.map(c=>`<option ${c===r.categorie?'selected':''}>${c}</option>`).join('')}</select></label>
+     ${veld('factuurdatum','Factuurdatum','date')}${veld('vervaldatum','Vervaldatum','date')}
+     ${veld('bedragExcl','Bedrag excl. btw (€)')}${veld('btwBedrag','Btw (€)')}${veld('bedragIncl','Totaal incl. btw (€)','text','100%')}
+     ${veld('betaaldOp','Betaald op','date')}
+     <label style="display:block;flex:1 1 100%"><span class="zk-label" style="display:block;margin-bottom:4px">Notitie</span><input data-ink="notitie" value="${esc(r.notitie||'')}" class="zk-invoer" style="width:100%"></label>
+    </div>
+    <p id="inkCheck" style="font-size:12px;margin:10px 0 0"></p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+     <button type="button" id="inkOpslaan" class="zk-hoofd" style="flex:1 1 auto;min-height:46px">Opslaan${r.status==='nieuw'?' (klopt)':''}</button>
+     ${r.pad?'<button type="button" id="inkPdf" class="zk-knop" style="min-height:46px">Pdf openen</button>':''}
+     <button type="button" id="inkLees" class="zk-knop" style="min-height:46px" title="Opnieuw uitlezen">Opnieuw lezen</button>
+     <button type="button" id="inkWeg" class="zk-knop" style="min-height:46px;color:#b42318">Verwijderen</button></div></div>`;
+  document.body.appendChild(m);
+  m.querySelector('[data-ink="leverancier"]').setAttribute('list','inkLevLijst');
+  const sluit=()=>{m.remove();INK.open=null;renderInkoop()};
+  m.querySelector('#inkX').onclick=sluit;m.onclick=e=>{if(e.target===m)sluit()};
+  const lees=()=>{const o={};m.querySelectorAll('[data-ink]').forEach(i=>{const k=i.dataset.ink;let v=i.value.trim();if(/bedrag|btw/i.test(k))v=v===''?null:rekenGetal(v);else if(i.type==='date')v=v||null;o[k]=v});return o};
+  const check=()=>{const o=lees();const el=m.querySelector('#inkCheck');
+    if(o.bedragIncl!=null&&o.bedragExcl!=null&&o.btwBedrag!=null&&Math.abs(o.bedragExcl+o.btwBedrag-o.bedragIncl)>0.02){el.style.color='#b42318';el.textContent='Let op: excl + btw ('+eurF(o.bedragExcl+o.btwBedrag)+') is niet gelijk aan het totaal.'}
+    else{el.style.color='#5a655e';el.textContent=o.bedragIncl!=null?'Bedragen kloppen met elkaar.':''}};
+  m.querySelectorAll('[data-ink]').forEach(i=>i.addEventListener('input',check));
+  // excl/btw aanvullen als je alleen het totaal invult
+  m.querySelector('[data-ink="bedragIncl"]').addEventListener('change',()=>{const o=lees();if(o.bedragIncl!=null&&o.btwBedrag==null&&o.bedragExcl==null){const b=r2(o.bedragIncl/1.21*0.21);m.querySelector('[data-ink="btwBedrag"]').value=String(b).replace('.',',');m.querySelector('[data-ink="bedragExcl"]').value=String(r2(o.bedragIncl-b)).replace('.',',');check()}});
+  check();
+  m.querySelector('#inkOpslaan').onclick=()=>{const o=lees();const nu=DB.get('inkoopfacturen',id);const n={...nu,...o,status:(o.leverancier&&o.bedragIncl!=null)?'ok':nu.status};
+    DB.update('inkoopfacturen',id,n);inkLeer(n);toast(n.status==='ok'?'Opgeslagen':'Opgeslagen (leverancier en bedrag nog invullen)','success');sluit()};
+  m.querySelector('#inkWeg').onclick=()=>{if(!confirm('Deze inkoopfactuur verwijderen?'))return;const nu=DB.get('inkoopfacturen',id);DB.update('inkoopfacturen',id,{...nu,status:'weg'});toast('Verwijderd','success');sluit()};
+  m.querySelector('#inkLees').onclick=async()=>{const b=m.querySelector('#inkLees');b.disabled=true;b.textContent='Lezen…';
+    try{const nu=DB.get('inkoopfacturen',id);const tekst=await inkTekst(nu);const g=inkRaad({...nu,tekst});
+      Object.entries(g).forEach(([k,v])=>{const i=m.querySelector('[data-ink="'+k+'"]');if(i&&v!=null&&v!=='')i.value=/bedrag|btw/i.test(k)?String(v).replace('.',','):v});
+      DB.update('inkoopfacturen',id,{...nu,tekst});check();toast('Opnieuw gelezen; kijk de velden na','success')}
+    catch(e){toast('Lezen mislukt: '+e.message,'error')}finally{b.disabled=false;b.textContent='Opnieuw lezen'}};
+  if(r.pad){
+    const url=await fotoUrl(r.pad);
+    if(m.querySelector('#inkPdf'))m.querySelector('#inkPdf').onclick=()=>window.open(url,'_blank','noopener');
+    const vb=m.querySelector('#inkVoorbeeld');
+    if(/pdf/.test(r.type||'')||/\.pdf$/i.test(r.bestandsnaam||''))vb.innerHTML=`<iframe src="${esc(url)}#view=FitH" title="Factuur" style="width:100%;height:100%;border:0"></iframe>`;
+    else vb.innerHTML=`<img src="${esc(url)}" alt="Factuur" style="max-width:100%;max-height:100%">`;
+  }
+}
 // === CONTAINERS (containerauto, samen met Wempe B.V.) ======================
 // Chauffeurs geven per opgehaalde container door: klant + aantal. Geen uren.
 const CT={maand:null,aantal:1,datum:null,openLijst:false};
@@ -5299,7 +5510,7 @@ setInterval(() => { if (wachtrijLees().length) verwerkWachtrij() }, 30000);
 // alleen opnieuw als er iets veranderd is en je niet midden in het invullen of bewerken zit.
 let LAATST_GELADEN=Date.now(),VERVERS_BEZIG=false;
 function magHerteken(){
-  if(document.querySelector('#fMail,#klusWijzig,#klusNotitie,#orderEditor,#keurEditor,#planKopie,#pEditor,#fNieuwM,#fBedrijfM,#klantEditor,#matEditor,#matBulk,#fotoModal,#mtsGegM,#wnEditor,#vrKeuze,#perceelEditor,#scanKeuze,#dieselM,#scanGroot,#scanBundel,#scanSorteer'))return false;
+  if(document.querySelector('#fMail,#inkM,#klusWijzig,#klusNotitie,#orderEditor,#keurEditor,#planKopie,#pEditor,#fNieuwM,#fBedrijfM,#klantEditor,#matEditor,#matBulk,#fotoModal,#mtsGegM,#wnEditor,#vrKeuze,#perceelEditor,#scanKeuze,#dieselM,#scanGroot,#scanBundel,#scanSorteer'))return false;
   const a=document.activeElement;
   if(a&&a!==document.body&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)&&$('main')&&$('main').contains(a))return false;
   if(currentMode==='medewerker'&&currentView==='invoer')return false;
@@ -5380,6 +5591,7 @@ async function laadAlles(){
   if (isBeheer()) { try { await laadTol() } catch (e) { CACHE.tolposten = CACHE.tolposten || [] } }   // tabel mag nog ontbreken
   if (isBeheer()) {
     try { const o = await sbREST('/rest/v1/scans?select=*&order=ontvangen_op.desc&limit=2000'); CACHE.scans = Array.isArray(o) ? o : [] } catch (e) { CACHE.scans = CACHE.scans || [] }
+    try { const o = await sbREST('/rest/v1/inkoopfacturen?select=*&order=ontvangen_op.desc&limit=5000'); CACHE.inkoopfacturen = Array.isArray(o) ? o : [] } catch (e) { CACHE.inkoopfacturen = CACHE.inkoopfacturen || [] }
     for (const t of ['percelen', 'geocache']) { try { const o = await sbREST('/rest/v1/' + t + '?select=*&limit=5000'); CACHE[t] = Array.isArray(o) ? (t === 'geocache' ? o.map(x => Object.assign({}, x, { id: x.adres })) : o) : [] } catch (e) { CACHE[t] = CACHE[t] || [] } }
   }
   // Tarieven staan in een aparte tabel die alleen de beheerder mag lezen.
@@ -5705,6 +5917,7 @@ function renderCurrentView(){
       case 'klussen':renderKlussenBeheer();break;
       case 'orders':renderOrders();break;
       case 'facturen':renderFacturen();break;
+      case 'inkoop':renderInkoop();break;
       case 'producten':renderProducten();break;
       case 'mts':renderMts();break;
       case 'containers':renderContainers();break;
@@ -5735,8 +5948,8 @@ function renderBottomNav(){
 // Na elke render de rolregels toepassen (medewerker = alleen eigen uren)
 function naRender(){ try{pasRolToe()}catch(e){} }
 // Terugknop van de browser: elke pagina (tabblad) krijgt een eigen plek in de browsergeschiedenis.
-const BEHEER_TABS=['containers','dashboard','klussen','facturen','producten','mts','vrachten','tol','kaart','scans','orders','klanten','diensten','materieel','keuringen','werknemers','planning','planarchief','uren','export','accounts'];
-const BEHEER_ALLEEN=['accounts','orders','planarchief','keuringen','facturen','producten','mts','vrachten','tol','kaart','scans'];
+const BEHEER_TABS=['inkoop','containers','dashboard','klussen','facturen','producten','mts','vrachten','tol','kaart','scans','orders','klanten','diensten','materieel','keuringen','werknemers','planning','planarchief','uren','export','accounts'];
+const BEHEER_ALLEEN=['inkoop','accounts','orders','planarchief','keuringen','facturen','producten','mts','vrachten','tol','kaart','scans'];
 function navStaat(){return {m:currentMode,v:currentView,t:currentBeheerTab}}
 function navPush(vervang){
   try{

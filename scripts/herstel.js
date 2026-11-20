@@ -12,7 +12,7 @@ const zlib = require('zlib');
 
 const VOLGORDE = ['werknemers', 'klanten', 'diensten', 'diensten_tarief', 'materieel', 'producten', 'dagstaten',
   'orders', 'planningen', 'vervaldata', 'klus_notities', 'facturen', 'facturen_mts', 'vrachten', 'tolposten',
-  'percelen', 'scans', 'containers', 'instellingen', 'factuur_teller'];
+  'percelen', 'scans', 'containers', 'inkoopfacturen', 'instellingen', 'factuur_teller'];
 const SLEUTEL = { diensten_tarief: 'dienst_id' };
 
 async function main() {

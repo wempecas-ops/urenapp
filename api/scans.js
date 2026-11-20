@@ -8,6 +8,9 @@
 // De mails zelf blijven ongemoeid in Gmail. Welke al verwerkt zijn staat in instellingen "scans_imap".
 //
 // Aanroep: elke nacht via Vercel Cron, en vanuit de app (tabblad Scans) door een beheerder.
+//
+// ?soort=inkoop doet hetzelfde voor inkomende facturen: mails aan  ...+inkoop@gmail.com  komen in de
+// tabel "inkoopfacturen" (map inkoop/), met de tekst van de mail erbij (voor doorgestuurde facturen).
 const tls = require('tls');
 
 const URL_SB = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
@@ -16,7 +19,10 @@ const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const IMAP_HOST = process.env.SCANS_IMAP_HOST || 'imap.gmail.com';
 const USER = process.env.SCANS_USER || process.env.GMAIL_USER || '';
 const PASS = (process.env.SCANS_PASSWORD || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
-const LABEL = process.env.SCANS_ADRES_DEEL || '+scans';      // stukje van het aan-adres
+const SOORTEN = {
+  scans: { label: process.env.SCANS_ADRES_DEEL || '+scans', tabel: 'scans', staat: 'scans_imap', map: 'scans', prefix: 's' },
+  inkoop: { label: '+inkoop', tabel: 'inkoopfacturen', staat: 'inkoop_imap', map: 'inkoop', prefix: 'i' }
+};
 const MAX_BERICHTEN = 25, MAX_BYTES = 26 * 1024 * 1024;   // Gmail laat max. 25 MB per mail door
 
 // ---------- Supabase ----------
@@ -125,6 +131,25 @@ function bijlagenUit(raw, uit) {
   return uit;
 }
 
+function tekstUit(raw) {
+  const scheid = raw.indexOf('\r\n\r\n');
+  const h = koppen(raw.slice(0, scheid < 0 ? raw.length : scheid).toString('latin1'));
+  const body = scheid < 0 ? Buffer.alloc(0) : raw.slice(scheid + 4);
+  const ct = h['content-type'] || 'text/plain';
+  if (/^multipart\//i.test(ct)) {
+    const grens = param(ct, 'boundary'); if (!grens) return '';
+    const delen = body.toString('latin1').split('--' + grens);
+    let html = '';
+    for (const d of delen) { const t = tekstUit(Buffer.from(d.replace(/^\r\n/, ''), 'latin1')); if (t && !t.startsWith('<')) return t; if (t && !html) html = t }
+    return html ? html.replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<br\s*\/?>|<\/p>|<\/div>|<\/tr>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/[ \t]+/g, ' ') : '';
+  }
+  if (/^message\/rfc822/i.test(ct)) return tekstUit(body);
+  if (!/^text\/(plain|html)/i.test(ct) || /attachment/i.test(h['content-disposition'] || '')) return '';
+  const cs = param(ct, 'charset');
+  const t = decodeer(body, h['content-transfer-encoding']).toString(/utf-?8/i.test(cs) ? 'utf8' : 'latin1');
+  return /^text\/html/i.test(ct) ? '<' + t : t;
+}
+
 async function magAanroepen(req) {
   const auth = String(req.headers.authorization || '');
   if (process.env.CRON_SECRET && auth === 'Bearer ' + process.env.CRON_SECRET) return true;
@@ -146,10 +171,12 @@ module.exports = async (req, res) => {
   if (!await magAanroepen(req)) return stuur(401, { fout: 'Niet toegestaan' });
   if (!USER || !PASS) return stuur(500, { fout: 'GMAIL_USER en GMAIL_APP_PASSWORD staan nog niet op Vercel.' });
   const start = Date.now();
-  const uit = { ok: false, berichten: 0, bestanden: 0, adres: USER.replace('@', LABEL + '@') };
+  const soort = /soort=inkoop/.test(String(req.url || '')) ? 'inkoop' : 'scans';
+  const S = SOORTEN[soort], LABEL = S.label;
+  const uit = { ok: false, soort, berichten: 0, bestanden: 0, adres: USER.replace('@', LABEL + '@') };
   let imap = null;
   try {
-    const st = ((await sb('/rest/v1/instellingen?id=eq.scans_imap&select=waarde')) || [])[0];
+    const st = ((await sb('/rest/v1/instellingen?id=eq.' + S.staat + '&select=waarde')) || [])[0];
     const stand = (st && st.waarde) || {};
     imap = await imapVerbinding(IMAP_HOST);
     try { await imap.cmd('LOGIN ' + imapQ(USER) + ' ' + imapQ(PASS)) }
@@ -173,18 +200,26 @@ module.exports = async (req, res) => {
         const msgId = (h['message-id'] || ('uid-' + uv + '-' + uid)).replace(/[<>]/g, '');
         const ontvangen = h.date ? new Date(h.date) : new Date();
         const bijlagen = bijlagenUit(raw);
+        const extra = {};
+        if (soort === 'inkoop') {
+          extra.mail_tekst = String(tekstUit(raw) || '').replace(/^</, '').replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim().slice(0, 8000);
+          // mail zonder pdf (bijv. alleen een link): toch een regel, zodat hij niet zoekraakt
+          if (!bijlagen.length) {
+            await sb('/rest/v1/inkoopfacturen?on_conflict=message_id,bestandsnaam', { method: 'POST', prefer: 'resolution=ignore-duplicates,return=minimal', json: Object.assign({ id: S.prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), message_id: msgId, ontvangen_op: isNaN(ontvangen) ? new Date().toISOString() : ontvangen.toISOString(), afzender: woorden(h.from || '').slice(0, 200), onderwerp: woorden(h.subject || '').slice(0, 300), bestandsnaam: '(geen bijlage)', status: 'nieuw' }, extra) });
+          }
+        }
         for (let i = 0; i < bijlagen.length; i++) {
           const b = bijlagen[i];
-          const id = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+          const id = S.prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
           const veilig = b.naam.replace(/[^\w.\-]+/g, '_').slice(-80);
-          const pad = 'scans/' + ontvangen.toISOString().slice(0, 7) + '/' + id + '-' + veilig;
-          const bestaat = await sb('/rest/v1/scans?select=id&message_id=eq.' + encodeURIComponent(msgId) + '&bestandsnaam=eq.' + encodeURIComponent(b.naam));
+          const pad = S.map + '/' + ontvangen.toISOString().slice(0, 7) + '/' + id + '-' + veilig;
+          const bestaat = await sb('/rest/v1/' + S.tabel + '?select=id&message_id=eq.' + encodeURIComponent(msgId) + '&bestandsnaam=eq.' + encodeURIComponent(b.naam));
           if (bestaat && bestaat.length) continue;
           // eerst de regel claimen (bij twee rondes tegelijk wint er één), dan pas het bestand opslaan
-          const rij = await sb('/rest/v1/scans?on_conflict=message_id,bestandsnaam', { method: 'POST', prefer: 'resolution=ignore-duplicates,return=representation', json: { id, message_id: msgId, ontvangen_op: isNaN(ontvangen) ? new Date().toISOString() : ontvangen.toISOString(), afzender: woorden(h.from || '').slice(0, 200), onderwerp: woorden(h.subject || '').slice(0, 300), bestandsnaam: b.naam, pad, type: b.type, grootte: b.data.length, status: 'nieuw' } });
+          const rij = await sb('/rest/v1/' + S.tabel + '?on_conflict=message_id,bestandsnaam', { method: 'POST', prefer: 'resolution=ignore-duplicates,return=representation', json: Object.assign({ id, message_id: msgId, ontvangen_op: isNaN(ontvangen) ? new Date().toISOString() : ontvangen.toISOString(), afzender: woorden(h.from || '').slice(0, 200), onderwerp: woorden(h.subject || '').slice(0, 300), bestandsnaam: b.naam, pad, type: b.type, grootte: b.data.length, status: 'nieuw' }, extra) });
           if (!Array.isArray(rij) || !rij.length) continue;            // stond er al
           try { await sb('/storage/v1/object/bijlagen/' + pad.split('/').map(encodeURIComponent).join('/'), { method: 'POST', body: b.data, headers: { 'Content-Type': b.type, 'x-upsert': 'true' } }) }
-          catch (e) { await sb('/rest/v1/scans?id=eq.' + encodeURIComponent(id), { method: 'DELETE' }).catch(() => {}); throw e }
+          catch (e) { await sb('/rest/v1/' + S.tabel + '?id=eq.' + encodeURIComponent(id), { method: 'DELETE' }).catch(() => {}); throw e }
           uit.bestanden++;
         }
         uit.berichten++;
@@ -192,7 +227,7 @@ module.exports = async (req, res) => {
       laatste = uid;
     }
     if (laatste >= vanaf || stand.uidvalidity !== uv) {
-      await sb('/rest/v1/instellingen', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal', json: { id: 'scans_imap', waarde: { uidvalidity: uv, laatste: Math.max(laatste, vanaf - 1), op: new Date().toISOString() } } });
+      await sb('/rest/v1/instellingen', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal', json: { id: S.staat, waarde: { uidvalidity: uv, laatste: Math.max(laatste, vanaf - 1), op: new Date().toISOString() } } });
     }
     uit.ok = true; uit.meer = uids.length > uit.berichten;
     return stuur(200, uit);
