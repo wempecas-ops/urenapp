@@ -19,7 +19,7 @@ const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const BASIS = 'https://app.evdm.nl';
 const MAX_PAGINAS = 60;
 // Vrachten vanaf deze laaddatum (de dag dat de eerste uren in Wempe op Pad stonden); oudere worden overgeslagen
-const VANAF = process.env.EVDM_VANAF || '2026-10-19';
+const VANAF_STANDAARD = process.env.EVDM_VANAF || '2026-10-19';
 
 // ---------- Supabase ----------
 const kop = extra => Object.assign({ apikey: SERVICE, Authorization: 'Bearer ' + SERVICE }, extra || {});
@@ -249,6 +249,9 @@ module.exports = async (req, res) => {
 
   const s = maakSessie();
   const start = Date.now();
+  // ?vanaf=JJJJ-MM-DD: eenmalig verder terug zoeken (knop "Oudere vrachten" in de app)
+  const vq = (/[?&]vanaf=(\d{4}-\d{2}-\d{2})/.exec(String(req.url || '')) || [])[1];
+  const VANAF = vq && vq < VANAF_STANDAARD ? vq : VANAF_STANDAARD;
   let stap = 'inlogpagina';
   try {
     // 1. inloggen

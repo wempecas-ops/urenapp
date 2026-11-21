@@ -2848,12 +2848,12 @@ function evdmStatusTekst(){
   return s.ok?`<span style="color:#245a39">✓ Laatst opgehaald ${esc(tijdKort(s.op))}: ${s.gelezen} vrachten gelezen, ${s.nieuw} nieuw.</span>`
     :`<span style="color:#b42318">Ophalen mislukt (${esc(tijdKort(s.op))}): ${esc(s.fout||'onbekend')}</span>`;
 }
-async function evdmOphalen(knop){
+async function evdmOphalen(knop,vanaf){
   if(CONFIG.MODE!=='supabase'){toast('Werkt alleen met de database','error');return}
   const oud=knop.textContent;knop.disabled=true;knop.textContent='Bezig met ophalen uit eVDM…';
   try{
     await zorgVoorToken();
-    const r=await fetch('/api/evdm',{method:'POST',headers:{Authorization:'Bearer '+AUTH_TOKEN}});
+    const r=await fetch('/api/evdm'+(vanaf?'?vanaf='+encodeURIComponent(vanaf):''),{method:'POST',headers:{Authorization:'Bearer '+AUTH_TOKEN}});
     let j={};try{j=await r.json()}catch(e){}
     await laadVrachten();
     try{const o=await sbREST('/rest/v1/instellingen?select=*');if(Array.isArray(o))CACHE.instellingen=o}catch(e){}
@@ -2883,7 +2883,7 @@ function renderVrachten(){
   $('main').innerHTML=`<div class="max-w-full mx-auto" style="padding:4px 8px 32px">
    <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:8px">
     <div><div class="zk-label">Werk</div><h1 style="margin:6px 0 0;font-size:28px;font-weight:600">eVDM</h1></div>
-    <button type="button" id="vrOphalen" class="zk-knop">Nu ophalen uit eVDM</button></div>
+    <button type="button" id="vrOphalen" class="zk-knop">Nu ophalen uit eVDM</button><button type="button" id="vrOuder" class="zk-knop" title="Eenmalig verder terug zoeken in eVDM">Oudere vrachten ophalen…</button></div>
    <p id="vrStatus" style="font-size:13px;margin:0 0 16px">${evdmStatusTekst()} <span style="color:#5a655e">Elke nacht om 04:00 automatisch.</span></p>
    <div class="zk-kaart" style="padding:16px 18px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
     <div><label class="zk-label" for="vrVan" style="display:block;margin-bottom:6px">Van</label><input type="date" id="vrVan" value="${esc(VRACHT.van)}" class="zk-invoer"></div>
@@ -2904,6 +2904,9 @@ function renderVrachten(){
   $('vrKent').onchange=e=>{VRACHT.kenteken=e.target.value;her()};
   $('vrZoek').onchange=e=>{const v=e.target.value.trim();if(v===VRACHT.zoek)return;VRACHT.zoek=v;VRACHT.sel={};setTimeout(her,0)};
   $('vrOphalen').onclick=()=>evdmOphalen($('vrOphalen'));
+  if($('vrOuder'))$('vrOuder').onclick=()=>{const v=prompt('Vanaf welke datum wil je oudere vrachten ophalen? (dd-mm-jjjj)','01-01-'+new Date().getFullYear());if(!v)return;
+    const m=/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(v.trim());if(!m){toast('Typ de datum als dd-mm-jjjj','error');return}
+    evdmOphalen($('vrOuder'),m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'))};
   $('vrAlles').onchange=e=>{VRACHT.sel={};if(e.target.checked)lijst.forEach(v=>VRACHT.sel[v.id]=true);her()};
   document.querySelectorAll('[data-vsel]').forEach(c=>c.onchange=()=>{if(c.checked)VRACHT.sel[c.dataset.vsel]=true;else delete VRACHT.sel[c.dataset.vsel];her()});
   if($('vrLeeg'))$('vrLeeg').onclick=()=>{VRACHT.sel={};her()};
