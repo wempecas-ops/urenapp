@@ -1900,7 +1900,16 @@ function renderFactuurPagina(id){
     let van=data[0],tot=data[data.length-1];
     if(!van){const d=new Date((f.factuurdatum||today())+'T12:00:00');const v=new Date(d.getFullYear(),d.getMonth()-1,1),e=new Date(d.getFullYear(),d.getMonth(),0);van=iso_(v);tot=iso_(e)}
     if(!DB.list('vrachten').length){toast('Er zijn nog geen vrachten uit eVDM opgehaald (tabblad eVDM)','error');return}
-    openVrachtKeuze({zoek:(f.klant&&f.klant.naam)||'',van,tot},file=>voegBijlagenToe([file]));
+    // staan er al eVDM-bonnen op deze factuur? Dan die periode en de naam zoals in eVDM
+    let zoek=(f.klant&&f.klant.naam)||'';
+    const gekoppeld=[...new Set((f.regels||[]).flatMap(r=>r.vrachtIds||[]))].map(x=>DB.get('vrachten',x)).filter(Boolean);
+    if(gekoppeld.length){
+      const dd=gekoppeld.map(v=>String(v.laaddatum||'').slice(0,10)).filter(Boolean).sort();van=dd[0];tot=dd[dd.length-1];
+      const kn=vNorm(zoek).split(/\s+/).filter(w=>w.length>2);
+      const telt=n=>kn.filter(w=>vNorm(n).includes(w)).length;
+      const v0=gekoppeld[0];zoek=telt(v0.afnemer)>telt(v0.leverancier)?v0.afnemer:v0.leverancier;
+    }
+    openVrachtKeuze({zoek,van,tot},file=>voegBijlagenToe([file]));
   };
   maakSleepZone($('h-bijl').closest('section'),voegBijlagenToe);
   $('feX').onclick=e=>{e.preventDefault();sluit()};
