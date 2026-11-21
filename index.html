@@ -2343,6 +2343,42 @@ async function inkOphalen(stil){
   finally{INK.bezig=false;INK.laatst=Date.now();if(currentBeheerTab==='inkoop')renderInkoop();inkLeesAlles()}
 }
 function inkKwartaal(d){d=String(d||'');return d?{j:+d.slice(0,4),k:Math.floor((+d.slice(5,7)-1)/3)+1}:null}
+// Wie stuurt ons facturen? E-mailadressen van leveranciers, voor later (bijv. nieuwe gegevens/rechtsvorm doorgeven)
+const INK_MAIL_RE=/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const inkEigen=e=>/wempe|noreply|no-reply|donotreply|do-not-reply|mailer-daemon/i.test(e);
+function inkContacten(lijst){
+  const per={};
+  lijst.forEach(r=>{
+    const mail=String(r.mailTekst||''),door=/^\s*(fw|fwd|doorst|tr|wg)\s*:/i.test(r.onderwerp||'')||/(^|\n)\s*(van|from)\s*:/i.test(mail);
+    const uitMail=[];
+    // doorgestuurde mail: de oorspronkelijke afzender staat in de tekst ("Van: ..." / "From: ...")
+    (mail.match(/(^|\n)[>\s*]*(van|from|afzender)\s*:[^\n]*/gi)||[]).forEach(l=>(l.match(INK_MAIL_RE)||[]).forEach(e=>uitMail.push(e)));
+    if(!door)(String(r.afzender||'').match(INK_MAIL_RE)||[]).forEach(e=>uitMail.push(e));
+    const uitPdf=(String(r.tekst||'').match(INK_MAIL_RE)||[]);
+    const naamUitMail=(()=>{const m=mail.match(/(^|\n)[>\s*]*(van|from)\s*:\s*"?([^"<\n]+?)"?\s*</i);return m?m[3].trim():''})();
+    const naam=(r.leverancier||naamUitMail||uitMail[0]||'').trim();if(!naam)return;
+    const k=zoekNorm(naam);const c=per[k]||(per[k]={naam,mails:{},aantal:0,laatst:''});
+    c.aantal++;const d=r.factuurdatum||String(r.ontvangenOp||'').slice(0,10);if(d>c.laatst)c.laatst=d;
+    if(r.leverancier)c.naam=r.leverancier;
+    uitMail.forEach(e=>{e=e.toLowerCase();if(!inkEigen(e))c.mails[e]=c.mails[e]||'mail'});
+    uitPdf.forEach(e=>{e=e.toLowerCase();if(!inkEigen(e)&&!c.mails[e])c.mails[e]='factuur'});
+  });
+  return Object.values(per).sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+}
+function inkContactenHtml(alle){
+  const l=inkContacten(alle);
+  if(!l.length)return '<div style="padding:26px;text-align:center;color:#5a655e">Nog geen leveranciers. Zodra je facturen doorstuurt naar facturencaswempe+inkoop@gmail.com, verzamelt de app hier vanzelf wie ze stuurt en hun e-mailadressen.</div>';
+  return `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 12px 0"><span style="font-size:13px;color:#5a655e">${l.length} leverancier${l.length===1?'':'s'} · ${l.reduce((s,c)=>s+Object.keys(c.mails).length,0)} e-mailadressen</span><button type="button" id="inkMailsKop" class="zk-knop" style="margin-left:auto">Kopieer alle e-mailadressen</button><button type="button" id="inkMailsCsv" class="zk-knop">Download als Excel (csv)</button></div>
+   <table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:8px"><thead><tr style="text-align:left;font-size:12px;color:#5a655e"><th style="padding:10px 8px">Leverancier</th><th style="padding:10px 8px">E-mailadres</th><th style="padding:10px 8px;text-align:right">Facturen</th><th style="padding:10px 8px">Laatste</th></tr></thead><tbody>
+   ${l.map(c=>`<tr style="border-top:1px solid #eef0ec;vertical-align:top"><td style="padding:10px 8px;font-weight:600">${esc(c.naam)}</td><td style="padding:10px 8px">${Object.entries(c.mails).map(([e,b])=>`<div>${esc(e)}${b==='factuur'?' <span style="font-size:11px;color:#5a655e">(van de factuur)</span>':''}</div>`).join('')||'<span style="color:#8a5a12">geen gevonden</span>'}</td><td style="padding:10px 8px;text-align:right">${c.aantal}</td><td style="padding:10px 8px;white-space:nowrap">${esc(datumNL(c.laatst)||'')}</td></tr>`).join('')}</tbody></table>`;
+}
+function inkContactenKnoppen(alle){
+  const l=inkContacten(alle);
+  const k=$('inkMailsKop');if(k)k.onclick=async()=>{const t=[...new Set(l.flatMap(c=>Object.keys(c.mails)))].join('; ');try{await navigator.clipboard.writeText(t);toast('E-mailadressen gekopieerd (plakken in BCC)','success')}catch(e){prompt('Kopieer:',t)}};
+  const c=$('inkMailsCsv');if(c)c.onclick=()=>{const q=s=>'"'+String(s||'').replace(/"/g,'""')+'"';
+    const csv='﻿'+['Leverancier;E-mailadressen;Aantal facturen;Laatste factuur',...l.map(x=>[q(x.naam),q(Object.keys(x.mails).join(', ')),x.aantal,q(datumNL(x.laatst))].join(';'))].join('\r\n');
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='Leveranciers e-mailadressen.csv';a.click()};
+}
 function renderInkoop(){
   const nu=new Date();if(!INK.jaar){INK.jaar=nu.getFullYear();INK.kw=Math.floor(nu.getMonth()/3)+1}
   const alle=DB.list('inkoopfacturen').filter(r=>r.status!=='weg');
@@ -2357,7 +2393,7 @@ function renderInkoop(){
   const perCat={};inkP.forEach(r=>{const c=r.categorie||'Zonder categorie';perCat[c]=r2((perCat[c]||0)+(Number(r.bedragExcl)||0))});
   const tabs={controle:alle.filter(r=>r.status==='nieuw'),open:alle.filter(r=>r.status!=='nieuw'&&!r.betaaldOp),betaald:alle.filter(r=>r.betaaldOp),alles:alle};
   const q=zoekNorm(INK.zoek);
-  let lijst=tabs[INK.tab].filter(r=>!q||zoekNorm([r.leverancier,r.factuurnummer,r.onderwerp,r.bestandsnaam,r.categorie].join(' ')).includes(q));
+  let lijst=(tabs[INK.tab]||[]).filter(r=>!q||zoekNorm([r.leverancier,r.factuurnummer,r.onderwerp,r.bestandsnaam,r.categorie].join(' ')).includes(q));
   lijst.sort((a,b)=>String(datumVan(b)).localeCompare(String(datumVan(a))));
   const vandaag=vandaagIso();const openTot=r2(tabs.open.reduce((s,r)=>s+(Number(r.bedragIncl)||0),0));
   const kaart=(t,v,sub,kleur)=>`<div class="zk-kaart" style="padding:14px 16px;flex:1 1 170px"><div style="font-size:12px;color:#5a655e">${t}</div><div style="font-size:22px;font-weight:700;margin-top:4px;color:${kleur||'inherit'}">${v}</div>${sub?`<div style="font-size:12px;color:#5a655e;margin-top:2px">${sub}</div>`:''}</div>`;
@@ -2387,11 +2423,12 @@ function renderInkoop(){
    <p style="font-size:12px;color:#5a655e;margin:8px 0 0">Indicatie op basis van wat hier staat${onvolledig?`; <strong style="color:#8a5a12">${onvolledig} inkoopfactu${onvolledig===1?'ur':'ren'} nog nakijken</strong>`:''}. Afschrijvingen, privé-uitgaven en inkomstenbelasting zitten er niet in; je boekhouder doet de echte aangifte.</p>
    ${Object.keys(perCat).length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">${Object.entries(perCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<span style="font-size:12px;background:#f1f4ef;border-radius:999px;padding:4px 10px">${esc(c)}: <strong>${eurF(v)}</strong></span>`).join('')}</div>`:''}
    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:22px 0 10px">
-    ${[['controle','Nakijken ('+tabs.controle.length+')'],['open','Openstaand ('+tabs.open.length+(openTot?' · '+eurF(openTot):'')+')'],['betaald','Betaald'],['alles','Alles']].map(([k,l])=>`<button type="button" data-inktab="${k}" class="${INK.tab===k?'zk-hoofd':'zk-knop'}">${l}</button>`).join('')}
+    ${[['controle','Nakijken ('+tabs.controle.length+')'],['open','Openstaand ('+tabs.open.length+(openTot?' · '+eurF(openTot):'')+')'],['betaald','Betaald'],['alles','Alles'],['contacten','Leveranciers & e-mail']].map(([k,l])=>`<button type="button" data-inktab="${k}" class="${INK.tab===k?'zk-hoofd':'zk-knop'}">${l}</button>`).join('')}
     <input id="inkZoek" type="search" value="${esc(INK.zoek)}" placeholder="Zoek leverancier, nummer…" class="zk-invoer" style="margin-left:auto;min-width:220px"></div>
-   <div class="zk-kaart" style="overflow-x:auto">${lijst.length?`<table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:left;font-size:12px;color:#5a655e"><th style="padding:10px 8px">Betaald</th><th style="padding:10px 8px">Leverancier</th><th style="padding:10px 8px">Datum</th><th style="padding:10px 8px;text-align:right">Bedrag</th><th></th></tr></thead><tbody>${lijst.map(rij).join('')}</tbody></table>`
+   <div class="zk-kaart" style="overflow-x:auto">${INK.tab==='contacten'?inkContactenHtml(alle):lijst.length?`<table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:left;font-size:12px;color:#5a655e"><th style="padding:10px 8px">Betaald</th><th style="padding:10px 8px">Leverancier</th><th style="padding:10px 8px">Datum</th><th style="padding:10px 8px;text-align:right">Bedrag</th><th></th></tr></thead><tbody>${lijst.map(rij).join('')}</tbody></table>`
     :`<div style="padding:26px;text-align:center;color:#5a655e">${INK.tab==='controle'?'Niets na te kijken.':'Geen facturen.'}</div>`}</div></div>`;
   $('inkOphalen').onclick=()=>inkOphalen(false);
+  inkContactenKnoppen(alle);
   $('inkNieuw').onclick=()=>{const r=DB.insert('inkoopfacturen',{ontvangenOp:new Date().toISOString(),bestandsnaam:'(handmatig)',status:'nieuw',tekst:'',factuurdatum:vandaagIso()});openInkoop(r.id)};
   $('inkJaar').onchange=e=>{INK.jaar=+e.target.value;renderInkoop()};$('inkKw').onchange=e=>{INK.kw=+e.target.value;renderInkoop()};
   document.querySelectorAll('[data-inktab]').forEach(b=>b.onclick=()=>{INK.tab=b.dataset.inktab;renderInkoop()});
