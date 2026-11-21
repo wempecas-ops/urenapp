@@ -2851,6 +2851,8 @@ function vrachtFactuurInfo(){
         const afnKant=lijkt(kn,v.afnemer)&&!lijkt(kn,v.leverancier);
         if(afnKant)zet(id,'afn',label);else zet(id,monster?'monster':'lev',label)});
     })});
+  // handmatige koppeling (bijv. oudere facturen met alleen een totaal in tonnen)
+  vr.forEach(v=>{const k=v.factuurKoppeling;if(k&&typeof k==='object')['lev','monster','afn'].forEach(x=>(k[x]||[]).forEach(nr=>zet(v.id,x,String(nr))))});
   // inkoopfacturen waarin het VDM-nummer staat = de afnemer is betaald
   DB.list('inkoopfacturen').filter(r=>r.status!=='weg').forEach(r=>{String(r.tekst||'').replace(/(\d{10})/g,(_,n)=>{const v=perVdm.get(n);if(v)zet(v.id,'afn','inkoop '+(r.factuurnummer||r.leverancier||''))})});
   return info;
