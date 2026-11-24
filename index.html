@@ -2550,7 +2550,7 @@ function renderContainers(){
   const vast=ctVast();const namen=[...vast,...ctNamen().filter(n=>!vast.some(v=>v.toLowerCase()===n.toLowerCase()))];
   const snel=vast.length?[]:ctNamen().slice(0,6);   // zonder vaste lijst: laatst gebruikte als knoppen
   if(CT.klant===undefined)CT.klant='';
-  const iedereen=!baas&&CT_MAG;   // Giel e.d.: ziet ook wat anderen doorgaven
+  const iedereen=!baas;   // alle chauffeurs zien en beheren samen de lijst
   const mijn=(iedereen?alle:alle.filter(c=>!baas||c.userId===(SESSIE&&SESSIE.id))).slice(0,iedereen?30:10);
   const inMaand=alle.filter(c=>String(c.datum||'').slice(0,7)===CT.maand);
   const tot=ctTotalen(inMaand);const som=tot.reduce((x,o)=>x+o.aantal,0);
