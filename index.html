@@ -2550,7 +2550,8 @@ function renderContainers(){
   const vast=ctVast();const namen=[...vast,...ctNamen().filter(n=>!vast.some(v=>v.toLowerCase()===n.toLowerCase()))];
   const snel=vast.length?[]:ctNamen().slice(0,6);   // zonder vaste lijst: laatst gebruikte als knoppen
   if(CT.klant===undefined)CT.klant='';
-  const mijn=alle.filter(c=>!baas||c.userId===(SESSIE&&SESSIE.id)).slice(0,10);
+  const iedereen=!baas&&CT_MAG;   // Giel e.d.: ziet ook wat anderen doorgaven
+  const mijn=(iedereen?alle:alle.filter(c=>!baas||c.userId===(SESSIE&&SESSIE.id))).slice(0,iedereen?30:10);
   const inMaand=alle.filter(c=>String(c.datum||'').slice(0,7)===CT.maand);
   const tot=ctTotalen(inMaand);const som=tot.reduce((x,o)=>x+o.aantal,0);
   const rij=(c,metNaam)=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #eef0ec">
@@ -2594,8 +2595,8 @@ function renderContainers(){
    </div>`:''}
    </div>
    ${!baas?`<div class="zk-kaart" style="padding:18px;margin-top:16px;max-width:560px">
-     <div style="font-size:15px;font-weight:600;margin-bottom:4px">Mijn laatste</div>
-     ${mijn.length?mijn.map(c=>rij(c,false)).join(''):'<p style="color:#5a655e;font-size:14px;margin:6px 0">Nog niets doorgegeven.</p>'}</div>`:''}
+     <div style="font-size:15px;font-weight:600;margin-bottom:4px">${iedereen?'Laatst doorgegeven (iedereen)':'Mijn laatste'}</div>
+     ${mijn.length?mijn.map(c=>rij(c,iedereen)).join(''):'<p style="color:#5a655e;font-size:14px;margin:6px 0">Nog niets doorgegeven.</p>'}</div>`:''}
   </div>`;
   const zetAantal=n=>{CT.aantal=Math.max(1,Math.min(50,n));$('ctAantal').textContent=CT.aantal};
   $('ctMin').onclick=()=>zetAantal(CT.aantal-1);$('ctPlus').onclick=()=>zetAantal(CT.aantal+1);
